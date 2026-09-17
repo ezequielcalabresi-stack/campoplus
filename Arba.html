@@ -205,7 +205,7 @@ function aplicarCorreccionManual(ret, perc) {
 // podés omitir el fetch local a localhost y dejar esta función orientada a mostrar estado o quitarla.
 async function actualizarContadorUI() {
     try {
-        const respuesta = await fetch(`https://TU-DOMINIO-EN-LA-NUBE.onrender.com/stats`);
+        const respuesta = await fetch(`https://campoplus.onrender.com/cuit/${cuit}`);
         const data = await respuesta.json();
         if(data && data.total_cuits) {
             document.getElementById('contadorCuits').innerText = `${data.total_cuits} CUITs indexados (Cloud)`;
