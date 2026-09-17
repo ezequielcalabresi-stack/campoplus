@@ -1,0 +1,1 @@
+# SQLite viene integrado en Python
