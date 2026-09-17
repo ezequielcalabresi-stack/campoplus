@@ -20,8 +20,19 @@ class CentralARBAHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urlparse(self.path)
         
+        # Endpoint de estadísticas: /stats
+        if parsed_path.path == '/stats':
+            response_data = {
+                "total": len(PADRON_GLOBAL)
+            }
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
+
         # Endpoint de consulta: /cuit/XXXXXXXXXXX
-        if parsed_path.path.startswith('/cuit/'):
+        elif parsed_path.path.startswith('/cuit/'):
             cuit_buscado = parsed_path.path.split('/')[-1].strip()
             
             resultado = PADRON_GLOBAL.get(cuit_buscado, {
@@ -44,6 +55,7 @@ class CentralARBAHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
         else:
             self.send_response(404)
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(b"Endpoint no encontrado")
 
