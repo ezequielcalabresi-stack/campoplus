@@ -1,33 +1,42 @@
 import os
 import sqlite3
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 CARPETA_DATOS = os.path.dirname(os.path.abspath(__file__))
 RUTA_DB = os.path.join(CARPETA_DATOS, "padron.db")
 
+# Pegá aquí el enlace de descarga directa del padron.db desde tu Release de GitHub
+URL_DB_NUBE = "PEGAR_AQUI_EL_ENLACE_DE_GITHUB_RELEASE"
+
+def asegurar_db():
+    if not os.path.exists(RUTA_DB) or os.path.getsize(RUTA_DB) < 1000000:
+        print("Descargando base de datos SQLite desde la nube (esto pasa una sola vez al encender)...")
+        try:
+            urllib.request.urlretrieve(URL_DB_NUBE, RUTA_DB)
+            print("¡Base de datos descargada con éxito en la nube!")
+        except Exception as e:
+            print(f"Error al descargar la base de datos: {e}")
+
+# Asegurar que la base exista antes de levantar el servidor
+asegurar_db()
+
 def obtener_conexion():
     conn = sqlite3.connect(RUTA_DB)
     conn.row_factory = sqlite3.Row
     return conn
 
-# Verificar estado inicial de la base de datos
 print("Verificando base de datos SQLite...")
 try:
     conn = obtener_conexion()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='padron';")
-    tabla_existe = cursor.fetchone()[0]
-    
-    if tabla_existe:
-        cursor.execute("SELECT COUNT(*) FROM padron;")
-        total = cursor.fetchone()[0]
-        print(f"¡Base de datos conectada con éxito! Total CUITs en SQLite: {total}")
-    else:
-        print("⚠️ La tabla 'padron' aún no fue creada. Subí tu padrón a SQLite.")
+    cursor.execute("SELECT COUNT(*) FROM padron;")
+    total = cursor.fetchone()[0]
+    print(f"¡Base de datos conectada con éxito! Total CUITs: {total}")
     conn.close()
 except Exception as e:
-    print(f"Error al conectar con la base de datos: {e}")
+    print(f"Aviso de base de datos: {e}")
 
 class CentralARBAHandler(BaseHTTPRequestHandler):
     def do_GET(self):
