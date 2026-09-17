@@ -7,15 +7,19 @@ from urllib.parse import urlparse
 CARPETA_DATOS = os.path.dirname(os.path.abspath(__file__))
 RUTA_DB = os.path.join(CARPETA_DATOS, "padron.db")
 
-# Pegá aquí el enlace que copiaste del Release de GitHub para padron.db
 URL_DB_NUBE = "PEGAR_AQUI_EL_ENLACE_COPIADO"
 
 def asegurar_db():
     if not os.path.exists(RUTA_DB) or os.path.getsize(RUTA_DB) < 1000000:
-        print("Descargando base de datos SQLite desde la nube (esto pasa una sola vez al encender)...")
+        print("Descargando base de datos SQLite desde la nube...")
         try:
-            urllib.request.urlretrieve(sha256:19e796c190758f7872b2adb9cb5132f9493d832bdfd717e2f7fd7f678752fd53
-)
+            # Requerido para que GitHub permita la descarga directa
+            req = urllib.request.Request(
+                URL_DB_NUBE, 
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(req) as response, open(RUTA_DB, 'wb') as out_file:
+                out_file.write(response.read())
             print("¡Base de datos descargada con éxito en la nube!")
         except Exception as e:
             print(f"Error al descargar la base de datos: {e}")
@@ -43,7 +47,6 @@ class CentralARBAHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urlparse(self.path)
         
-        # Endpoint de estadísticas: /stats
         if parsed_path.path == '/stats':
             total = 0
             try:
@@ -62,7 +65,6 @@ class CentralARBAHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
 
-        # Endpoint de consulta: /cuit/XXXXXXXXXXX
         elif parsed_path.path.startswith('/cuit/'):
             cuit_buscado = parsed_path.path.split('/')[-1].strip()
             
