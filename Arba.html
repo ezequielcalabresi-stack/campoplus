@@ -96,7 +96,8 @@
     </div>
 
     <!-- Script con Lógica Estricta de Padrón DFE -->
-    // 1. Sincronizar estadísticas con la nube de Render
+    <script>
+// 1. Sincronizar estadísticas con la nube de Render
     async function actualizarContadorUI() {
         try {
             let res = await fetch('https://campoplus.onrender.com/stats');
@@ -175,5 +176,6 @@
 
     // Ejecutar al cargar la página
     window.onload = actualizarContadorUI;
+</script>
 </body>
 </html>
