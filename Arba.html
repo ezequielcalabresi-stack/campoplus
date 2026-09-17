@@ -96,21 +96,20 @@
     </div>
 
     <!-- Script con Lógica Estricta de Padrón DFE -->
-    <script>
-    // 1. Sincronizar contador directamente con el motor de Python
+    // 1. Sincronizar estadísticas con la nube de Render
     async function actualizarContadorUI() {
         try {
-            let res = await fetch('http://localhost:8080/stats');
+            let res = await fetch('https://campoplus.onrender.com/stats');
             let data = await res.json();
-            document.getElementById('lblTotal').innerText = data.total.toLocaleString() + " CUITs indexados (Python)";
+            document.getElementById('lblTotal').innerText = (data.total || 0).toLocaleString() + " CUITs indexados (Cloud)";
             document.getElementById('lblTotal').className = "text-sm bg-emerald-100 text-emerald-800 px-4 py-2 rounded-lg font-bold";
         } catch (e) {
-            document.getElementById('lblTotal').innerText = "⚠️ Servidor Python Desconectado";
-            document.getElementById('lblTotal').className = "text-sm bg-red-100 text-red-800 px-4 py-2 rounded-lg font-bold";
+            document.getElementById('lblTotal').innerText = "⚠️ Servidor Cloud Conectándose...";
+            document.getElementById('lblTotal').className = "text-sm bg-amber-100 text-amber-800 px-4 py-2 rounded-lg font-bold";
         }
     }
 
-    // 2. Consulta de CUIT directo al servidor local
+    // 2. Consulta de CUIT directo a la nube de Render
     async function consultarCuitOficial() {
         let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
         if(!cuit) {
@@ -119,29 +118,32 @@
         }
 
         try {
-            let respuesta = await fetch(`http://localhost:8080/cuit/${cuit}`);
+            let respuesta = await fetch(`https://campoplus.onrender.com/cuit/${cuit}`);
             
             if (respuesta.ok) {
                 let resultado = await respuesta.json();
                 
-                document.getElementById('resEstado').value = resultado.datos.estado;
-                document.getElementById('resRet').value = resultado.datos.ret;
-                document.getElementById('resPerc').value = resultado.datos.perc;
-                
                 if (resultado.encontrado) {
+                    document.getElementById('resEstado').value = resultado.estado || "Oficial ARBA";
+                    document.getElementById('resRet').value = (resultado.retencion ? resultado.retencion.alicuota : "0,00") + " %";
+                    document.getElementById('resPerc').value = (resultado.percepcion ? resultado.percepcion.alicuota : "0,00") + " %";
                     alert("✅ ¡CUIT encontrado en el padrón oficial de ARBA!");
                 } else {
+                    document.getElementById('resEstado').value = "No encontrado";
+                    document.getElementById('resRet').value = "0,00 %";
+                    document.getElementById('resPerc').value = "0,00 %";
                     alert("ℹ️ El CUIT no se encuentra en el padrón (Aplica régimen general / 0,00%).");
                 }
             } else {
-                alert("Error al consultar el servidor local.");
+                alert("Error al consultar el servidor en la nube.");
             }
         } catch (error) {
-            alert("❌ EL SERVIDOR LOCAL DE PYTHON NO ESTÁ ACTIVO.\nAbrir la terminal, ejecutar 'python arba_api.py' y dejarla abierta.");
+            console.error("Error:", error);
+            alert("❌ No se pudo conectar con el servidor central en Render.");
         }
     }
 
-    // 3. Importación local de archivos manuales (opcional por si querés subirlos desde la web)
+    // 3. Importación local (informativa para la interfaz)
     function procesarPadronOficial(tipo) {
         let inputId = tipo === 'ret' ? 'fileRet' : 'filePerc';
         let fileInput = document.getElementById(inputId);
@@ -150,73 +152,28 @@
             alert("Seleccione el archivo TXT correspondiente.");
             return;
         }
-        alert("Archivo seleccionado correctamente. Recuerde que el servidor lee los TXT de la carpeta del sistema de forma automática al iniciar.");
+        alert("Archivo seleccionado. Recordá que la base oficial se gestiona de forma centralizada en la nube.");
     }
 
-    // 4. Alta Manual / Corrección
+    // 4. Alta Manual / Corrección en pantalla
     function guardarManual() {
         let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
         if(!cuit) {
             alert("Ingrese un CUIT primero.");
             return;
         }
-        let ret = prompt("Ingrese alícuota de Retención (ej: 1,75 %):", "1,75 %");
-        let perc = prompt("Ingrese alícuota de Percepción (ej: 3,00 %):", "3,00 %");
+        let ret = prompt("Ingrese alícuota de Retención (ej: 1,75):", "1,75");
+        let perc = prompt("Ingrese alícuota de Percepción (ej: 3,00):", "3,00");
 
-        if(ret && perc) {
+        if(ret !== null && perc !== null) {
             document.getElementById('resEstado').value = "Corrección Manual";
-            document.getElementById('resRet').value = ret;
-            document.getElementById('resPerc').value = perc;
+            document.getElementById('resRet').value = ret + " %";
+            document.getElementById('resPerc').value = perc + " %";
             alert("¡Actualizado en pantalla correctamente!");
         }
     }
-async function consultarCUIT() {
-    const cuit = document.getElementById('inputCuit').value.trim();
-    if (!cuit) return;
 
-    try {
-        // Apunta a tu URL pública definitiva en la nube (reemplazá TU-DOMINIO por el que te dé Render)
-        const respuesta = await fetch(`https://TU-DOMINIO-EN-LA-NUBE.onrender.com/cuit/${cuit}`);
-        const data = await respuesta.json();
-
-        if (data.encontrado) {
-            document.getElementById('retencion').innerText = `${data.retencion.alicuota} %`;
-            document.getElementById('percepcion').innerText = `${data.percepcion.alicuota} %`;
-        } else {
-            alert("CUIT no encontrado en el padrón de ARBA.");
-        }
-    } catch (error) {
-        console.error("Error al consultar el servidor central:", error);
-        alert("Error de conexión con el servidor de impuestos en la nube.");
-    }
-}
-
-// Si hacés una corrección manual local en pantalla:
-function aplicarCorreccionManual(ret, perc) {
-    if(ret && perc) {
-        document.getElementById('resEstado').value = "Corrección Manual";
-        document.getElementById('resRet').value = ret;
-        document.getElementById('resPerc').value = perc;
-        alert("¡Actualizado en pantalla correctamente!");
-    }
-}
-
-// Como los padrones ahora se actualizan subiendo el nuevo JSON a la nube una vez al mes, 
-// podés omitir el fetch local a localhost y dejar esta función orientada a mostrar estado o quitarla.
-async function actualizarContadorUI() {
-    try {
-        const respuesta = await fetch(`https://campoplus.onrender.com/cuit/${cuit}`);
-        const data = await respuesta.json();
-        if(data && data.total_cuits) {
-            document.getElementById('contadorCuits').innerText = `${data.total_cuits} CUITs indexados (Cloud)`;
-        }
-    } catch(e) {
-        console.log("Modo operativo online activo.");
-    }
-}
-
-// Ejecutar al cargar la página
-window.onload = actualizarContadorUI;.onload = actualizarContadorUI;
-</script>
+    // Ejecutar al cargar la página
+    window.onload = actualizarContadorUI;
 </body>
 </html>
