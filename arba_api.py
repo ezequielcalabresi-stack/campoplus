@@ -1,19 +1,20 @@
 import os
 import sqlite3
 import urllib.request
+import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 CARPETA_DATOS = os.path.dirname(os.path.abspath(__file__))
 RUTA_DB = os.path.join(CARPETA_DATOS, "padron.db")
 
-URL_DB_NUBE = "PEGAR_AQUI_EL_ENLACE_COPIADO"
+# Enlace directo oficial al padron.db desde tu Release de GitHub
+URL_DB_NUBE = "https://github.com/ezequielcalabresi-stack/campoplus/releases/download/v1.0/padron.db"
 
 def asegurar_db():
     if not os.path.exists(RUTA_DB) or os.path.getsize(RUTA_DB) < 1000000:
-        print("Descargando base de datos SQLite desde la nube...")
+        print("Descargando base de datos SQLite desde la nube (esto pasa una sola vez al encender)...")
         try:
-            # Requerido para que GitHub permita la descarga directa
             req = urllib.request.Request(
                 URL_DB_NUBE, 
                 headers={'User-Agent': 'Mozilla/5.0'}
@@ -47,6 +48,7 @@ class CentralARBAHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urlparse(self.path)
         
+        # Endpoint de estadísticas: /stats
         if parsed_path.path == '/stats':
             total = 0
             try:
@@ -65,6 +67,7 @@ class CentralARBAHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
 
+        # Endpoint de consulta: /cuit/XXXXXXXXXXX
         elif parsed_path.path.startswith('/cuit/'):
             cuit_buscado = parsed_path.path.split('/')[-1].strip()
             
