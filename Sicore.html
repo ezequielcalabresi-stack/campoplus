@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Generador SICORE y Retenciones AFIP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| SICORE & RG 830 (Generador de Archivos TXT)</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Exportación de Sujetos Retenidos y Retenciones con formato de ancho fijo oficial AFIP.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- SECCIÓN 1: DATOS DEL AGENTE DE RETENCIÓN -->
+        <div class="bg-slate-50 border p-4 rounded-lg mb-6">
+            <h3 class="text-md font-bold text-slate-800 mb-2">1. Datos del Agente de Retención (Silo Chico S.A.)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Razón Social</label>
+                    <input type="text" value="SILO CHICO S.A." class="mt-1 block w-full rounded border p-1.5 bg-white font-semibold">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">CUIT (sin guiones)</label>
+                    <input type="text" value="30717802868" class="mt-1 block w-full rounded border p-1.5 bg-white font-semibold">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Último N° Certificado Mes Anterior</label>
+                    <input type="text" value="57" class="mt-1 block w-full rounded border p-1.5 bg-white text-right font-bold">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="alert('Datos del agente guardados para el período.')" class="w-full bg-slate-800 text-white p-2 rounded text-xs font-bold hover:bg-slate-700">
+                        Actualizar Cabecera
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: GENERACIÓN DE ARCHIVOS TXT (SALIDAS OFICIALES) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Archivo Sujetos Retenidos -->
+            <div class="border rounded-lg p-5 bg-white shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="font-bold text-slate-800 text-md">Archivo 1: Sujetos Retenidos</h4>
+                        <span class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-mono">83 caracteres</span>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-4">Contiene el padrón de CUITs, domicilios, localidades y provincias formateado para SICORE.</p>
+                    <textarea readonly class="w-full h-24 bg-slate-50 border rounded p-2 text-xs font-mono text-slate-700">30554380749ANDREOLI S.A.         GRAL. URQUIZA 379   VILLA MOQUEHUA      B 6620 80</textarea>
+                </div>
+                <button onclick="alert('Texto de Sujetos Retenidos copiado al portapapeles. ¡Listo para pegar en el Bloc de notas con codificación ANSI!');" class="mt-4 w-full bg-blue-600 text-white py-2 rounded font-bold text-xs hover:bg-blue-700">
+                    📋 Copiar Líneas para TXT (Sujetos)
+                </button>
+            </div>
+
+            <!-- Archivo Retenciones -->
+            <div class="border rounded-lg p-5 bg-white shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="font-bold text-slate-800 text-md">Archivo 2: Retenciones</h4>
+                        <span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded font-mono">159 caracteres</span>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-4">Contiene los comprobantes, bases de cálculo, regímenes y montos retenidos.</p>
+                    <textarea readonly class="w-full h-24 bg-slate-50 border rounded p-2 text-xs font-mono text-slate-700">0108/09/2026      332023749817    0000110649602.6401190100000086057680.9808/09/202603000000004125071.45      30554380749                 </textarea>
+                </div>
+                <button onclick="alert('Texto de Retenciones copiado al portapapeles. ¡Listo para pegar en el Bloc de notas con codificación ANSI!');" class="mt-4 w-full bg-emerald-600 text-white py-2 rounded font-bold text-xs hover:bg-emerald-700">
+                    📋 Copiar Líneas para TXT (Retenciones)
+                </button>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 3: TABLA DE REGISTROS DEL MES -->
+        <div class="border rounded-lg p-4 bg-white">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-lg font-semibold text-slate-700">Retenciones Generadas en el Período Actual</h3>
+                <span class="text-xs bg-amber-100 text-amber-800 px-3 py-1 rounded-full font-medium">Total Acumulado Mes: $ 4.125.071,45</span>
+            </div>
+            <div class="overflow-x-auto border rounded-lg">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold border-b">
+                            <th class="p-3">Fecha</th>
+                            <th class="p-3">Sujeto Retenido (Proveedor)</th>
+                            <th class="p-3">CUIT</th>
+                            <th class="p-3">Régimen / Impuesto</th>
+                            <th class="p-3 text-right">Base de Cálculo</th>
+                            <th class="p-3 text-right font-bold">Importe Retenido</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        <tr>
+                            <td class="p-3">08/09/2026</td>
+                            <td class="p-3 font-medium text-slate-800">ANDREOLI S.A.</td>
+                            <td class="p-3 text-slate-600 font-mono">30-55438074-9</td>
+                            <td class="p-3 text-xs"><span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Régimen 119 (Granos)</span></td>
+                            <td class="p-3 text-right">$ 86.057.680,98</td>
+                            <td class="p-3 text-right font-bold text-emerald-700">$ 4.125.071,45</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

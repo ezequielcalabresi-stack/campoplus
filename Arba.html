@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Padrón Oficial ARBA (Estándar DFE)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Procesador Oficial Padrón ARBA (DFE)</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Importación estructurada de los archivos oficiales de Retenciones y Percepciones.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- SECCIÓN 1: IMPORTACIÓN DE ARCHIVOS OFICIALES -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- Retenciones -->
+            <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl">
+                <h3 class="text-sm font-bold text-emerald-900 mb-1">1. Padrón de Retenciones (.txt)</h3>
+                <p class="text-xs text-emerald-700 mb-3">Archivo oficial <code>PadronRGSRet...</code></p>
+                <div class="flex items-center gap-2">
+                    <input type="file" id="fileRet" accept=".txt" class="block w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700">
+                    <button onclick="procesarPadronOficial('ret')" class="bg-emerald-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-emerald-700 whitespace-nowrap">
+                        ⚙️ Importar Ret.
+                    </button>
+                </div>
+            </div>
+
+            <!-- Percepciones -->
+            <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl">
+                <h3 class="text-sm font-bold text-blue-900 mb-1">2. Padrón de Percepciones (.txt)</h3>
+                <p class="text-xs text-blue-700 mb-3">Archivo oficial <code>PadronRGSPer...</code></p>
+                <div class="flex items-center gap-2">
+                    <input type="file" id="filePerc" accept=".txt" class="block w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-100 file:text-blue-700">
+                    <button onclick="procesarPadronOficial('perc')" class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-blue-700 whitespace-nowrap">
+                        ⚙️ Importar Perc.
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: CONSULTA -->
+        <div class="border p-5 rounded-xl mb-6 bg-white shadow-sm">
+            <h3 class="text-md font-bold text-slate-800 mb-3">3. Consulta de Contribuyente por CUIT</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-medium text-slate-600">Ingrese CUIT (sin guiones, ej: 20270684271)</label>
+                    <input type="text" id="inputCuit" placeholder="Ej. 20270684271" class="mt-1 block w-full rounded border p-2 bg-white text-sm font-mono font-bold text-slate-800">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="consultarCuitOficial()" class="w-full bg-slate-800 text-white p-2 rounded text-sm font-bold hover:bg-slate-700">
+                        🔍 Consultar Padrón
+                    </button>
+                </div>
+            </div>
+
+            <!-- Resultados -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded border mb-4">
+                <div>
+                    <span class="text-xs text-slate-500 block">Origen del Dato</span>
+                    <input type="text" id="resEstado" value="-" class="mt-1 w-full text-xs border rounded p-1.5 font-semibold text-slate-800 bg-white" readonly>
+                </div>
+                <div class="text-center">
+                    <span class="text-xs text-slate-500 block">Alícuota Retención (%)</span>
+                    <input type="text" id="resRet" value="-" class="mt-1 w-full text-sm border rounded p-1.5 text-center font-extrabold text-emerald-700 bg-emerald-50" readonly>
+                </div>
+                <div class="text-center">
+                    <span class="text-xs text-slate-500 block">Alícuota Percepción (%)</span>
+                    <input type="text" id="resPerc" value="-" class="mt-1 w-full text-sm border rounded p-1.5 text-center font-extrabold text-blue-700 bg-blue-50" readonly>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button onclick="guardarManual()" class="bg-emerald-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-emerald-700">
+                    💾 Forzar Alta / Corrección Manual
+                </button>
+            </div>
+        </div>
+
+        <!-- ESTADÍSTICAS -->
+        <div class="border rounded-lg p-4 bg-white flex justify-between items-center">
+            <div>
+                <h3 class="text-md font-semibold text-slate-700">Base de Datos Local Indexada</h3>
+                <p class="text-xs text-slate-500">Total de CUITs cargados y listos para las órdenes de pago.</p>
+            </div>
+            <span id="lblTotal" class="text-sm bg-emerald-100 text-emerald-800 px-4 py-2 rounded-lg font-bold">0 CUITs</span>
+        </div>
+    </div>
+
+    <!-- Script con Lógica Estricta de Padrón DFE -->
+    <script>
+    // 1. Sincronizar contador directamente con el motor de Python
+    async function actualizarContadorUI() {
+        try {
+            let res = await fetch('http://localhost:8080/stats');
+            let data = await res.json();
+            document.getElementById('lblTotal').innerText = data.total.toLocaleString() + " CUITs indexados (Python)";
+            document.getElementById('lblTotal').className = "text-sm bg-emerald-100 text-emerald-800 px-4 py-2 rounded-lg font-bold";
+        } catch (e) {
+            document.getElementById('lblTotal').innerText = "⚠️ Servidor Python Desconectado";
+            document.getElementById('lblTotal').className = "text-sm bg-red-100 text-red-800 px-4 py-2 rounded-lg font-bold";
+        }
+    }
+
+    // 2. Consulta de CUIT directo al servidor local
+    async function consultarCuitOficial() {
+        let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
+        if(!cuit) {
+            alert("Por favor, ingrese un número de CUIT.");
+            return;
+        }
+
+        try {
+            let respuesta = await fetch(`http://localhost:8080/cuit/${cuit}`);
+            
+            if (respuesta.ok) {
+                let resultado = await respuesta.json();
+                
+                document.getElementById('resEstado').value = resultado.datos.estado;
+                document.getElementById('resRet').value = resultado.datos.ret;
+                document.getElementById('resPerc').value = resultado.datos.perc;
+                
+                if (resultado.encontrado) {
+                    alert("✅ ¡CUIT encontrado en el padrón oficial de ARBA!");
+                } else {
+                    alert("ℹ️ El CUIT no se encuentra en el padrón (Aplica régimen general / 0,00%).");
+                }
+            } else {
+                alert("Error al consultar el servidor local.");
+            }
+        } catch (error) {
+            alert("❌ EL SERVIDOR LOCAL DE PYTHON NO ESTÁ ACTIVO.\nAbrir la terminal, ejecutar 'python arba_api.py' y dejarla abierta.");
+        }
+    }
+
+    // 3. Importación local de archivos manuales (opcional por si querés subirlos desde la web)
+    function procesarPadronOficial(tipo) {
+        let inputId = tipo === 'ret' ? 'fileRet' : 'filePerc';
+        let fileInput = document.getElementById(inputId);
+
+        if(fileInput.files.length === 0) {
+            alert("Seleccione el archivo TXT correspondiente.");
+            return;
+        }
+        alert("Archivo seleccionado correctamente. Recuerde que el servidor lee los TXT de la carpeta del sistema de forma automática al iniciar.");
+    }
+
+    // 4. Alta Manual / Corrección
+    function guardarManual() {
+        let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
+        if(!cuit) {
+            alert("Ingrese un CUIT primero.");
+            return;
+        }
+        let ret = prompt("Ingrese alícuota de Retención (ej: 1,75 %):", "1,75 %");
+        let perc = prompt("Ingrese alícuota de Percepción (ej: 3,00 %):", "3,00 %");
+
+        if(ret && perc) {
+            document.getElementById('resEstado').value = "Corrección Manual";
+            document.getElementById('resRet').value = ret;
+            document.getElementById('resPerc').value = perc;
+            alert("¡Actualizado en pantalla correctamente!");
+        }
+    }
+async function consultarCUIT() {
+    const cuit = document.getElementById('inputCuit').value.trim();
+    if (!cuit) return;
+
+    try {
+        // Apunta a tu URL pública definitiva en la nube (reemplazá TU-DOMINIO por el que te dé Render)
+        const respuesta = await fetch(`https://TU-DOMINIO-EN-LA-NUBE.onrender.com/cuit/${cuit}`);
+        const data = await respuesta.json();
+
+        if (data.encontrado) {
+            document.getElementById('retencion').innerText = `${data.retencion.alicuota} %`;
+            document.getElementById('percepcion').innerText = `${data.percepcion.alicuota} %`;
+        } else {
+            alert("CUIT no encontrado en el padrón de ARBA.");
+        }
+    } catch (error) {
+        console.error("Error al consultar el servidor central:", error);
+        alert("Error de conexión con el servidor de impuestos en la nube.");
+    }
+}
+
+// Si hacés una corrección manual local en pantalla:
+function aplicarCorreccionManual(ret, perc) {
+    if(ret && perc) {
+        document.getElementById('resEstado').value = "Corrección Manual";
+        document.getElementById('resRet').value = ret;
+        document.getElementById('resPerc').value = perc;
+        alert("¡Actualizado en pantalla correctamente!");
+    }
+}
+
+// Como los padrones ahora se actualizan subiendo el nuevo JSON a la nube una vez al mes, 
+// podés omitir el fetch local a localhost y dejar esta función orientada a mostrar estado o quitarla.
+async function actualizarContadorUI() {
+    try {
+        const respuesta = await fetch(`https://TU-DOMINIO-EN-LA-NUBE.onrender.com/stats`);
+        const data = await respuesta.json();
+        if(data && data.total_cuits) {
+            document.getElementById('contadorCuits').innerText = `${data.total_cuits} CUITs indexados (Cloud)`;
+        }
+    } catch(e) {
+        console.log("Modo operativo online activo.");
+    }
+}
+
+// Ejecutar al cargar la página
+window.onload = actualizarContadorUI;.onload = actualizarContadorUI;
+</script>
+</body>
+</html>

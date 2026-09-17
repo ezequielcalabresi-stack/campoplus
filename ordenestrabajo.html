@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Emisión y Control de Órdenes de Trabajo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Emisión de Órdenes de Trabajo (OT)</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Registro digital de labores, insumos, dosis por lote y afectación automática al stock.</p>
+            </div>
+            <a href="margenesbrutos.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver a Márgenes Brutos
+            </a>
+        </div>
+
+        <form class="space-y-6">
+            <!-- SECCIÓN 1: DATOS GENERALES DE LA OT -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Nro. Orden de Trabajo</label>
+                    <input type="text" value="0001-00000761" class="mt-1 block w-full rounded border p-2 bg-white font-mono font-bold">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Fecha de Emisión</label>
+                    <input type="date" value="2026-09-17" class="mt-1 block w-full rounded border p-2 bg-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Establecimiento / Campo</label>
+                    <select class="mt-1 block w-full rounded border p-2 bg-white font-medium">
+                        <option>Las Angélicas</option>
+                        <option>Santa Isabel</option>
+                        <option>San Miguel</option>
+                        <option>Don Augusto</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Labor Principal</label>
+                    <select class="mt-1 block w-full rounded border p-2 bg-white font-medium text-emerald-800">
+                        <option>Pulverización Terrestre</option>
+                        <option>Pulverización Aérea</option>
+                        <option>Siembra Directa</option>
+                        <option>Fertilización</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Lote Afectado</label>
+                    <select class="mt-1 block w-full rounded border p-2 bg-white">
+                        <option>Lote 14 x 15 (15 Has)</option>
+                        <option>Lote 1b (10 Has)</option>
+                        <option>Lote 7 (13 Has)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Hectáreas a Tratar</label>
+                    <input type="text" id="inputHas" value="15" onkeyup="recalcularTotales()" class="mt-1 block w-full rounded border p-2 bg-white font-bold text-right">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Contratista / Aplicador</label>
+                    <select class="mt-1 block w-full rounded border p-2 bg-white">
+                        <option>Agroservicios El Cencerro</option>
+                        <option>Fumigaciones Aéreas del Oeste</option>
+                        <option>Personal Propio / Maquinaria S.C.</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Cultivo Destino</label>
+                    <select class="mt-1 block w-full rounded border p-2 bg-white">
+                        <option>Soja de Primera</option>
+                        <option>Maíz Tardío</option>
+                        <option>Trigo + Soja 2ª</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 2: DETALLE DE INSUMOS Y DOSIS -->
+            <div class="border rounded-lg p-4 bg-white">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-md font-bold text-slate-700">Insumos y Agroquímicos de la Receta</h3>
+                    <button type="button" onclick="alert('Agregando renglón de insumo...')" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded font-medium hover:bg-slate-700">
+                        + Agregar Insumo
+                    </button>
+                </div>
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold border-b">
+                                <th class="p-3">Producto / Ingrediente Activo</th>
+                                <th class="p-3 text-center">Dosis / Ha</th>
+                                <th class="p-3 text-right">Cantidad Total Requerida</th>
+                                <th class="p-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 text-xs">
+                            <tr>
+                                <td class="p-3">
+                                    <select class="border rounded p-1 w-full bg-white font-medium">
+                                        <option>Roundup Full Max (Glyphosate)</option>
+                                        <option>Spider (Imazaquin)</option>
+                                        <option>Karate Zeon (Lambda cihalotrina)</option>
+                                        <option>Aceite Mineral / Vegetal</option>
+                                    </select>
+                                </td>
+                                <td class="p-3 text-center"><input type="text" value="1,80" class="border rounded p-1 w-24 text-center font-bold" onkeyup="recalcularTotales()"></td>
+                                <td class="p-3 text-right font-bold text-emerald-800 text-sm" id="totInsumo1">27,00 Lts</td>
+                                <td class="p-3 text-center"><button class="text-red-600 hover:underline font-bold">Eliminar</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Botón de Ejecución -->
+            <div class="flex justify-end pt-2">
+                <button type="button" onclick="alert('¡Orden de Trabajo guardada con éxito! Se descontó del stock de insumos y se imputó al costo del lote.')" class="bg-emerald-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-emerald-700 font-bold transition-all">
+                    💾 Registrar Orden de Trabajo e Impactar en Costos
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Script de cálculo automático de dosis x hectárea -->
+    <script>
+        function recalcularTotales() {
+            let has = parseFloat(document.getElementById('inputHas').value) || 0;
+            // Ejemplo de cálculo para el renglón 1 (1.8 litros x hectárea)
+            let total = has * 1.8;
+            document.getElementById('totInsumo1').innerText = total.toFixed(2) + " Lts";
+        }
+    </script>
+</body>
+</html>

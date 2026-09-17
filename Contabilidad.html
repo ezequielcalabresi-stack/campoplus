@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Contabilidad y Estados Contables</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Módulo Contable y Estados Financieros</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Plan de cuentas, libro mayor, sumas y saldos, y cierre de EECC bajo normas contables.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- SECCIÓN 1: PESTAÑAS DE NAVEGACIÓN CONTABLE -->
+        <div class="flex flex-wrap gap-2 mb-6 border-b pb-4">
+            <button onclick="cambiarTab('plan')" id="btn-plan" class="bg-slate-800 text-white px-4 py-2 rounded-md text-xs font-bold transition-all">Plan de Cuentas</button>
+            <button onclick="cambiarTab('mayor')" id="btn-mayor" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-xs font-bold hover:bg-slate-300 transition-all">Libro Mayor</button>
+            <button onclick="cambiarTab('saldos')" id="btn-saldos" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-xs font-bold hover:bg-slate-300 transition-all">Sumas y Saldos</button>
+            <button onclick="cambiarTab('eecc')" id="btn-eecc" class="bg-emerald-600 text-white px-4 py-2 rounded-md text-xs font-bold hover:bg-emerald-700 transition-all">📊 Estados Contables (EECC)</button>
+        </div>
+
+        <!-- VISTA 1: PLAN DE CUENTAS -->
+        <div id="tab-plan" class="space-y-4">
+            <div class="flex justify-between items-center bg-slate-50 p-4 rounded-lg border">
+                <h3 class="text-lg font-bold text-slate-800">Estructura del Plan de Cuentas Agropecuario</h3>
+                <button onclick="alert('Nueva cuenta contable agregada.')" class="bg-slate-800 text-white text-xs px-3 py-2 rounded font-bold">
+                    + Nueva Cuenta Contable
+                </button>
+            </div>
+            <div class="border rounded-lg overflow-hidden bg-white">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-700 text-xs uppercase font-semibold border-b">
+                            <th class="p-3">Código</th>
+                            <th class="p-3">Nombre de la Cuenta</th>
+                            <th class="p-3">Capítulo</th>
+                            <th class="p-3">Imputable</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        <tr><td class="p-3 font-mono font-bold text-slate-800">1.1.1</td><td class="p-3">Caja Tesorería</td><td class="p-3 text-slate-600">Activo Corriente</td><td class="p-3"><span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded">Sí</span></td></tr>
+                        <tr><td class="p-3 font-mono font-bold text-slate-800">1.1.2</td><td class="p-3">Bancos Cuentas Corrientes (Galicia / Pcia)</td><td class="p-3 text-slate-600">Activo Corriente</td><td class="p-3"><span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded">Sí</span></td></tr>
+                        <tr><td class="p-3 font-mono font-bold text-slate-800">1.1.3</td><td class="p-3">Cuentas Cobrar Cereal / Acopios</td><td class="p-3 text-slate-600">Activo Corriente</td><td class="p-3"><span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded">Sí</span></td></tr>
+                        <tr><td class="p-3 font-mono font-bold text-slate-800">2.1.1</td><td class="p-3">Proveedores Comerciales (Insumos)</td><td class="p-3 text-slate-600">Pasivo Corriente</td><td class="p-3"><span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded">Sí</span></td></tr>
+                        <tr><td class="p-3 font-mono font-bold text-slate-800">4.1.1</td><td class="p-3">Ventas de Granos (Soja / Maíz / Trigo)</td><td class="p-3 text-slate-600">Resultados Positivos</td><td class="p-3"><span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded">Sí</span></td></tr>
+                        <tr><td class="p-3 font-mono font-bold text-slate-800">5.1.1</td><td class="p-3">Gastos de Producción y Labores</td><td class="p-3 text-slate-600">Resultados Negativos</td><td class="p-3"><span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded">Sí</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- VISTA 2: ESTADOS CONTABLES (EECC) -->
+        <div id="tab-eecc" class="space-y-6 hidden">
+            <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-lg flex justify-between items-center">
+                <div>
+                    <h3 class="text-lg font-bold text-emerald-900">Cierre de Estados Contables (Ejercicio Cerrado)</h3>
+                    <p class="text-xs text-emerald-700">Balance General y Estado de Resultados consolidados bajo normas profesionales.</p>
+                </div>
+                <button onclick="window.print();" class="bg-emerald-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-emerald-700">
+                    🖨️ Imprimir EECC Completo
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Estado de Situación Patrimonial -->
+                <div class="border rounded-lg p-5 bg-white shadow-sm">
+                    <h4 class="font-bold text-slate-800 mb-3 border-b pb-2 text-md">Estado de Situación Patrimonial (Balance)</h4>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between font-semibold text-slate-700"><span>ACTIVO TOTAL:</span><span class="text-emerald-700">$ 245.850.000,00</span></div>
+                        <div class="pl-4 text-xs space-y-1 text-slate-600">
+                            <div class="flex justify-between"><span>- Activo Corriente (Bancos, Cuentas Cobrar, Granos):</span><span>$ 180.200.000,00</span></div>
+                            <div class="flex justify-between"><span>- Activo No Corriente (Campos, Maquinaria):</span><span>$ 65.650.000,00</span></div>
+                        </div>
+                        <div class="flex justify-between font-semibold text-slate-700 pt-3 border-t"><span>PASIVO TOTAL:</span><span class="text-red-600">$ 78.400.000,00</span></div>
+                        <div class="pl-4 text-xs space-y-1 text-slate-600">
+                            <div class="flex justify-between"><span>- Pasivo Corriente (Proveedores, Préstamos Corto Plazo):</span><span>$ 78.400.000,00</span></div>
+                        </div>
+                        <div class="flex justify-between font-extrabold text-slate-900 pt-3 border-t bg-slate-50 p-2 rounded">
+                            <span>PATRIMONIO NETO:</span>
+                            <span class="text-slate-800">$ 167.450.000,00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estado de Resultados -->
+                <div class="border rounded-lg p-5 bg-white shadow-sm">
+                    <h4 class="font-bold text-slate-800 mb-3 border-b pb-2 text-md">Estado de Resultados (Pérdidas y Ganancias)</h4>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between text-slate-700"><span>Ingresos Brutos por Ventas (Granos / Hacienda):</span><span class="font-bold text-emerald-700">$ 312.500.000,00</span></div>
+                        <div class="flex justify-between text-slate-700"><span>Menos Costos de Producción y Comercialización:</span><span class="font-bold text-red-600">- $ 195.200.000,00</span></div>
+                        <div class="flex justify-between text-slate-700 border-t pt-2"><span>Resultado Bruto:</span><span class="font-bold text-slate-900">$ 117.300.000,00</span></div>
+                        <div class="flex justify-between text-slate-700"><span>Menos Gastos de Administración y Estructura:</span><span class="font-bold text-red-600">- $ 32.100.000,00</span></div>
+                        <div class="flex justify-between font-extrabold text-slate-900 pt-3 border-t bg-emerald-50 p-2 rounded">
+                            <span>RESULTADO NETO DEL EJERCICIO:</span>
+                            <span class="text-emerald-800 text-lg">$ 85.200.000,00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script sencillo para alternar pestañas -->
+    <script>
+        function cambiarTab(tab) {
+            document.getElementById('tab-plan').classList.add('hidden');
+            document.getElementById('tab-eecc').classList.add('hidden');
+            
+            if(tab === 'plan') document.getElementById('tab-plan').classList.remove('hidden');
+            if(tab === 'eecc') document.getElementById('tab-eecc').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

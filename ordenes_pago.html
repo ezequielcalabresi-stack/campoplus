@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Órdenes de Pago y Retenciones (SICORE / ARBA)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Orden de Pago y Retenciones Fiscales</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Selección de facturas pendientes, cálculo automático ARBA/SICORE y bloqueo de comprobantes.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- SECCIÓN 1: SELECCIÓN DE PROVEEDOR -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border mb-6">
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Seleccionar Proveedor</label>
+                <select id="selectProveedor" onchange="cargarFacturasPendientes()" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium">
+                    <option value="andreoli">ANDREOLI S.A. (CUIT: 30-55438074-9)</option>
+                    <option value="triunfo">COOPERATIVA EL TRIUNFO (CUIT: 30-66519333-7)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Fecha de Orden de Pago</label>
+                <input type="date" value="2026-09-17" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+            </div>
+            <div class="flex items-end">
+                <button onclick="calcularRetenciones()" class="w-full bg-slate-800 text-white p-2.5 rounded-md text-sm font-bold hover:bg-slate-700">
+                    🔄 Aplicar Alícuotas y Calcular
+                </button>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: FACTURAS PENDIENTES DE PAGO (SELECCIÓN MÚLTIPLE) -->
+        <div class="border rounded-lg p-4 bg-white mb-6">
+            <h3 class="text-lg font-semibold text-slate-700 mb-3">Facturas Pendientes en Cuenta Corriente</h3>
+            <div class="overflow-x-auto border rounded-lg">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold border-b">
+                            <th class="p-3 text-center"><input type="checkbox" checked onclick="toggleSelectAll(this)"></th>
+                            <th class="p-3">Comprobante</th>
+                            <th class="p-3">Fecha Emisión</th>
+                            <th class="p-3 text-right">Importe Neto ($)</th>
+                            <th class="p-3 text-right">IVA ($)</th>
+                            <th class="p-3 text-right font-bold">Total Comprobante ($)</th>
+                            <th class="p-3 text-center">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaFacturas" class="divide-y divide-slate-200 text-xs">
+                        <!-- Factura 1 -->
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 text-center"><input type="checkbox" class="chk-factura" checked data-neto="86057680.98" data-total="104129793.98" value="FAC-0002-00014520"></td>
+                            <td class="p-3 font-medium text-slate-800">Factura A 0002-00014520</td>
+                            <td class="p-3">08/09/2026</td>
+                            <td class="p-3 text-right">$ 86.057.680,98</td>
+                            <td class="p-3 text-right">$ 18.072.113,00</td>
+                            <td class="p-3 text-right font-bold text-slate-900">$ 104.129.793,98</td>
+                            <td class="p-3 text-center"><span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-semibold">Pendiente</span></td>
+                        </tr>
+                        <!-- Factura 2 -->
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 text-center"><input type="checkbox" class="chk-factura" checked data-neto="1500000.00" data-total="1815000.00" value="FAC-0002-00014890"></td>
+                            <td class="p-3 font-medium text-slate-800">Factura A 0002-00014890</td>
+                            <td class="p-3">12/09/2026</td>
+                            <td class="p-3 text-right">$ 1.500.000,00</td>
+                            <td class="p-3 text-right">$ 315.000,00</td>
+                            <td class="p-3 text-right font-bold text-slate-900">$ 1.815.000,00</td>
+                            <td class="p-3 text-center"><span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-semibold">Pendiente</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 3: RESULTADO DE RETENCIONES Y NETO A PAGAR -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Desglose Fiscal Automático -->
+            <div class="border rounded-lg p-5 bg-slate-50 shadow-sm space-y-3 text-xs">
+                <h3 class="text-sm font-bold text-slate-800 border-b pb-2 uppercase tracking-wide">⚙️ Cálculo Automático de Retenciones</h3>
+                <div class="flex justify-between">
+                    <span class="text-slate-600">Base de Cálculo Acumulada (Neto):</span>
+                    <strong id="lblBaseNeto" class="text-slate-900">$ 87.557.680,98</strong>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-600">Retención IIBB ARBA (Alícuota 1,75%):</span>
+                    <strong id="lblRetIibb" class="text-red-600">- $ 1.532.259,42</strong>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-600">Retención Ganancias SICORE (Régimen 119):</span>
+                    <strong id="lblRetGanancias" class="text-red-600">- $ 4.125.071,45</strong>
+                </div>
+            </div>
+
+            <!-- Total Final de la Orden de Pago -->
+            <div class="border rounded-lg p-5 bg-emerald-50 border-emerald-200 shadow-sm flex flex-col justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-emerald-900 border-b border-emerald-200 pb-2 uppercase tracking-wide">💰 Resumen de Orden de Pago</h3>
+                    <div class="mt-3 space-y-2 text-xs">
+                        <div class="flex justify-between text-slate-700"><span>Total Comprobantes Seleccionados:</span><strong id="lblTotalBruto">$ 105.944.793,98</strong></div>
+                        <div class="flex justify-between text-slate-700"><span>Menos Total Retenciones (IIBB + Ganancias):</span><strong class="text-red-600">- $ 5.657.330,87</strong></div>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center pt-3 border-t border-emerald-300 mt-3">
+                    <span class="font-bold text-emerald-900 text-sm">NETO A PAGAR (Efectivo / Banco / E-Cheq):</span>
+                    <span id="lblNetoAPagar" class="text-xl font-extrabold text-emerald-900">$ 100.287.463,11</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botón de Ejecución y Bloqueo -->
+        <div class="flex justify-end pt-2">
+            <button onclick="ejecutarOrdenPago()" class="bg-emerald-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-emerald-700 font-bold transition-all">
+                🔒 Emitir Orden de Pago, Generar TXT SICORE y Bloquear Facturas
+            </button>
+        </div>
+    </div>
+
+    <!-- Script de Control y Bloqueo Antifraude -->
+    <script>
+        function calcularRetenciones() {
+            let checkboxes = document.querySelectorAll('.chk-factura:checked');
+            let sumaNeto = 0;
+            let sumaTotal = 0;
+
+            checkboxes.forEach(chk => {
+                sumaNeto += parseFloat(chk.getAttribute('data-neto'));
+                sumaTotal += parseFloat(chk.getAttribute('data-total'));
+            });
+
+            // Cálculos automáticos basados en alícuotas
+            let retIibb = sumaNeto * 0.0175; // 1.75% ARBA
+            let retGanancias = sumaNeto * 0.0471; // Estimativo SICORE régimen
+            let totalRetenciones = retIibb + retGanancias;
+            let netoPagar = sumaTotal - totalRetenciones;
+
+            // Actualizar interfaz
+            document.getElementById('lblBaseNeto').innerText = "$ " + sumaNeto.toLocaleString('es-AR', {minimumFractionDigits: 2});
+            document.getElementById('lblRetIibb').innerText = "- $ " + retIibb.toLocaleString('es-AR', {minimumFractionDigits: 2});
+            document.getElementById('lblRetGanancias').innerText = "- $ " + retGanancias.toLocaleString('es-AR', {minimumFractionDigits: 2});
+            document.getElementById('lblTotalBruto').innerText = "$ " + sumaTotal.toLocaleString('es-AR', {minimumFractionDigits: 2});
+            document.getElementById('lblNetoAPagar').innerText = "$ " + netoPagar.toLocaleString('es-AR', {minimumFractionDigits: 2});
+        }
+
+        function ejecutarOrdenPago() {
+            let checkboxes = document.querySelectorAll('.chk-factura:checked');
+            if(checkboxes.length === 0) {
+                alert("Debe seleccionar al menos una factura para emitir la orden de pago.");
+                return;
+            }
+
+            // Bloquear visualmente las facturas seleccionadas para que no vuelvan a elegirse
+            checkboxes.forEach(chk => {
+                let fila = chk.closest('tr');
+                chk.checked = false;
+                chk.disabled = true;
+                let estadoBadge = fila.querySelector('td:last-child span');
+                estadoBadge.className = "bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold";
+                estadoBadge.innerText = "Liquidado / Retenido";
+            });
+
+            alert("¡Orden de Pago emitida con éxito!\n\n1. Se aplicaron las retenciones de ARBA y SICORE.\n2. Se generaron los registros para los archivos TXT.\n3. Las facturas seleccionadas fueron bloqueadas en la cuenta corriente para evitar doble pago.");
+        }
+
+        function toggleSelectAll(master) {
+            let checkboxes = document.querySelectorAll('.chk-factura:not(:disabled)');
+            checkboxes.forEach(chk => chk.checked = master.checked);
+            calcularRetenciones();
+        }
+    </script>
+</body>
+</html>

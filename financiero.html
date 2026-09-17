@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Estado Financiero Proyectado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera del Reporte -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b pb-4 gap-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Estado Financiero Proyectado</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Valuación automática basada en parámetros de mercado con formato contable.</p>
+            </div>
+            <div class="flex gap-2">
+                <input type="month" value="2026-03" class="rounded-md border-slate-300 border p-2 text-sm bg-white">
+                <button onclick="alert('Generando reporte PDF...');" class="bg-slate-800 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700">
+                    Exportar PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- BARRA DE PARÁMETROS PREVIOS CON FORMATO -->
+        <div class="bg-amber-50 border border-amber-200 p-4 rounded-lg mb-6">
+            <h3 class="text-xs font-bold text-amber-900 uppercase mb-3">Parámetros de Valuación para la Proyección</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-amber-800">Tipo de Cambio (USD)</label>
+                    <input type="text" id="paramDolar" value="1.250,00" onkeyup="formatearMonedaInput(this)" class="mt-1 block w-full rounded-md border-amber-300 bg-white p-2 border text-sm font-bold text-slate-700 text-right">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-amber-800">Valor Soja / Pizarra ($ x Kg)</label>
+                    <input type="text" id="paramSoja" value="380,00" onkeyup="formatearMonedaInput(this)" class="mt-1 block w-full rounded-md border-amber-300 bg-white p-2 border text-sm font-bold text-slate-700 text-right">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-amber-800">Índice Ganadero / Carne ($ x Kg)</label>
+                    <input type="text" id="paramCarne" value="2.100,00" onkeyup="formatearMonedaInput(this)" class="mt-1 block w-full rounded-md border-amber-300 bg-white p-2 border text-sm font-bold text-slate-700 text-right">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="alert('Parámetros aplicados con formato contable. Recalculando...');" class="w-full bg-amber-600 text-white p-2 rounded-md text-sm font-bold hover:bg-amber-700 transition-all">
+                        Aplicar y Recalcular
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tarjetas Resumen del Mes -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-lg">
+                <span class="text-xs font-bold text-emerald-800 uppercase">Total a Pagar en el Mes (ARS)</span>
+                <h3 class="text-2xl font-extrabold text-emerald-900 mt-1">$ 14.580.250,00</h3>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                <span class="text-xs font-bold text-blue-800 uppercase">Compromisos en Dólares (USD)</span>
+                <h3 class="text-2xl font-extrabold text-blue-900 mt-1">USD 25.400,00</h3>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 p-4 rounded-lg">
+                <span class="text-xs font-bold text-slate-700 uppercase">Equivalente Total en Kilos Grano</span>
+                <h3 class="text-2xl font-extrabold text-slate-900 mt-1">64.500 Kg</h3>
+            </div>
+        </div>
+
+        <!-- Tabla de Vencimientos Detallada -->
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-slate-100 text-slate-700 text-xs uppercase font-semibold border-b">
+                        <th class="p-3">Fecha Débito</th>
+                        <th class="p-3">Detalle / Proveedor / Concepto</th>
+                        <th class="p-3">Origen / Cta Cte / Banco</th>
+                        <th class="p-3 text-right">Capital</th>
+                        <th class="p-3 text-right">Intereses / Imp.</th>
+                        <th class="p-3 text-right">Subtotal</th>
+                        <th class="p-3 text-right font-bold">Acumulado Mes</th>
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-slate-200">
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-medium text-slate-800">02/03/2026</td>
+                        <td class="p-3 text-slate-700">Cooperativa El Triunfo (Insumos)</td>
+                        <td class="p-3 text-slate-500 text-xs">Cheque Propio (Galicia 1652/8)</td>
+                        <td class="p-3 text-right">$ 0,00</td>
+                        <td class="p-3 text-right">$ 0,00</td>
+                        <td class="p-3 text-right font-medium">$ 100.000,00</td>
+                        <td class="p-3 text-right font-bold text-emerald-700">$ 100.000,00</td>
+                    </tr>
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-medium text-slate-800">05/03/2026</td>
+                        <td class="p-3 text-slate-700">Alquiler Campo Sta. Julia (2.000 Kg Soja)</td>
+                        <td class="p-3 text-slate-500 text-xs">Valuado a Pizarra Actual</td>
+                        <td class="p-3 text-right">$ 760.000,00</td>
+                        <td class="p-3 text-right">$ 0,00</td>
+                        <td class="p-3 text-right font-medium">$ 760.000,00</td>
+                        <td class="p-3 text-right font-bold text-emerald-700">$ 860.000,00</td>
+                    </tr>
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-medium text-slate-800">10/03/2026</td>
+                        <td class="p-3 text-slate-700">Banco Nación (Préstamo Maicero)</td>
+                        <td class="p-3 text-slate-500 text-xs">Cuota 12 / 36 (Automático)</td>
+                        <td class="p-3 text-right">$ 212.500,00</td>
+                        <td class="p-3 text-right">$ 15.364,04</td>
+                        <td class="p-3 text-right font-medium">$ 227.864,04</td>
+                        <td class="p-3 text-right font-bold text-emerald-700">$ 1.087.864,04</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Script simple para manejo visual de formato numérico -->
+    <script>
+        function formatearMonedaInput(input) {
+            // Limpia y da formato visual prolijo adaptado
+            let valor = input.value.replace(/\D/g, "");
+            if (valor === "") {
+                input.value = "";
+                return;
+            }
+            let numero = (parseFloat(valor) / 100).toFixed(2);
+            let partes = numero.split(".");
+            partes[0] = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+            input.value = partes[0] + "," + partes[1];
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Carga de Compras e Imputación por Lote</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Ingreso de Facturas y Notas de Débito</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Discriminación impositiva (IVA/IIBB), conversión multimoneda e imputación agronómica por lote.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+        
+        <form class="space-y-6">
+            <!-- SECCIÓN 1: Datos Generales del Comprobante -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Proveedor</label>
+                    <select class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium">
+                        <option>Tomás Hnos. & Cía S.A.</option>
+                        <option>Agroservicios Pampeanos</option>
+                        <option>Cooperativa El Triunfo Ltda.</option>
+                        <option>Rural Repuestos S.A.</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Tipo de Comprobante</label>
+                    <select class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                        <option>Factura A</option>
+                        <option>Factura B</option>
+                        <option>Nota de Débito A</option>
+                        <option>Factura C</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Punto de Vta. y Nro.</label>
+                    <input type="text" placeholder="0002-00014520" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Moneda de Operación</label>
+                    <select class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium text-emerald-800">
+                        <option>Pesos Argentinos (ARS)</option>
+                        <option>Dólar Estadounidense (USD)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Fecha de Emisión</label>
+                    <input type="date" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 font-bold text-emerald-700">Fecha de Vencimiento (Pago)</label>
+                    <input type="date" class="mt-1 block w-full rounded-md border-emerald-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Tipo de Cambio (Si es USD)</label>
+                    <input type="text" value="1.050,00" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-right">
+                </div>
+            </div>
+
+            <!-- SECCIÓN 2: DETALLE DE ÍTEMS CON IMPUTACIÓN AGRONÓMICA POR LOTE -->
+            <div class="border rounded-lg p-4 bg-white">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-semibold text-slate-700">Detalle de Renglones e Imputación por Lote</h3>
+                    <button type="button" onclick="alert('Agregando nuevo ítem...')" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded font-medium hover:bg-slate-700">
+                        + Agregar Renglón
+                    </button>
+                </div>
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold border-b">
+                                <th class="p-3">Descripción / Artículo</th>
+                                <th class="p-3">Destino / Tipo</th>
+                                <th class="p-3">Lote / Campo Afectado</th>
+                                <th class="p-3 text-right">Subtotal Neto ($)</th>
+                                <th class="p-3 text-center">IVA</th>
+                                <th class="p-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200">
+                            <tr>
+                                <td class="p-3"><input type="text" value="Semilla Soja Intacta (Bolsas)" class="border rounded p-1 w-full text-xs"></td>
+                                <td class="p-3">
+                                    <select class="border rounded p-1 text-xs bg-white font-medium text-emerald-800">
+                                        <option>Insumo (Stock)</option>
+                                        <option>Labor / Servicio</option>
+                                        <option>Gasto General / Estructura</option>
+                                    </select>
+                                </td>
+                                <td class="p-3">
+                                    <select class="border rounded p-1 text-xs bg-white">
+                                        <option>Lote 1 - Soja de Primera (Sta. Julia)</option>
+                                        <option>Lote 2 - Maíz Tardío</option>
+                                        <option>General / Sin Lote Específico</option>
+                                    </select>
+                                </td>
+                                <td class="p-3 text-right"><input type="text" value="1.800.000,00" class="border rounded p-1 w-28 text-xs text-right font-bold"></td>
+                                <td class="p-3 text-center">
+                                    <select class="border rounded p-1 text-xs">
+                                        <option>21 %</option>
+                                        <option>10.5 %</option>
+                                    </select>
+                                </td>
+                                <td class="p-3 text-center"><button class="text-red-600 hover:underline text-xs font-bold">Eliminar</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 3: DESGLOSE IMPOSITIVO Y TOTALES -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="border rounded-lg p-4 bg-white space-y-3">
+                    <h3 class="text-md font-semibold text-slate-700">Discriminación de Impuestos</h3>
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                            <label class="font-medium text-slate-600">Percepción IIBB Bs.As. ($)</label>
+                            <input type="text" value="45.000,00" onkeyup="formatearMonedaInput(this)" class="mt-1 block w-full rounded border p-1.5 text-right">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-600">Otras Percepciones / Impuestos ($)</label>
+                            <input type="text" value="0,00" onkeyup="formatearMonedaInput(this)" class="mt-1 block w-full rounded border p-1.5 text-right">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border rounded-lg p-4 bg-emerald-50 border-emerald-200 flex flex-col justify-between">
+                    <div>
+                        <span class="text-xs font-bold text-emerald-900 uppercase block">Resumen del Comprobante</span>
+                        <span class="text-xs text-emerald-700">Incluye Neto Gravado + IVA + Percepciones. Impacta en Cuenta Corriente y Cuentas Contables.</span>
+                    </div>
+                    <div class="flex justify-between items-center mt-3 pt-3 border-t border-emerald-200">
+                        <span class="font-bold text-slate-800">Total Factura (A Pagar):</span>
+                        <span class="text-2xl font-extrabold text-emerald-900">$ 2.223.000,00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botón de Guardar -->
+            <div class="flex justify-end pt-2">
+                <button type="button" onclick="alert('¡Factura guardada con éxito! Imputada a stock/lote y registrada en la cuenta corriente.')" class="bg-emerald-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-emerald-700 font-bold transition-all">
+                    Guardar Factura en CAmpo+
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Script de formato numérico -->
+    <script>
+        function formatearMonedaInput(input) {
+            let valor = input.value.replace(/\D/g, "");
+            if (valor === "") {
+                input.value = "";
+                return;
+            }
+            let numero = (parseFloat(valor) / 100).toFixed(2);
+            let partes = numero.split(".");
+            partes[0] = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+            input.value = partes[0] + "," + partes[1];
+        }
+    </script>
+</body>
+</html>

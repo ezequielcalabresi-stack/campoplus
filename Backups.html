@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Panel de Backups y Respaldos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Respaldos y Seguridad de Datos</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Gestión de copias de seguridad locales y en la nube.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- Tarjetas de Estado del Respaldo -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-emerald-50 border border-emerald-200 p-5 rounded-xl">
+                <span class="text-xs font-bold text-emerald-800 uppercase">Estado de la Sincronización</span>
+                <h3 class="text-xl font-extrabold text-emerald-900 mt-1">Sincronizado OK</h3>
+                <span class="text-xs text-emerald-600 mt-1 block">Base de datos en la nube activa</span>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 p-5 rounded-xl">
+                <span class="text-xs font-bold text-blue-800 uppercase">Último Backup Automático</span>
+                <h3 class="text-xl font-extrabold text-blue-900 mt-1">Hoy, 03:00 AM</h3>
+                <span class="text-xs text-blue-600 mt-1 block">Respaldo diario programado</span>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 p-5 rounded-xl">
+                <span class="text-xs font-bold text-amber-800 uppercase">Versión del Sistema</span>
+                <h3 class="text-xl font-extrabold text-amber-900 mt-1">CAmpo+ v2.5</h3>
+                <span class="text-xs text-amber-600 mt-1 block">Estructura Modular Web</span>
+            </div>
+        </div>
+
+        <!-- Acciones de Backup Manual -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- Descargar Respaldo Local -->
+            <div class="border p-6 rounded-xl bg-slate-50 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-2">Descargar Copia de Seguridad (Backup Local)</h3>
+                    <p class="text-xs text-slate-600 mb-4">Genera un archivo empaquetado (JSON / CSV) con toda la información de facturas, contratos, bancos y cuentas corrientes para guardar en tu PC o Dropbox.</p>
+                </div>
+                <button onclick="alert('Generando archivo de respaldo local... Descarga iniciada.')" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center">
+                    ⬇ Descargar Backup Completo (.JSON)
+                </button>
+            </div>
+
+            <!-- Restaurar Datos -->
+            <div class="border p-6 rounded-xl bg-slate-50 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-2">Restaurar Sistema desde Archivo</h3>
+                    <p class="text-xs text-slate-600 mb-4">Permite cargar un archivo de backup previo para recuperar la base de datos ante cualquier eventualidad.</p>
+                </div>
+                <div class="flex gap-2">
+                    <input type="file" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
+                    <button onclick="alert('Seleccione un archivo válido para restaurar.')" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-emerald-700">
+                        Restaurar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

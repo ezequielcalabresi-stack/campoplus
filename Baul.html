@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Baúl de Credenciales y Contraseñas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Baúl de Credenciales y Accesos</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Gestión centralizada y segura de contraseñas para los portales y cuentas del equipo.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- Formulario para Agregar Nueva Credencial -->
+        <div class="bg-slate-50 border p-6 rounded-xl mb-8">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Guardar Nueva Credencial</h3>
+            <form class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Sitio / Plataforma</label>
+                    <input type="text" placeholder="Ej. Banco Galicia / AFIP" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Categoría</label>
+                    <select class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium text-amber-800">
+                        <option>Bancos y Finanzas</option>
+                        <option>Acopios e Insumeras</option>
+                        <option>Organismos (AFIP / ARBA / Muni)</option>
+                        <option>Sistemas / Hosting / Nube</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Usuario / CUIT / Email</label>
+                    <input type="text" placeholder="usuario@empresa.com" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Contraseña / Clave</label>
+                    <input type="password" placeholder="••••••••" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div class="flex items-end">
+                    <button type="button" onclick="alert('¡Credencial guardada de forma segura en el baúl!')" class="w-full bg-amber-600 text-white p-2.5 rounded-md text-sm font-bold hover:bg-amber-700 transition-all">
+                        + Guardar Clave
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Listado de Credenciales Almacenadas -->
+        <div class="border rounded-lg p-4 bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-slate-700">Accesos Registrados en el Baúl</h3>
+                <input type="text" placeholder="Buscar plataforma..." class="rounded-md border-slate-300 p-2 border text-sm w-64 bg-slate-50">
+            </div>
+
+            <div class="overflow-x-auto border rounded-lg">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-700 text-xs uppercase font-semibold border-b">
+                            <th class="p-3">Plataforma / Sitio</th>
+                            <th class="p-3">Categoría</th>
+                            <th class="p-3">Usuario / Identificador</th>
+                            <th class="p-3">Contraseña</th>
+                            <th class="p-3 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm divide-y divide-slate-200">
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 font-medium text-slate-800">Banco Galicia (Banking)</td>
+                            <td class="p-3"><span class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full font-medium">Bancos y Finanzas</span></td>
+                            <td class="p-3 text-slate-600">admin_silo</td>
+                            <td class="p-3 font-mono text-slate-500">••••••••••••</td>
+                            <td class="p-3 text-center">
+                                <button class="text-emerald-600 hover:underline text-xs font-bold mr-2" onclick="alert('Contraseña copiada al portapapeles.')">Copiar</button>
+                                <button class="text-blue-600 hover:underline text-xs font-bold mr-2">Editar</button>
+                                <button class="text-red-600 hover:underline text-xs font-bold">Eliminar</button>
+                            </td>
+                        </tr>
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 font-medium text-slate-800">Portal AFIP (Clave Fiscal)</td>
+                            <td class="p-3"><span class="bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded-full font-medium">Organismos</span></td>
+                            <td class="p-3 text-slate-600">20-28123456-3</td>
+                            <td class="p-3 font-mono text-slate-500">••••••••••••</td>
+                            <td class="p-3 text-center">
+                                <button class="text-emerald-600 hover:underline text-xs font-bold mr-2" onclick="alert('Contraseña copiada al portapapeles.')">Copiar</button>
+                                <button class="text-blue-600 hover:underline text-xs font-bold mr-2">Editar</button>
+                                <button class="text-red-600 hover:underline text-xs font-bold">Eliminar</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

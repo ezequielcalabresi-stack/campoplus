@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Dashboard Principal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera del Dashboard -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b pb-4 gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-slate-800">CAmpo+ <span class="text-sm font-normal text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full font-semibold">Sistema de Gestión Agropecuaria Integral</span></h1>
+                <p class="text-xs text-slate-500 mt-1">Panel de control general, operaciones, contabilidad, fiscalidad (ARBA/SICORE) y agronomía.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-md font-medium">Silo Chico S.A. | Admin</span>
+                <span class="h-3 w-3 bg-emerald-500 rounded-full animate-pulse" title="Sistema activo"></span>
+            </div>
+        </div>
+
+        <!-- TARJETAS RESUMEN GENERAL (KPIs) -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-emerald-800 uppercase">Compromisos del Mes (ARS)</span>
+                <h3 class="text-2xl font-extrabold text-emerald-900 mt-1">$ 14.580.250</h3>
+                <span class="text-xs text-emerald-700 mt-1 block">Próximos 30 días</span>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-blue-800 uppercase">Bancos Disponibles</span>
+                <h3 class="text-2xl font-extrabold text-blue-900 mt-1">$ 6.140.400</h3>
+                <span class="text-xs text-blue-700 mt-1 block">Suma Cuentas Corrientes</span>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-amber-800 uppercase">Deuda en Dólares (USD)</span>
+                <h3 class="text-2xl font-extrabold text-amber-900 mt-1">USD 25.400</h3>
+                <span class="text-xs text-amber-700 mt-1 block">Insumos y Préstamos</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-slate-700 uppercase">Alquileres (Kilos Soja)</span>
+                <h3 class="text-2xl font-extrabold text-slate-900 mt-1">64.500 Kg</h3>
+                <span class="text-xs text-slate-500 mt-1 block">Total Campaña Pactado</span>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 1: OPERACIONES, PAGOS Y COMPRAS -->
+        <h3 class="text-lg font-bold text-slate-800 mb-4">Operaciones, Pagos y Cuentas</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <!-- Órdenes de Pago -->
+            <a href="ordenes_pago.html" class="bg-white border-2 border-emerald-500 p-4 rounded-xl shadow-sm hover:shadow-md transition-all group">
+                <div class="h-8 w-8 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-emerald-600 group-hover:text-white transition-all">💸</div>
+                <h4 class="font-bold text-slate-800 text-base">Órdenes de Pago</h4>
+                <p class="text-xs text-slate-500 mt-1">Pago, retenciones y bloqueo de facturas.</p>
+            </a>
+            <!-- Carga de Facturas -->
+            <a href="ingresofacturas.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-emerald-500 transition-all group">
+                <div class="h-8 w-8 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-emerald-600 group-hover:text-white transition-all">📄</div>
+                <h4 class="font-bold text-slate-800 text-base">Carga de Facturas</h4>
+                <p class="text-xs text-slate-500 mt-1">Imputación por lote, stock e impuestos.</p>
+            </a>
+            <!-- Cuentas Corrientes -->
+            <a href="proveedoresclientes.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-blue-500 transition-all group">
+                <div class="h-8 w-8 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-blue-600 group-hover:text-white transition-all">📒</div>
+                <h4 class="font-bold text-slate-800 text-base">Cuentas Corrientes</h4>
+                <p class="text-xs text-slate-500 mt-1">Control de saldos con terceros y acopios.</p>
+            </a>
+            <!-- Liquidaciones Granos -->
+            <a href="liquidacionesgranos.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-amber-500 transition-all group">
+                <div class="h-8 w-8 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-amber-600 group-hover:text-white transition-all">🌾</div>
+                <h4 class="font-bold text-slate-800 text-base">LPG (Granos)</h4>
+                <p class="text-xs text-slate-500 mt-1">Certificados, fletes y retenciones AFIP.</p>
+            </a>
+        </div>
+
+        <!-- SECCIÓN 2: GESTIÓN FISCAL (ARBA & SICORE) Y AGRONOMÍA -->
+        <h3 class="text-lg font-bold text-slate-800 mb-4">Gestión Fiscal (ARBA / SICORE) y Agronomía</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <!-- Padrón ARBA -->
+            <a href="Arba.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-blue-500 transition-all group">
+                <div class="h-8 w-8 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-blue-600 group-hover:text-white transition-all">🏛️</div>
+                <h4 class="font-bold text-slate-800 text-base">Padrón ARBA (DFE)</h4>
+                <p class="text-xs text-slate-500 mt-1">Alícuotas IIBB y XML DFE.</p>
+            </a>
+            <!-- SICORE Ganancias -->
+            <a href="Sicore.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-purple-500 transition-all group">
+                <div class="h-8 w-8 bg-purple-100 text-purple-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-purple-600 group-hover:text-white transition-all">📑</div>
+                <h4 class="font-bold text-slate-800 text-base">SICORE (RG 830)</h4>
+                <p class="text-xs text-slate-500 mt-1">Exportación TXT de retenciones.</p>
+            </a>
+            <!-- Márgenes Brutos -->
+            <a href="margenesbrutos.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-emerald-500 transition-all group">
+                <div class="h-8 w-8 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-emerald-600 group-hover:text-white transition-all">🌱</div>
+                <h4 class="font-bold text-slate-800 text-base">Márgenes Brutos</h4>
+                <p class="text-xs text-slate-500 mt-1">Costos por hectárea y resultado por lote.</p>
+            </a>
+            <!-- Órdenes de Trabajo (NUEVO) -->
+            <a href="ordenestrabajo.html" class="bg-white border-2 border-emerald-500 p-4 rounded-xl shadow-sm hover:shadow-md transition-all group">
+                <div class="h-8 w-8 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-emerald-600 group-hover:text-white transition-all">📝</div>
+                <h4 class="font-bold text-slate-800 text-base">Órdenes de Trabajo</h4>
+                <p class="text-xs text-slate-500 mt-1">Labores, insumos y dosis por lote.</p>
+            </a>
+        </div>
+
+        <!-- SECCIÓN 3: BANCOS, FINANZAS Y PERSONAL -->
+        <h3 class="text-lg font-bold text-slate-800 mb-4">Finanzas, Tesorería y Personal</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <!-- Hacienda y Remates -->
+            <a href="liquidacioneshacienda.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-rose-500 transition-all group">
+                <div class="h-8 w-8 bg-rose-100 text-rose-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-rose-600 group-hover:text-white transition-all">🐂</div>
+                <h4 class="font-bold text-slate-800 text-base">Hacienda y Remates</h4>
+                <p class="text-xs text-slate-500 mt-1">Tropas, categorías e impuestos.</p>
+            </a>
+            <!-- Estado Financiero -->
+            <a href="financiero.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-blue-500 transition-all group">
+                <div class="h-8 w-8 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-blue-600 group-hover:text-white transition-all">📊</div>
+                <h4 class="font-bold text-slate-800 text-base">Estado Financiero</h4>
+                <p class="text-xs text-slate-500 mt-1">Proyección de vencimientos y mercado.</p>
+            </a>
+            <!-- Bancos y E-Cheqs -->
+            <a href="Bancos.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-purple-500 transition-all group">
+                <div class="h-8 w-8 bg-purple-100 text-purple-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-purple-600 group-hover:text-white transition-all">🏦</div>
+                <h4 class="font-bold text-slate-800 text-base">Bancos y Tesorería</h4>
+                <p class="text-xs text-slate-500 mt-1">E-cheqs, préstamos y caja física.</p>
+            </a>
+            <!-- Empleados y Sueldos -->
+            <a href="empleados.html" class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-indigo-500 transition-all group">
+                <div class="h-8 w-8 bg-indigo-100 text-indigo-700 rounded-lg flex items-center justify-center font-bold text-base mb-2 group-hover:bg-indigo-600 group-hover:text-white transition-all">👷‍♂️</div>
+                <h4 class="font-bold text-slate-800 text-base">Sueldos y Personal</h4>
+                <p class="text-xs text-slate-500 mt-1">Indexación IPC y recibos de pago.</p>
+            </a>
+        </div>
+
+        <!-- SECCIÓN 4: CONTABILIDAD, CONTRATOS Y UTILIDADES -->
+        <h3 class="text-lg font-bold text-slate-800 mb-4">Contabilidad, Contratos y Seguridad</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            <!-- Contabilidad -->
+            <a href="Contabilidad.html" class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                <div class="text-lg font-bold mb-1">🗂️ Contabilidad</div>
+                <p class="text-xs text-slate-500">Plan de cuentas, mayor y EECC.</p>
+            </a>
+            <!-- Contratos Alquileres -->
+            <a href="Contratosalquileres.html" class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                <div class="text-lg font-bold mb-1">🌾 Contratos</div>
+                <p class="text-xs text-slate-500">Kilos soja y aparcerías.</p>
+            </a>
+            <!-- Baúl de Credenciales -->
+            <a href="Baul.html" class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                <div class="text-lg font-bold mb-1">🔐 Baúl Claves</div>
+                <p class="text-xs text-slate-500">Accesos y portales.</p>
+            </a>
+            <!-- Usuarios -->
+            <a href="Usuarios.html" class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                <div class="text-lg font-bold mb-1">👥 Usuarios</div>
+                <p class="text-xs text-slate-500">Roles y permisos.</p>
+            </a>
+            <!-- Backups -->
+            <a href="Backups.html" class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                <div class="text-lg font-bold mb-1">💾 Backups</div>
+                <p class="text-xs text-slate-500">Respaldos de datos.</p>
+            </a>
+        </div>
+    </div>
+
+</body>
+</html>
