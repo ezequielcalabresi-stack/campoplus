@@ -97,85 +97,85 @@
 
     <!-- Script con Lógica Estricta de Padrón DFE -->
     <script>
-// 1. Sincronizar estadísticas con la nube de Render
-    async function actualizarContadorUI() {
-        try {
-            let res = await fetch('https://campoplus.onrender.com/stats');
-            let data = await res.json();
-            document.getElementById('lblTotal').innerText = (data.total || 0).toLocaleString() + " CUITs indexados (Cloud)";
-            document.getElementById('lblTotal').className = "text-sm bg-emerald-100 text-emerald-800 px-4 py-2 rounded-lg font-bold";
-        } catch (e) {
-            document.getElementById('lblTotal').innerText = "⚠️ Servidor Cloud Conectándose...";
-            document.getElementById('lblTotal').className = "text-sm bg-amber-100 text-amber-800 px-4 py-2 rounded-lg font-bold";
-        }
-    }
-
-    // 2. Consulta de CUIT directo a la nube de Render
-    async function consultarCuitOficial() {
-        let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
-        if(!cuit) {
-            alert("Por favor, ingrese un número de CUIT.");
-            return;
-        }
-
-        try {
-            let respuesta = await fetch(`https://campoplus.onrender.com/cuit/${cuit}`);
-            
-            if (respuesta.ok) {
-                let resultado = await respuesta.json();
-                
-                if (resultado.encontrado) {
-                    document.getElementById('resEstado').value = resultado.estado || "Oficial ARBA";
-                    document.getElementById('resRet').value = (resultado.retencion ? resultado.retencion.alicuota : "0,00") + " %";
-                    document.getElementById('resPerc').value = (resultado.percepcion ? resultado.percepcion.alicuota : "0,00") + " %";
-                    alert("✅ ¡CUIT encontrado en el padrón oficial de ARBA!");
-                } else {
-                    document.getElementById('resEstado').value = "No encontrado";
-                    document.getElementById('resRet').value = "0,00 %";
-                    document.getElementById('resPerc').value = "0,00 %";
-                    alert("ℹ️ El CUIT no se encuentra en el padrón (Aplica régimen general / 0,00%).");
-                }
-            } else {
-                alert("Error al consultar el servidor en la nube.");
+        // 1. Sincronizar estadísticas con la nube de Render
+        async function actualizarContadorUI() {
+            try {
+                let res = await fetch('https://campoplus.onrender.com/stats');
+                let data = await res.json();
+                document.getElementById('lblTotal').innerText = (data.total || 0).toLocaleString() + " CUITs indexados (Cloud)";
+                document.getElementById('lblTotal').className = "text-sm bg-emerald-100 text-emerald-800 px-4 py-2 rounded-lg font-bold";
+            } catch (e) {
+                document.getElementById('lblTotal').innerText = "⚠️ Servidor Cloud Conectándose...";
+                document.getElementById('lblTotal').className = "text-sm bg-amber-100 text-amber-800 px-4 py-2 rounded-lg font-bold";
             }
-        } catch (error) {
-            console.error("Error:", error);
-            alert("❌ No se pudo conectar con el servidor central en Render.");
         }
-    }
 
-    // 3. Importación local (informativa para la interfaz)
-    function procesarPadronOficial(tipo) {
-        let inputId = tipo === 'ret' ? 'fileRet' : 'filePerc';
-        let fileInput = document.getElementById(inputId);
+        // 2. Consulta de CUIT directo a la nube de Render
+        async function consultarCuitOficial() {
+            let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
+            if(!cuit) {
+                alert("Por favor, ingrese un número de CUIT.");
+                return;
+            }
 
-        if(fileInput.files.length === 0) {
-            alert("Seleccione el archivo TXT correspondiente.");
-            return;
+            try {
+                let respuesta = await fetch(`https://campoplus.onrender.com/cuit/${cuit}`);
+                
+                if (respuesta.ok) {
+                    let resultado = await respuesta.json();
+                    
+                    if (resultado.encontrado) {
+                        document.getElementById('resEstado').value = resultado.estado || "Oficial ARBA";
+                        document.getElementById('resRet').value = (resultado.retencion ? resultado.retencion.alicuota : "0,00") + " %";
+                        document.getElementById('resPerc').value = (resultado.percepcion ? resultado.percepcion.alicuota : "0,00") + " %";
+                        alert("✅ ¡CUIT encontrado en el padrón oficial de ARBA!");
+                    } else {
+                        document.getElementById('resEstado').value = "No encontrado";
+                        document.getElementById('resRet').value = "0,00 %";
+                        document.getElementById('resPerc').value = "0,00 %";
+                        alert("ℹ️ El CUIT no se encuentra en el padrón (Aplica régimen general / 0,00%).");
+                    }
+                } else {
+                    alert("Error al consultar el servidor en la nube.");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("❌ No se pudo conectar con el servidor central en Render.");
+            }
         }
-        alert("Archivo seleccionado. Recordá que la base oficial se gestiona de forma centralizada en la nube.");
-    }
 
-    // 4. Alta Manual / Corrección en pantalla
-    function guardarManual() {
-        let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
-        if(!cuit) {
-            alert("Ingrese un CUIT primero.");
-            return;
+        // 3. Importación local (informativa para la interfaz)
+        function procesarPadronOficial(tipo) {
+            let inputId = tipo === 'ret' ? 'fileRet' : 'filePerc';
+            let fileInput = document.getElementById(inputId);
+
+            if(fileInput.files.length === 0) {
+                alert("Seleccione el archivo TXT correspondiente.");
+                return;
+            }
+            alert("Archivo seleccionado. Recordá que la base oficial se gestiona de forma centralizada en la nube.");
         }
-        let ret = prompt("Ingrese alícuota de Retención (ej: 1,75):", "1,75");
-        let perc = prompt("Ingrese alícuota de Percepción (ej: 3,00):", "3,00");
 
-        if(ret !== null && perc !== null) {
-            document.getElementById('resEstado').value = "Corrección Manual";
-            document.getElementById('resRet').value = ret + " %";
-            document.getElementById('resPerc').value = perc + " %";
-            alert("¡Actualizado en pantalla correctamente!");
+        // 4. Alta Manual / Corrección en pantalla
+        function guardarManual() {
+            let cuit = document.getElementById('inputCuit').value.replace(/\D/g, "").trim();
+            if(!cuit) {
+                alert("Ingrese un CUIT primero.");
+                return;
+            }
+            let ret = prompt("Ingrese alícuota de Retención (ej: 1,75):", "1,75");
+            let perc = prompt("Ingrese alícuota de Percepción (ej: 3,00):", "3,00");
+
+            if(ret !== null && perc !== null) {
+                document.getElementById('resEstado').value = "Corrección Manual";
+                document.getElementById('resRet').value = ret + " %";
+                document.getElementById('resPerc').value = perc + " %";
+                alert("¡Actualizado en pantalla correctamente!");
+            }
         }
-    }
 
-    // Ejecutar al cargar la página
-    window.onload = actualizarContadorUI;
-</script>
+        // Ejecutar al cargar la página
+        window.onload = actualizarContadorUI;
+    </script>
 </body>
 </html>
