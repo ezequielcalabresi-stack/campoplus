@@ -626,12 +626,7 @@ def init_db():
         );
     """)
 
-    # Luego la modificación de columnas (ALTER TABLE) después
-    cursor.execute("PRAGMA table_info(ordenes_pago);")
-    cols_op = [col[1] for col in cursor.fetchall()]
-    if 'empresa_id' not in cols_op:
-        cursor.execute("ALTER TABLE ordenes_pago ADD COLUMN empresa_id INTEGER DEFAULT 1;")
-
+    
     # 9. Cuentas Corrientes Proveedores
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS cuentas_corrientes (
