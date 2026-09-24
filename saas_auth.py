@@ -379,6 +379,9 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         from plataforma import abrir_base_cuenta, master_connect
         import main as _main
         try:
+            conn.commit()
+            conn.close()
+            conn = None
             cuenta_user = user.get("cuenta_id") or (None if int(user.get("es_superadmin") or 0) else 1)
             base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
             cur_emp = base_emp.cursor()
@@ -420,11 +423,13 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
                     conn.close()
                     raise HTTPException(403, "No tenés acceso a esa empresa")
 
-            token = secrets.token_urlsafe(32)
-            ahora = datetime.now()
-            expira = (ahora + timedelta(days=7)).isoformat(timespec="seconds")
-            ip = request.client.host if request.client else ""
-            cur.execute(
+        token = secrets.token_urlsafe(32)
+        ahora = datetime.now()
+        expira = (ahora + timedelta(days=7)).isoformat(timespec="seconds")
+        ip = request.client.host if request.client else ""
+        conn = _main.get_db()
+        cur = conn.cursor()
+        cur.execute(
                 """
                 INSERT INTO sesiones_usuario (token, usuario_id, empresa_id, creado_en, expira_en, ip)
                 VALUES (?, ?, ?, ?, ?, ?);
@@ -457,10 +462,12 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
             }
 
         except HTTPException:
-            conn.close()
+            if conn is not None:
+                conn.close()
             raise
         except Exception as exc:
-            conn.close()
+            if conn is not None:
+                conn.close()
             raise HTTPException(500, f"{type(exc).__name__}: {exc}") from exc
 
     @app.post("/api/auth/logout")
