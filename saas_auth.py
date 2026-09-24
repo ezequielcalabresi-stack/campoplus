@@ -399,28 +399,29 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
                     empresa_id = int(first["id"]) if first else None
             if not empresa_id:
                 base_emp.close()
-                conn.close()
                 raise HTTPException(400, "El cliente todavía no tiene empresas cargadas")
             cur_emp.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
             emp = cur_emp.fetchone()
             if not emp:
                 base_emp.close()
-                conn.close()
                 raise HTTPException(400, "Empresa no válida")
             emp = empresa_to_dict(emp)
+            base_emp.execute(
+                "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
+                (empresa_id,),
+            )
+            base_emp.commit()
             base_emp.close()
+            base_emp = None
 
             if not int(user.get("es_superadmin") or 0) and not emp["acceso_habilitado"]:
-                conn.close()
                 raise HTTPException(
                     403,
                     "Acceso suspendido por falta de pago o licencia. Contactá a CAmpo+.",
                 )
 
-            # Usuario no superadmin solo su empresa
             if not int(user.get("es_superadmin") or 0) and user.get("empresa_id"):
                 if int(user["empresa_id"]) != int(empresa_id):
-                    conn.close()
                     raise HTTPException(403, "No tenés acceso a esa empresa")
 
             token = secrets.token_urlsafe(32)
@@ -436,16 +437,9 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
                 """,
                 (token, user["id"], empresa_id, ahora.isoformat(timespec="seconds"), expira, ip),
             )
-            # Activar empresa en la base de ESA cuenta (no en la de otro cliente)
-            base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
-            base_emp.execute(
-                "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
-                (empresa_id,),
-            )
-            base_emp.commit()
-            base_emp.close()
             conn.commit()
             conn.close()
+            conn = None
             return {
                 "status": "ok",
                 "token": token,
