@@ -1,0 +1,1148 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Carga de Compras, Cuenta Corriente y Asiento Contable (Centralizado)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg relative">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Ingreso de Facturas (Backend Centralizado)</span></h2>
+                <p id="estado-db" class="text-xs text-amber-600 mt-1">Conectando al servidor API FastAPI...</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="bg-slate-50 border p-2 rounded-md flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-600">👤 Operador:</span>
+                    <select id="selectUsuario" class="text-xs font-semibold text-slate-800 bg-transparent border-none focus:ring-0">
+                        <option value="Raul Ezequiel Calabresi">Raul Ezequiel Calabresi</option>
+                        <option value="Administración CAmpo+">Administración CAmpo+</option>
+                        <option value="Taty">Taty</option>
+                    </select>
+                </div>
+                <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                    ← Volver al Dashboard
+                </a>
+            </div>
+        </div>
+
+        <!-- MODAL DE ALTA RÁPIDA DE PROVEEDOR -->
+        <div id="modalNuevoProveedor" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 space-y-4 border border-slate-200">
+                <div class="flex justify-between items-center border-b pb-3">
+                    <h3 class="text-base font-bold text-slate-800">➕ Legajo Fiscal Express: Alta de Nuevo Proveedor</h3>
+                    <button type="button" onclick="toggleModalProveedor()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">CUIT (11 dígitos sin guiones)*</label>
+                        <input type="text" id="modalCuit" maxlength="11" placeholder="Ej: 30711166250" class="w-full rounded border p-2 font-mono" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Nombre de Fantasía (Comercial)*</label>
+                        <input type="text" id="modalNombre" placeholder="Ej: Agropampa S.A." class="w-full rounded border p-2">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block font-medium text-slate-700 mb-1">Razón Social Fiscal*</label>
+                        <input type="text" id="modalRazonSocial" placeholder="Ej: Agropampa S.A. de Servicios Rurales" class="w-full rounded border p-2">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block font-medium text-slate-700 mb-1">Domicilio Fiscal*</label>
+                        <input type="text" id="modalDomicilio" placeholder="Ej: Av. San Martín 450" class="w-full rounded border p-2">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Localidad*</label>
+                        <input type="text" id="modalLocalidad" placeholder="Ej: Chivilcoy" class="w-full rounded border p-2">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Código Postal (CP)*</label>
+                        <input type="text" id="modalCp" placeholder="Ej: 6620" class="w-full rounded border p-2 font-mono">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Condición IVA*</label>
+                        <select id="modalCondicionIva" class="w-full rounded border p-2 bg-white">
+                            <option value="Responsable Inscripto">Responsable Inscripto</option>
+                            <option value="Monotributista">Monotributista</option>
+                            <option value="Exento">Exento</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Provincia*</label>
+                        <select id="modalProvincia" class="w-full rounded border p-2 bg-white">
+                            <option value="01">01 - Buenos Aires</option>
+                            <option value="02">02 - Capital Federal (CABA)</option>
+                            <option value="04">04 - Córdoba</option>
+                            <option value="13">13 - Santa Fe</option>
+                            <option value="21">21 - La Pampa</option>
+                            <option value="22">22 - Río Negro</option>
+                            <option value="23">23 - Santa Cruz</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-3 border-t">
+                    <button type="button" onclick="toggleModalProveedor()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded text-xs font-semibold hover:bg-slate-300">Cancelar</button>
+                    <button type="button" onclick="guardarProveedorModal()" class="bg-indigo-600 text-white px-6 py-2 rounded text-xs font-bold hover:bg-indigo-700 shadow">Guardar Proveedor</button>
+                </div>
+            </div>
+        </div>
+
+        <form id="formFactura" onsubmit="guardarFacturaYAsiento(event)" class="space-y-6">
+            <!-- SECCIÓN 1: Datos Generales del Comprobante -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border">
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-sm font-medium text-slate-700">Proveedor</label>
+                        <button type="button" onclick="toggleModalProveedor()" class="text-[11px] text-blue-600 font-bold hover:underline">＋ Nuevo Proveedor</button>
+                    </div>
+                    <select id="selectProveedor" required onchange="actualizarCondicionProveedor()" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium text-xs">
+                        <option value="">-- Seleccione un Proveedor --</option>
+                    </select>
+                    <span id="lblCondicionFiscal" class="text-[10px] text-slate-500 font-semibold mt-1 block">Condición: -</span>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Tipo de Comprobante</label>
+                    <select id="tipoComprobante" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-xs">
+                        <option value="Factura A">Factura A</option>
+                        <option value="Factura B">Factura B</option>
+                        <option value="Nota de Débito A">Nota de Débito A</option>
+                        <option value="Factura C">Factura C</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Punto de Vta. y Nro. (Ej: 2-20)</label>
+                    <input type="text" id="nroComprobante" required onblur="formatearNroComprobante(this)" placeholder="0002-00000020" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-xs font-mono">
+                    <span class="text-[10px] text-slate-400">Autocompleta ceros y valida duplicados.</span>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Moneda de Operación</label>
+                    <select id="moneda" onchange="toggleMoneda(this)" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium text-emerald-800 text-xs">
+                        <option value="ARS">Pesos Argentinos (ARS)</option>
+                        <option value="USD">Dólar Estadounidense (USD)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Fecha de Emisión (DD/MM/AAAA)</label>
+                    <input type="text" id="fechaEmision" required oninput="limpiarFechaString(this)" onblur="onBlurFechaEmision(this)" placeholder="Ej: 01/09/2026" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-xs">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 font-bold text-emerald-700">Fecha de Vencimiento (Pago)</label>
+                    <input type="text" id="fechaVencimiento" required oninput="marcarVencManual(); limpiarFechaString(this)" onblur="formatearFechaInteligente(this)" placeholder="Emisión + 30 días (editable)" class="mt-1 block w-full rounded-md border-emerald-300 p-2 border bg-white text-xs">
+                    <span class="text-[10px] text-slate-400">Por defecto: fecha de emisión + 30 días.</span>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Tipo de Cambio (Cotización)</label>
+                    <input type="text" id="tipoCambio" value="" disabled placeholder="Solo si es USD" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-slate-100 text-right text-xs font-mono">
+                </div>
+            </div>
+
+            <!-- SECCIÓN 2: DETALLE DE RENGLONES -->
+            <div class="border rounded-lg p-4 bg-white">
+                <div class="flex justify-between items-center mb-3">
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-700">Detalle de Renglones e Imputación por Actividad</h3>
+                        <p class="text-[11px] text-slate-500">La cuenta a imputar se filtra según la actividad. Insumo/Labor abren detalle de cantidad y precio. <a href="Actividades.html" class="text-emerald-700 font-semibold hover:underline">Administrar actividades/cuentas</a></p>
+                    </div>
+                    <button type="button" onclick="agregarRenglon()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded font-medium hover:bg-slate-700">
+                        + Agregar Renglón
+                    </button>
+                </div>
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="w-full text-left border-collapse text-sm min-w-[1100px]">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold border-b">
+                                <th class="p-3 w-[28%]">Descripción / Artículo</th>
+                                <th class="p-3 w-[12%]">Destino / Tipo</th>
+                                <th class="p-3 w-[14%]">Actividad</th>
+                                <th class="p-3 w-[18%]">Cta a Imputar</th>
+                                <th class="p-3 text-right w-[10%]">Subtotal Neto ($)</th>
+                                <th class="p-3 text-center w-[8%]">Alícuota IVA</th>
+                                <th class="p-3 text-center w-[10%]">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaRenglones" class="divide-y divide-slate-200 text-xs">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- MODAL INSUMO / LABOR (márgenes brutos) -->
+            <div id="modalDetalleAgro" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div class="bg-white rounded-xl shadow-2xl max-w-xl w-full p-6 space-y-4 border border-slate-200">
+                    <div class="flex justify-between items-center border-b pb-3">
+                        <h3 id="modalDetalleTitulo" class="text-base font-bold text-slate-800">Detalle para márgenes brutos</h3>
+                        <button type="button" onclick="cerrarModalDetalle()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                        <div class="col-span-2">
+                            <label class="font-medium text-slate-700" id="lblItemDetalle">Producto / Servicio</label>
+                            <div class="flex gap-2 mt-1">
+                                <select id="detItem" class="flex-1 border rounded p-2 bg-white" onchange="onCambioItemDetalle()"></select>
+                                <input id="detItemNuevo" class="flex-1 border rounded p-2 hidden" placeholder="Nombre nuevo…">
+                            </div>
+                            <button type="button" id="btnToggleNuevoItem" onclick="toggleNuevoItem()" class="mt-1 text-[11px] text-emerald-700 font-semibold hover:underline">+ Agregar producto/servicio</button>
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-700">Campaña</label>
+                            <select id="detCampania" class="mt-1 w-full border rounded p-2 bg-white"></select>
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-700">Unidad</label>
+                            <input id="detUnidad" class="mt-1 w-full border rounded p-2" placeholder="Kg / Lts / Has">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-700">Cantidad</label>
+                            <input id="detCantidad" type="number" step="0.01" value="0" class="mt-1 w-full border rounded p-2 text-right font-mono" oninput="recalcDetalleTotal()">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-700">Valor unitario $</label>
+                            <input id="detPrecioArs" type="number" step="0.01" value="0" class="mt-1 w-full border rounded p-2 text-right font-mono" oninput="recalcDetalleTotal()">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-700">T/C</label>
+                            <input id="detTC" type="number" step="0.01" value="0" class="mt-1 w-full border rounded p-2 text-right font-mono" oninput="recalcDetalleTotal()">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-700">Valor unit. U$S</label>
+                            <input id="detPrecioUsd" type="number" step="0.01" value="0" class="mt-1 w-full border rounded p-2 text-right font-mono" oninput="recalcDetalleTotal()">
+                        </div>
+                        <div class="col-span-2 bg-emerald-50 border border-emerald-200 rounded p-3 flex justify-between items-center">
+                            <span class="font-bold text-emerald-900">Total neto</span>
+                            <span id="detTotal" class="text-lg font-extrabold text-emerald-800 font-mono">$ 0,00</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2 pt-2">
+                        <button type="button" onclick="cerrarModalDetalle()" class="px-4 py-2 text-sm text-slate-600 hover:underline">Cancelar</button>
+                        <button type="button" onclick="aplicarDetalleAgro()" class="bg-emerald-700 text-white px-5 py-2 rounded-md text-sm font-bold hover:bg-emerald-800">Aplicar al renglón</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 3: DISCRIMINACIÓN MANUAL DE IVA Y TOTALES -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="border rounded-lg p-4 bg-white space-y-3 text-xs">
+                    <h3 class="text-md font-semibold text-slate-700">Discriminación y Ajuste Manual de IVA (Redondeos)</h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="font-medium text-slate-600">IVA Crédito Fiscal 21% ($)</label>
+                            <input type="text" id="iva21Manual" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono font-bold text-blue-900 bg-white">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-600">IVA Crédito Fiscal 10.5% ($)</label>
+                            <input type="text" id="iva105Manual" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono font-bold text-blue-900 bg-white">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-600">Percepción IIBB Bs.As. ($)</label>
+                            <input type="text" id="percepcionIibb" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-600">Otras Percepciones / Impuestos ($)</label>
+                            <input type="text" id="otrasPercepciones" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border rounded-lg p-4 bg-emerald-50 border-emerald-200 flex flex-col justify-between text-xs">
+                    <div>
+                        <span class="text-xs font-bold text-emerald-900 uppercase block">Resumen del Comprobante y Asiento Contable</span>
+                        <span class="text-xs text-emerald-700">Suma neta + IVA discriminado + percepciones.</span>
+                    </div>
+                    <div class="flex justify-between items-center mt-3 pt-3 border-t border-emerald-200">
+                        <span class="font-bold text-slate-800 text-sm">Total Factura (A Pagar):</span>
+                        <span id="lblTotalFactura" class="text-2xl font-extrabold text-emerald-900">$ 0,00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button type="submit" class="bg-emerald-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-emerald-700 font-bold transition-all text-sm">
+                    💾 Guardar Factura y Generar Asiento Contable
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        let proveedoresCache = {};
+
+        async function inicializarModulo() {
+            try {
+                const res = await fetch('/api/entidades');
+                if (!res.ok) throw new Error("No se pudo conectar con el servidor API.");
+                
+                document.getElementById('estado-db').innerText = "✅ Conectado al backend central FastAPI en tiempo real.";
+                document.getElementById('estado-db').className = "text-xs text-emerald-600 mt-1 font-medium";
+
+                await poblarSelectProveedores();
+                await cargarActividadesImputacion();
+                await cargarCatalogosAgro();
+                agregarRenglon();
+                calcularTotales();
+
+                document.getElementById('formFactura').addEventListener('keydown', function(event) {
+                    if (event.key === 'Enter' && event.target.tagName !== 'TEXTAREA' && event.target.type !== 'submit') {
+                        event.preventDefault();
+                        if (event.target.id === 'fechaEmision' || event.target.id === 'fechaVencimiento') {
+                            if (event.target.id === 'fechaEmision') onBlurFechaEmision(event.target);
+                            else formatearFechaInteligente(event.target);
+                        }
+                        let focusable = Array.from(document.querySelectorAll('input:not([disabled]), select:not([disabled]), button:not([disabled])'));
+                        let index = focusable.indexOf(event.target);
+                        if (index > -1 && focusable[index + 1]) {
+                            focusable[index + 1].focus();
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById('estado-db').innerText = "⚠️ Error: Asegúrese de ejecutar 'python main.py'.";
+            }
+        }
+
+        function limpiarFechaString(input) {
+            input.value = input.value.replace(/[^0-9\-\/]/g, '');
+        }
+
+        function validarFechaEstricta(str) {
+            let partes = str.split('/');
+            if (partes.length !== 3) return false;
+            let dia = parseInt(partes[0], 10);
+            let mes = parseInt(partes[1], 10);
+            let anio = parseInt(partes[2], 10);
+
+            if (isNaN(dia) || isNaN(mes) || isNaN(anio)) return false;
+            if (anio < 2000 || anio > 2100) return false;
+            if (mes < 1 || mes > 12) return false;
+
+            let diasMes = new Date(anio, mes, 0).getDate();
+            if (dia < 1 || dia > diasMes) return false;
+
+            return true;
+        }
+
+        function formatearFechaInteligente(input) {
+            let val = input.value.trim();
+            if (!val) return;
+
+            val = val.replace(/[^0-9\-\/]/g, '').replace(/-/g, '/');
+            let partes = val.split('/');
+            let anioActual = new Date().getFullYear();
+            let fechaFinal = "";
+
+            if (partes.length === 2 && partes[0] && partes[1]) {
+                fechaFinal = `${partes[0].padStart(2, '0')}/${partes[1].padStart(2, '0')}/${anioActual}`;
+            } else if (partes.length === 3 && partes[0] && partes[1] && partes[2]) {
+                let anio = partes[2].length === 2 ? '20' + partes[2] : partes[2];
+                fechaFinal = `${partes[0].padStart(2, '0')}/${partes[1].padStart(2, '0')}/${anio}`;
+            } else {
+                fechaFinal = val;
+            }
+
+            input.value = fechaFinal;
+
+            if (!validarFechaEstricta(input.value)) {
+                input.classList.add('border-red-500', 'bg-red-50');
+            } else {
+                input.classList.remove('border-red-500', 'bg-red-50');
+            }
+        }
+
+        function onFocusMoneda(input) {
+            let val = input.value.trim();
+            if (val === '0,00' || val === '0' || val === '') {
+                input.value = '';
+                return;
+            }
+            // Para editar: sin miles, con coma decimal (40280,17)
+            const n = limpiarNumero(val);
+            if (!isNaN(n)) {
+                const parts = Math.abs(n).toFixed(2).split('.');
+                input.value = (n < 0 ? '-' : '') + parts[0] + ',' + parts[1];
+            }
+            try { input.select(); } catch (_) {}
+        }
+
+        function formatearMoneda(input, esManual = false) {
+            if (esManual) input.dataset.userEdited = "true";
+
+            // Permite dígitos y un separador decimal (. o ,). No pierde decimales.
+            let v = String(input.value || '').replace(/[^0-9.,]/g, '');
+            if (!v) {
+                input.value = '';
+                calcularTotales();
+                return;
+            }
+
+            const lastComma = v.lastIndexOf(',');
+            const lastDot = v.lastIndexOf('.');
+
+            let entero = '';
+            let decimal = '';
+            let conDecimal = false;
+
+            if (lastComma >= 0 && lastDot >= 0) {
+                // Ambos: el último es el decimal (ej. 40.280,17 o 40,280.17)
+                const decPos = Math.max(lastComma, lastDot);
+                entero = v.slice(0, decPos).replace(/[.,]/g, '');
+                decimal = v.slice(decPos + 1).replace(/[.,]/g, '').slice(0, 2);
+                conDecimal = true;
+            } else if (lastComma >= 0) {
+                entero = v.slice(0, lastComma).replace(/[.,]/g, '');
+                decimal = v.slice(lastComma + 1).replace(/[.,]/g, '').slice(0, 2);
+                conDecimal = true;
+            } else if (lastDot >= 0) {
+                const parts = v.split('.');
+                // Un solo punto y ≤2 dígitos después → decimal (40280.17)
+                // Varios puntos o >2 dígitos → miles (4.028.017)
+                if (parts.length === 2 && parts[1].length <= 2) {
+                    entero = parts[0].replace(/[.,]/g, '');
+                    decimal = parts[1].replace(/[^0-9]/g, '').slice(0, 2);
+                    conDecimal = true;
+                } else {
+                    entero = v.replace(/[.,]/g, '');
+                    decimal = '';
+                    conDecimal = v.endsWith('.');
+                }
+            } else {
+                entero = v.replace(/[.,]/g, '');
+            }
+
+            // Mientras escribe: sin separador de miles (evita saltos de cursor)
+            let display = entero;
+            if (conDecimal || decimal.length > 0) {
+                display = entero + ',' + decimal;
+            }
+            input.value = display;
+            calcularTotales();
+        }
+
+        function onBlurMoneda(input) {
+            let val = input.value.trim();
+            if (val === '') {
+                input.value = '0,00';
+            } else {
+                let numero = limpiarNumero(val);
+                if (isNaN(numero)) {
+                    input.value = '0,00';
+                } else {
+                    input.value = numero.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                }
+            }
+            calcularTotales();
+        }
+
+        function limpiarNumero(val) {
+            if (val === null || val === undefined || val === '') return 0;
+            let s = String(val).trim().replace(/\s/g, '');
+            if (!s) return 0;
+            const lastComma = s.lastIndexOf(',');
+            const lastDot = s.lastIndexOf('.');
+            if (lastComma >= 0 && lastDot >= 0) {
+                // Último separador = decimal
+                const decPos = Math.max(lastComma, lastDot);
+                const entero = s.slice(0, decPos).replace(/[.,]/g, '');
+                const decimal = s.slice(decPos + 1).replace(/[.,]/g, '');
+                return parseFloat(entero + '.' + decimal) || 0;
+            }
+            if (lastComma >= 0) {
+                return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
+            }
+            if (lastDot >= 0) {
+                const parts = s.split('.');
+                // 40280.17 → decimal; 4.028.017 → miles
+                if (parts.length === 2 && parts[1].length <= 2) {
+                    return parseFloat(parts[0].replace(/,/g, '') + '.' + parts[1]) || 0;
+                }
+                return parseFloat(s.replace(/[.,]/g, '')) || 0;
+            }
+            return parseFloat(s.replace(/[.,]/g, '')) || 0;
+        }
+
+        function formatearNroComprobante(input) {
+            let val = input.value.trim();
+            if (!val) return;
+            let partes = val.split('-');
+            if (partes.length === 2) {
+                input.value = `${partes[0].padStart(4, '0')}-${partes[1].padStart(8, '0')}`;
+            } else if (!val.includes('-')) {
+                input.value = `0001-${val.padStart(8, '0')}`;
+            }
+        }
+
+        function sortAlpha(arr, getLabel) {
+            if (window.CampoPlusFirma && CampoPlusFirma.sortByLabel) {
+                return CampoPlusFirma.sortByLabel(arr, getLabel);
+            }
+            return (arr || []).slice().sort((a, b) => {
+                const la = typeof getLabel === 'function' ? getLabel(a) : a[getLabel];
+                const lb = typeof getLabel === 'function' ? getLabel(b) : b[getLabel];
+                return String(la||'').localeCompare(String(lb||''), 'es', {sensitivity:'base'});
+            });
+        }
+
+        async function poblarSelectProveedores(cuitSeleccionar = null) {
+            try {
+                const response = await fetch('/api/entidades');
+                let entidades = await response.json();
+                
+                let html = '<option value="">-- Seleccione un Proveedor --</option>';
+                proveedoresCache = {};
+
+                const provs = sortAlpha(
+                    (entidades || []).filter(row => row.es_proveedor === 1 || row.es_proveedor === null),
+                    row => row.nombre_fantasia || row.razon_social || ''
+                );
+                
+                provs.forEach(row => {
+                    proveedoresCache[row.cuit] = row.condicion_iva || 'Responsable Inscripto';
+                    let nombre = row.nombre_fantasia || row.razon_social || "Sin Nombre";
+                    html += `<option value="${row.cuit}">${nombre} (CUIT: ${row.cuit})</option>`;
+                });
+                
+                const selectEl = document.getElementById('selectProveedor');
+                selectEl.innerHTML = html;
+                if (cuitSeleccionar) selectEl.value = cuitSeleccionar;
+                actualizarCondicionProveedor();
+            } catch (e) {
+                console.error("Error al cargar proveedores:", e);
+            }
+        }
+
+        function actualizarCondicionProveedor() {
+            let cuit = document.getElementById('selectProveedor').value;
+            if (!cuit) {
+                document.getElementById('lblCondicionFiscal').innerText = "Condición: -";
+                return;
+            }
+            let cond = proveedoresCache[cuit] || 'Responsable Inscripto';
+            document.getElementById('lblCondicionFiscal').innerText = `Condición Fiscal: ${cond}`;
+            let isMono = (cond.toLowerCase().includes('monotributo') || cond.toLowerCase().includes('exento'));
+
+            document.querySelectorAll('.inp-iva').forEach(sel => {
+                if (isMono) sel.value = "0";
+            });
+            calcularTotales();
+        }
+
+        function toggleModalProveedor() {
+            document.getElementById('modalNuevoProveedor').classList.toggle('hidden');
+        }
+
+        async function guardarProveedorModal() {
+            let cuit = document.getElementById('modalCuit').value.trim();
+            let nombre = document.getElementById('modalNombre').value.trim();
+            let razon = document.getElementById('modalRazonSocial').value.trim();
+            let domicilio = document.getElementById('modalDomicilio').value.trim();
+            let localidad = document.getElementById('modalLocalidad').value.trim();
+            let cp = document.getElementById('modalCp').value.trim();
+            let condIva = document.getElementById('modalCondicionIva').value;
+            let provincia = document.getElementById('modalProvincia').value;
+
+            if (cuit.length !== 11) { alert("El CUIT debe tener exactamente 11 dígitos numéricos."); return; }
+            if (!nombre || !razon || !domicilio || !localidad || !cp) { alert("Complete todos los campos obligatorios."); return; }
+
+            let payload = {
+                cuit: cuit,
+                razon_social: razon,
+                nombre_fantasia: nombre,
+                domicilio: domicilio,
+                localidad: localidad,
+                codigo_postal: cp,
+                provincia_id: provincia,
+                condicion_iva: condIva
+            };
+
+            try {
+                const response = await fetch('/api/entidades', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.detail || "No se pudo guardar el proveedor.");
+
+                document.getElementById('modalCuit').value = "";
+                document.getElementById('modalNombre').value = "";
+                document.getElementById('modalRazonSocial').value = "";
+                document.getElementById('modalDomicilio').value = "";
+                document.getElementById('modalLocalidad').value = "";
+                document.getElementById('modalCp').value = "";
+
+                toggleModalProveedor();
+                await poblarSelectProveedores(cuit);
+                alert("✅ ¡Proveedor guardado y sincronizado con éxito!");
+            } catch (e) {
+                alert("🚨 Error al guardar el proveedor: " + e.message);
+            }
+        }
+
+        let actividadesCache = [];
+        let productosCache = [];
+        let laboreosCache = [];
+        let campaniasCache = [];
+        let vencimientoManual = false;
+        let filaDetalleActual = null;
+        let modoDetalle = 'insumo'; // insumo | labor
+
+        async function cargarActividadesImputacion() {
+            try {
+                let rows = await fetch('/api/actividades?con_cuentas=1').then(r => r.ok ? r.json() : []);
+                rows = sortAlpha(rows, 'nombre');
+                rows.forEach(a => {
+                    if (a.cuentas) a.cuentas = sortAlpha(a.cuentas, 'nombre');
+                });
+                actividadesCache = rows;
+            } catch (e) {
+                console.error(e);
+                actividadesCache = [];
+            }
+        }
+
+        async function cargarCatalogosAgro() {
+            try {
+                const [prods, labs, camps] = await Promise.all([
+                    fetch('/api/agro/almacen/items?tipo=producto').then(r => r.ok ? r.json() : []),
+                    fetch('/api/agro/almacen/items?tipo=laboreo').then(r => r.ok ? r.json() : []),
+                    fetch('/api/agro/campanias').then(r => r.ok ? r.json() : []),
+                ]);
+                productosCache = sortAlpha(prods || [], 'nombre');
+                laboreosCache = sortAlpha(labs || [], 'nombre');
+                campaniasCache = sortAlpha(camps || [], c => c.codigo || c.nombre || '');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function optionsActividades(selectedId) {
+            let html = '<option value="">— Actividad —</option>';
+            sortAlpha(actividadesCache || [], 'nombre').forEach(a => {
+                html += `<option value="${a.id}" ${String(a.id)===String(selectedId)?'selected':''}>${escHtml(a.nombre)}</option>`;
+            });
+            return html;
+        }
+
+        function optionsCuentas(actividadId, selectedCtaId) {
+            let html = '<option value="">— Cta a imputar —</option>';
+            const act = (actividadesCache || []).find(a => String(a.id) === String(actividadId));
+            if (!act) return html;
+            sortAlpha(act.cuentas || [], 'nombre').forEach(c => {
+                const label = `${c.nombre} (${c.tipo_cta || 'EGRESO'})`;
+                html += `<option value="${c.id}" data-nombre="${escHtml(c.nombre)}" data-tipo="${escHtml(c.tipo_cta||'EGRESO')}" ${String(c.id)===String(selectedCtaId)?'selected':''}>${escHtml(label)}</option>`;
+            });
+            return html;
+        }
+
+        function escHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function onCambioActividad(sel) {
+            const tr = sel.closest('tr');
+            const ctaSel = tr.querySelector('.inp-cuenta');
+            const actId = sel.value;
+            // Recargar cuentas de esta actividad desde API (filtro estricto)
+            if (actId) {
+                try {
+                    let ctas = await fetch('/api/actividades/' + actId + '/cuentas').then(r => r.json());
+                    ctas = sortAlpha(ctas || [], 'nombre');
+                    const act = actividadesCache.find(a => String(a.id) === String(actId));
+                    if (act) act.cuentas = ctas;
+                    else actividadesCache.push({ id: Number(actId), nombre: sel.options[sel.selectedIndex].text, cuentas: ctas });
+                } catch (e) { console.error(e); }
+            }
+            ctaSel.innerHTML = optionsCuentas(actId, '');
+        }
+
+        function onCambioDestino(sel) {
+            const tr = sel.closest('tr');
+            const val = sel.value || '';
+            if (val.includes('Insumo')) {
+                abrirModalDetalle(tr, 'insumo');
+            } else if (val.includes('Labor')) {
+                abrirModalDetalle(tr, 'labor');
+            }
+        }
+
+        function abrirModalDetalle(tr, modo) {
+            filaDetalleActual = tr;
+            modoDetalle = modo;
+            document.getElementById('modalDetalleTitulo').textContent =
+                modo === 'insumo' ? 'Entrada de Insumo (Almacén)' : 'Carga de Labor / Servicio';
+            document.getElementById('lblItemDetalle').textContent =
+                modo === 'insumo' ? 'Producto' : 'Servicio / Labor';
+            document.getElementById('detItemNuevo').classList.add('hidden');
+            document.getElementById('detItem').classList.remove('hidden');
+
+            const items = sortAlpha(modo === 'insumo' ? productosCache : laboreosCache, 'nombre');
+            const sel = document.getElementById('detItem');
+            sel.innerHTML = '<option value="">— Seleccionar —</option>' +
+                items.map(i => `<option value="${i.id}" data-unidad="${escHtml(i.unidad||'')}">${escHtml(i.nombre)}</option>`).join('');
+
+            const camp = document.getElementById('detCampania');
+            const camps = sortAlpha(campaniasCache || [], c => c.codigo || c.nombre || '');
+            camp.innerHTML = '<option value="">— Campaña —</option>' +
+                camps.map(c => `<option value="${escHtml(c.codigo || c.nombre || c.id)}">${escHtml(c.codigo || c.nombre || ('#'+c.id))}</option>`).join('');
+
+            // Prefill desde fila si ya había detalle
+            const d = tr._detalleAgro || {};
+            document.getElementById('detCantidad').value = d.cantidad || 0;
+            document.getElementById('detPrecioArs').value = d.precio_unitario || 0;
+            document.getElementById('detPrecioUsd').value = d.precio_unitario_usd || 0;
+            document.getElementById('detTC').value = d.tipo_cambio || 0;
+            document.getElementById('detUnidad').value = d.unidad || '';
+            if (d.item_almacen_id) sel.value = String(d.item_almacen_id);
+            if (d.campania_codigo) camp.value = d.campania_codigo;
+            if (d.item_nombre && !d.item_almacen_id) {
+                document.getElementById('detItemNuevo').value = d.item_nombre;
+                document.getElementById('detItemNuevo').classList.remove('hidden');
+                sel.classList.add('hidden');
+            }
+            recalcDetalleTotal();
+            document.getElementById('modalDetalleAgro').classList.remove('hidden');
+        }
+
+        function cerrarModalDetalle() {
+            document.getElementById('modalDetalleAgro').classList.add('hidden');
+            filaDetalleActual = null;
+        }
+
+        function toggleNuevoItem() {
+            const inp = document.getElementById('detItemNuevo');
+            const sel = document.getElementById('detItem');
+            const showNew = inp.classList.contains('hidden');
+            inp.classList.toggle('hidden', !showNew);
+            sel.classList.toggle('hidden', showNew);
+            if (showNew) inp.focus();
+        }
+
+        function onCambioItemDetalle() {
+            const sel = document.getElementById('detItem');
+            const opt = sel.options[sel.selectedIndex];
+            if (opt && opt.dataset.unidad) {
+                document.getElementById('detUnidad').value = opt.dataset.unidad;
+            }
+        }
+
+        function recalcDetalleTotal() {
+            const cant = parseFloat(document.getElementById('detCantidad').value) || 0;
+            let pu = parseFloat(document.getElementById('detPrecioArs').value) || 0;
+            const usd = parseFloat(document.getElementById('detPrecioUsd').value) || 0;
+            const tc = parseFloat(document.getElementById('detTC').value) || 0;
+            if (usd > 0 && tc > 0 && pu <= 0) pu = usd * tc;
+            const total = cant * pu;
+            document.getElementById('detTotal').textContent = '$ ' + total.toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+
+        function aplicarDetalleAgro() {
+            if (!filaDetalleActual) return;
+            const sel = document.getElementById('detItem');
+            const nuevo = document.getElementById('detItemNuevo');
+            let itemId = null;
+            let itemNombre = '';
+            if (!nuevo.classList.contains('hidden') && nuevo.value.trim()) {
+                itemNombre = nuevo.value.trim();
+            } else if (sel.value) {
+                itemId = Number(sel.value);
+                itemNombre = sel.options[sel.selectedIndex].textContent;
+            } else {
+                alert('Seleccioná o cargá un producto/servicio');
+                return;
+            }
+            const cant = parseFloat(document.getElementById('detCantidad').value) || 0;
+            let pu = parseFloat(document.getElementById('detPrecioArs').value) || 0;
+            const usd = parseFloat(document.getElementById('detPrecioUsd').value) || 0;
+            const tc = parseFloat(document.getElementById('detTC').value) || 0;
+            if (usd > 0 && tc > 0 && pu <= 0) pu = usd * tc;
+            const total = Math.round(cant * pu * 100) / 100;
+            const unidad = document.getElementById('detUnidad').value.trim();
+            const campania = document.getElementById('detCampania').value;
+
+            filaDetalleActual._detalleAgro = {
+                detalle_tipo: modoDetalle,
+                item_almacen_id: itemId,
+                item_nombre: itemNombre,
+                unidad,
+                cantidad: cant,
+                precio_unitario: pu,
+                precio_unitario_usd: usd,
+                tipo_cambio: tc,
+                campania_codigo: campania,
+            };
+
+            const desc = filaDetalleActual.querySelector('.inp-desc');
+            if (!desc.value.trim()) desc.value = itemNombre;
+            const neto = filaDetalleActual.querySelector('.inp-neto');
+            neto.value = total.toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+            // Badge en destino
+            const dest = filaDetalleActual.querySelector('.inp-destino');
+            dest.title = `${itemNombre} · ${cant} ${unidad} · $${pu}`;
+            calcularTotales();
+            cerrarModalDetalle();
+        }
+
+        function marcarVencManual() {
+            vencimientoManual = true;
+        }
+
+        function parseFechaDMY(str) {
+            if (!validarFechaEstricta(str)) return null;
+            const p = str.split('/');
+            return new Date(parseInt(p[2],10), parseInt(p[1],10)-1, parseInt(p[0],10));
+        }
+
+        function formatFechaDMY(d) {
+            const dd = String(d.getDate()).padStart(2,'0');
+            const mm = String(d.getMonth()+1).padStart(2,'0');
+            const yyyy = d.getFullYear();
+            return `${dd}/${mm}/${yyyy}`;
+        }
+
+        function sugerirVencimientoMas30() {
+            const em = document.getElementById('fechaEmision');
+            const ven = document.getElementById('fechaVencimiento');
+            formatearFechaInteligente(em);
+            if (!validarFechaEstricta(em.value)) return;
+            if (vencimientoManual && ven.value.trim() && validarFechaEstricta(ven.value)) return;
+            const d = parseFechaDMY(em.value);
+            if (!d) return;
+            d.setDate(d.getDate() + 30);
+            ven.value = formatFechaDMY(d);
+            ven.classList.remove('border-red-500', 'bg-red-50');
+            vencimientoManual = false;
+        }
+
+        function onBlurFechaEmision(input) {
+            formatearFechaInteligente(input);
+            sugerirVencimientoMas30();
+        }
+
+        function agregarRenglon() {
+            let cuit = document.getElementById('selectProveedor').value;
+            let cond = proveedoresCache[cuit] || '';
+            let isMono = (cond.toLowerCase().includes('monotributo') || cond.toLowerCase().includes('exento'));
+            let defaultIva = isMono ? "0" : "0.21";
+
+            let tbody = document.getElementById('tablaRenglones');
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="p-3"><input type="text" required placeholder="Descripción amplia del gasto / artículo…" class="inp-desc border rounded p-1.5 w-full text-xs min-w-[14rem]"></td>
+                <td class="p-3">
+                    <select class="inp-destino border rounded p-1 text-xs bg-white font-medium text-emerald-800" onchange="onCambioDestino(this)">
+                        <option value="Gasto General / Estructura" selected>Gasto General / Estructura</option>
+                        <option value="Insumo (Stock)">Insumo (Stock)</option>
+                        <option value="Labor / Servicio">Labor / Servicio</option>
+                    </select>
+                </td>
+                <td class="p-3">
+                    <select class="inp-actividad border rounded p-1 text-xs bg-white w-full min-w-[8rem]" onchange="onCambioActividad(this)" required>
+                        ${optionsActividades('')}
+                    </select>
+                </td>
+                <td class="p-3">
+                    <select class="inp-cuenta border rounded p-1 text-xs bg-white w-full min-w-[10rem]" required>
+                        ${optionsCuentas('', '')}
+                    </select>
+                </td>
+                <td class="p-3 text-right">
+                    <input type="text" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this)" onblur="onBlurMoneda(this)" class="inp-neto border rounded p-1 w-28 text-xs text-right font-bold font-mono">
+                </td>
+                <td class="p-3 text-center">
+                    <select class="inp-iva border rounded p-1 text-xs" onchange="calcularTotales()">
+                        <option value="0.21" ${defaultIva==="0.21"?"selected":""}>21 %</option>
+                        <option value="0.105">10.5 %</option>
+                        <option value="0.27">27 %</option>
+                        <option value="0" ${defaultIva==="0"?"selected":""}>0 % (Exento / Monotributo)</option>
+                    </select>
+                </td>
+                <td class="p-3 text-center space-y-1">
+                    <button type="button" onclick="reabrirDetalle(this)" class="text-sky-700 hover:underline font-bold block text-[11px]">Detalle</button>
+                    <button type="button" onclick="eliminarRenglon(this)" class="text-red-600 hover:underline font-bold">Eliminar</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function reabrirDetalle(btn) {
+            const tr = btn.closest('tr');
+            const dest = tr.querySelector('.inp-destino').value || '';
+            if (dest.includes('Labor')) abrirModalDetalle(tr, 'labor');
+            else abrirModalDetalle(tr, 'insumo');
+        }
+
+        function eliminarRenglon(btn) {
+            let tr = btn.closest('tr');
+            if (document.querySelectorAll('#tablaRenglones tr').length > 1) {
+                tr.remove();
+                calcularTotales();
+            } else {
+                alert("El comprobante debe tener al menos un renglón.");
+            }
+        }
+
+        function limpiarFormularioFactura() {
+            document.getElementById('selectProveedor').value = "";
+            document.getElementById('lblCondicionFiscal').innerText = "Condición: -";
+            document.getElementById('nroComprobante').value = "";
+            document.getElementById('fechaEmision').value = "";
+            document.getElementById('fechaVencimiento').value = "";
+            vencimientoManual = false;
+            document.getElementById('tablaRenglones').innerHTML = "";
+            agregarRenglon();
+            document.getElementById('iva21Manual').value = "0,00";
+            document.getElementById('iva105Manual').value = "0,00";
+            document.getElementById('percepcionIibb').value = "0,00";
+            document.getElementById('otrasPercepciones').value = "0,00";
+            calcularTotales();
+        }
+
+        function calcularTotales() {
+            let cuit = document.getElementById('selectProveedor').value;
+            let cond = proveedoresCache[cuit] || '';
+            let isMonoOrExento = (cond.toLowerCase().includes('monotributo') || cond.toLowerCase().includes('exento'));
+
+            let netos = document.querySelectorAll('.inp-neto');
+            let ivas = document.querySelectorAll('.inp-iva');
+            
+            let totalNeto = 0;
+            let sugerido21 = 0;
+            let sugerido105 = 0;
+            let tieneIvaGravado = false;
+
+            netos.forEach((netoInput, index) => {
+                let valNeto = limpiarNumero(netoInput.value);
+                let alicuota = parseFloat(ivas[index].value);
+                totalNeto += valNeto;
+
+                if (!isMonoOrExento && alicuota > 0) {
+                    tieneIvaGravado = true;
+                    if (alicuota === 0.21) sugerido21 += valNeto * 0.21;
+                    else if (alicuota === 0.105) sugerido105 += valNeto * 0.105;
+                }
+            });
+
+            let input21 = document.getElementById('iva21Manual');
+            let input105 = document.getElementById('iva105Manual');
+            
+            if (isMonoOrExento || !tieneIvaGravado) {
+                input21.value = "0,00";
+                input21.disabled = true;
+                input21.className = "mt-1 block w-full rounded border p-1.5 text-right font-mono bg-slate-100 text-slate-400";
+                input21.dataset.userEdited = "false";
+
+                input105.value = "0,00";
+                input105.disabled = true;
+                input105.className = "mt-1 block w-full rounded border p-1.5 text-right font-mono bg-slate-100 text-slate-400";
+                input105.dataset.userEdited = "false";
+            } else {
+                input21.disabled = false;
+                input21.className = "mt-1 block w-full rounded border p-1.5 text-right font-mono font-bold text-blue-900 bg-white";
+                input105.disabled = false;
+                input105.className = "mt-1 block w-full rounded border p-1.5 text-right font-mono font-bold text-blue-900 bg-white";
+
+                if (input21.dataset.userEdited !== "true" && sugerido21 > 0) {
+                    input21.value = sugerido21.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                }
+                if (input105.dataset.userEdited !== "true" && sugerido105 > 0) {
+                    input105.value = sugerido105.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                }
+            }
+
+            calcularTotalesReales();
+        }
+
+        function calcularTotalesReales() {
+            let cuit = document.getElementById('selectProveedor').value;
+            let cond = proveedoresCache[cuit] || '';
+            let isMonoOrExento = (cond.toLowerCase().includes('monotributo') || cond.toLowerCase().includes('exento'));
+
+            let netos = document.querySelectorAll('.inp-neto');
+            let ivas = document.querySelectorAll('.inp-iva');
+            let totalNeto = 0;
+            let tieneIvaGravado = false;
+
+            netos.forEach((n, idx) => {
+                let valN = limpiarNumero(n.value);
+                totalNeto += valN;
+                if (parseFloat(ivas[idx].value) > 0) tieneIvaGravado = true;
+            });
+
+            let iva21 = (isMonoOrExento || !tieneIvaGravado) ? 0 : limpiarNumero(document.getElementById('iva21Manual').value);
+            let iva105 = (isMonoOrExento || !tieneIvaGravado) ? 0 : limpiarNumero(document.getElementById('iva105Manual').value);
+            let totalIva = iva21 + iva105;
+
+            let iibb = limpiarNumero(document.getElementById('percepcionIibb').value);
+            let otras = limpiarNumero(document.getElementById('otrasPercepciones').value);
+
+            let totalFactura = totalNeto + totalIva + iibb + otras;
+            document.getElementById('lblTotalFactura').innerText = "$ " + totalFactura.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            return { totalNeto, totalFactura };
+        }
+
+        function toggleMoneda(select) {
+            let inputTc = document.getElementById('tipoCambio');
+            if (select.value === 'USD') {
+                inputTc.disabled = false;
+                inputTc.value = "1.050,00";
+                inputTc.className = "mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-right text-xs font-mono";
+            } else {
+                inputTc.disabled = true;
+                inputTc.value = "";
+                inputTc.className = "mt-1 block w-full rounded-md border-slate-300 p-2 border bg-slate-100 text-right text-xs font-mono";
+            }
+        }
+
+        async function guardarFacturaYAsiento(event) {
+            event.preventDefault();
+
+            let cuit = document.getElementById('selectProveedor').value;
+            if (!cuit) {
+                alert("🚨 ERROR DE VALIDACIÓN:\n\nDebe seleccionar un proveedor antes de guardar la factura.");
+                document.getElementById('selectProveedor').focus();
+                return;
+            }
+
+            let inputEmision = document.getElementById('fechaEmision');
+            let inputVenc = document.getElementById('fechaVencimiento');
+            formatearFechaInteligente(inputEmision);
+            formatearFechaInteligente(inputVenc);
+
+            if (!validarFechaEstricta(inputEmision.value) || !validarFechaEstricta(inputVenc.value)) {
+                alert("🚨 ERROR DE VALIDACIÓN:\n\nUna o ambas fechas (Emisión o Vencimiento) son inválidas. Por favor corríjalas.");
+                return;
+            }
+
+            let cond = proveedoresCache[cuit] || '';
+            let isMonoOrExento = (cond.toLowerCase().includes('monotributo') || cond.toLowerCase().includes('exento'));
+
+            let netos = document.querySelectorAll('.inp-neto');
+            let ivas = document.querySelectorAll('.inp-iva');
+            let totalNeto = 0;
+            let tieneIvaGravado = false;
+
+            netos.forEach((n, idx) => {
+                let valN = limpiarNumero(n.value);
+                totalNeto += valN;
+                if (parseFloat(ivas[idx].value) > 0) tieneIvaGravado = true;
+            });
+
+            let iva21 = (isMonoOrExento || !tieneIvaGravado) ? 0 : limpiarNumero(document.getElementById('iva21Manual').value);
+            let iva105 = (isMonoOrExento || !tieneIvaGravado) ? 0 : limpiarNumero(document.getElementById('iva105Manual').value);
+            let totalIva = iva21 + iva105;
+            let iibb = limpiarNumero(document.getElementById('percepcionIibb').value);
+            let otras = limpiarNumero(document.getElementById('otrasPercepciones').value);
+            let totalFactura = totalNeto + totalIva + iibb + otras;
+
+            if (totalNeto <= 0 || totalFactura <= 0) {
+                alert("🚨 ERROR DE VALIDACIÓN CONTABLE:\n\nEl Subtotal Neto y el Total de la Factura deben ser mayores a $ 0,00.");
+                return;
+            }
+
+            let tipo = document.getElementById('tipoComprobante').value;
+            let nro = document.getElementById('nroComprobante').value.trim();
+            let fecha = inputEmision.value.trim();
+            let venc = inputVenc.value.trim();
+            let usuario = (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || document.getElementById('selectUsuario').value;
+
+            const filas = Array.from(document.querySelectorAll('#tablaRenglones tr'));
+            const renglones = [];
+            for (const tr of filas) {
+                const actSel = tr.querySelector('.inp-actividad');
+                const ctaSel = tr.querySelector('.inp-cuenta');
+                if (!actSel.value || !ctaSel.value) {
+                    alert("🚨 Cada renglón debe tener Actividad y Cuenta a imputar.");
+                    return;
+                }
+                const actOpt = actSel.options[actSel.selectedIndex];
+                const ctaOpt = ctaSel.options[ctaSel.selectedIndex];
+                const det = tr._detalleAgro || {};
+                const destino = tr.querySelector('.inp-destino').value;
+                if ((destino.includes('Insumo') || destino.includes('Labor')) && !det.item_nombre && !det.cantidad) {
+                    if (!confirm(`El renglón "${destino}" no tiene detalle de cantidad/precio.\n¿Continuar igual?`)) return;
+                }
+                renglones.push({
+                    descripcion: (tr.querySelector('.inp-desc').value || '').trim(),
+                    destino_tipo: destino,
+                    actividad_id: Number(actSel.value),
+                    cuenta_imputacion_id: Number(ctaSel.value),
+                    actividad_nombre: actOpt ? actOpt.textContent : '',
+                    cuenta_nombre: ctaOpt ? (ctaOpt.dataset.nombre || ctaOpt.textContent) : '',
+                    neto: limpiarNumero(tr.querySelector('.inp-neto').value),
+                    alicuota_iva: parseFloat(tr.querySelector('.inp-iva').value) || 0,
+                    item_almacen_id: det.item_almacen_id || null,
+                    item_nombre: det.item_nombre || '',
+                    unidad: det.unidad || '',
+                    cantidad: det.cantidad || 0,
+                    precio_unitario: det.precio_unitario || 0,
+                    precio_unitario_usd: det.precio_unitario_usd || 0,
+                    tipo_cambio: det.tipo_cambio || 0,
+                    campania_codigo: det.campania_codigo || '',
+                    detalle_tipo: det.detalle_tipo || (destino.includes('Insumo') ? 'insumo' : destino.includes('Labor') ? 'labor' : 'gasto')
+                });
+            }
+
+            let conceptoAsiento = `Factura Compra ${tipo} Nro ${nro}`;
+            let ref = `CC-${cuit}-${nro}`;
+
+            let asientos = [
+                { concepto: conceptoAsiento, cuenta: '1.1.03 Insumos y Existencias', debe: totalNeto, haber: 0, referencia: ref }
+            ];
+
+            if (iva21 > 0) {
+                asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.01 IVA Crédito Fiscal 21%', debe: iva21, haber: 0, referencia: ref });
+            }
+            if (iva105 > 0) {
+                asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.03 IVA Crédito Fiscal 10.5%', debe: iva105, haber: 0, referencia: ref });
+            }
+            if (iibb > 0) {
+                asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.02 Percepciones IIBB A Pagar', debe: iibb, haber: 0, referencia: ref });
+            }
+
+            asientos.push({ concepto: conceptoAsiento, cuenta: '2.1.01 Proveedores Varios', debe: 0, haber: totalFactura, referencia: ref });
+
+            let payload = {
+                cuit: cuit,
+                tipo_comprobante: tipo,
+                numero_comprobante: nro,
+                fecha: fecha,
+                vencimiento: venc,
+                neto: totalNeto,
+                iva: totalIva,
+                percepcion_iibb: iibb,
+                total: totalFactura,
+                usuario_registro: usuario,
+                asientos: asientos,
+                renglones: renglones
+            };
+
+            try {
+                const response = await fetch('/api/facturas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.detail || "Error al registrar la factura en el servidor.");
+                }
+
+                alert(`✅ ¡Factura guardada y contabilizada centralizadamente en FastAPI!\n\nOperador: ${usuario}`);
+                limpiarFormularioFactura();
+            } catch (e) {
+                alert("🚨 Error de guardado: " + e.message);
+            }
+        }
+
+        window.onload = inicializarModulo;
+    </script>
+</body>
+</html>

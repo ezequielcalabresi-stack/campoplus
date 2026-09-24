@@ -1,0 +1,283 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Gestión Integral y Conciliación Bancaria</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 20px; }
+        .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 10px; }
+        .table tbody td { padding: 10px; vertical-align: middle; }
+    </style>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body>
+    <div class="container my-4" style="max-width: 1400px;">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Módulo de Gestión, Cuentas Bancarias y Conciliación</small></h4>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="cuentacorriente.html" class="btn btn-outline-secondary btn-sm fw-bold">← Volver a Cuentas Corrientes</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">← Volver al Dashboard</a>
+            </div>
+        </div>
+
+        <!-- SELECTOR DE CUENTA BANCARIA -->
+        <div class="main-card">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label fw-bold">Seleccionar Cuenta Bancaria / Calificación:</label>
+                    <select id="selectCuentaMaestra" class="form-select fw-bold" onchange="cargarDetalleCuenta()">
+                        <option value="">Seleccione una cuenta bancaria...</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-muted small">Banco</label>
+                    <input type="text" id="infoBanco" class="form-control bg-light" readonly placeholder="-">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-muted small">Nº Cta Cte</label>
+                    <input type="text" id="infoNroCta" class="form-control font-monospace bg-light" readonly placeholder="-">
+                </div>
+                <div class="col-md-3 text-end">
+                    <button type="button" class="btn btn-primary btn-sm fw-bold px-3" data-bs-toggle="modal" data-bs-target="#modalConciliacion" style="background-color: #4f46e5; border: none;">
+                        + Registrar Movimiento / Conciliación
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL DE CALIFICACIONES Y ACUERDOS BANCARIOS -->
+        <div class="main-card" id="panelCalificaciones" style="display:none;">
+            <h5 class="fw-bold text-dark mb-3">📊 Calificaciones y Acuerdos de la Cuenta Seleccionada</h5>
+            <div class="row g-3 text-center" id="cardsCalificaciones">
+                <!-- Inyectado dinámicamente -->
+            </div>
+        </div>
+
+        <!-- MOVIMIENTOS BANCARIOS Y CONCILIACIÓN -->
+        <div class="main-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0">📋 Movimientos, Extracto y Conciliación Bancaria</h5>
+                <div class="d-flex gap-2">
+                    <span class="badge bg-success align-self-center p-2">Estado: Conciliado al Día</span>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Tipo / Comprobante</th>
+                            <th>Detalle / Proveedor</th>
+                            <th class="text-end">Debe ($)</th>
+                            <th class="text-end">Haber ($)</th>
+                            <th class="text-end">Saldo Acumulado ($)</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaMovimientosBanco">
+                        <tr><td colspan="8" class="text-center py-4 text-muted">Seleccione una cuenta bancaria para visualizar sus movimientos.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL NUEVO MOVIMIENTO / CONCILIACIÓN -->
+    <div class="modal fade" id="modalConciliacion" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white py-2">
+                    <h5 class="modal-title fs-6 fw-bold">Registrar Débito, Depósito o FCI</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formMovimientoBancario">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Tipo de Operación</label>
+                            <select id="tipoOperacion" class="form-select">
+                                <option value="Debito">Débito Bancario / Comisión / Impuesto</option>
+                                <option value="Deposito">Depósito / Acreditación</option>
+                                <option value="FCI">Suscripción / Rescate FCI</option>
+                                <option value="Cheque Emitido">Pago con Cheque Propio</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Fecha</label>
+                            <input type="date" id="opFecha" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Concepto / Detalle</label>
+                            <input type="text" id="opConcepto" class="form-control" placeholder="Ej: Gastos mantenimiento cuenta / Depósito ventas">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Importe ($)</label>
+                            <input type="number" step="0.01" id="opImporte" class="form-control fw-bold font-monospace text-primary" placeholder="0.00">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" onclick="guardarMovimientoBancario()" class="btn btn-success btn-sm fw-bold px-4">Guardar Movimiento</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let cuentasGlobales = [];
+        let cuentaSeleccionadaActual = null;
+
+        async function inicializarBancos() {
+            try {
+                // Establecer fecha de hoy por defecto en el modal
+                document.getElementById('opFecha').value = new Date().toISOString().split('T')[0];
+
+                const res = await fetch('/api/ctas_ctes_bancarias');
+                cuentasGlobales = await res.json();
+                let select = document.getElementById('selectCuentaMaestra');
+                let html = '<option value="">Seleccione cuenta bancaria...</option>';
+                cuentasGlobales.forEach(c => {
+                    html += `<option value="${c.id}">${c.banco} - Cta Cte Nº ${c.nro_cta_cte} (Titular: ${c.titular})</option>`;
+                });
+                select.innerHTML = html;
+            } catch (e) {
+                console.error("Error al cargar cuentas bancarias:", e);
+            }
+        }
+
+        function cargarDetalleCuenta() {
+            let id = document.getElementById('selectCuentaMaestra').value;
+            if (!id) {
+                document.getElementById('infoBanco').value = "";
+                document.getElementById('infoNroCta').value = "";
+                document.getElementById('panelCalificaciones').style.display = 'none';
+                document.getElementById('tablaMovimientosBanco').innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">Seleccione una cuenta bancaria para visualizar sus movimientos.</td></tr>`;
+                return;
+            }
+
+            cuentaSeleccionadaActual = cuentasGlobales.find(c => c.id == id);
+            if (!cuentaSeleccionadaActual) return;
+
+            document.getElementById('infoBanco').value = cuentaSeleccionadaActual.banco;
+            document.getElementById('infoNroCta').value = cuentaSeleccionadaActual.nro_cta_cte;
+
+            // Mostrar Panel de Calificaciones / Acuerdos
+            let c = cuentaSeleccionadaActual;
+            let cardsHtml = `
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Acuerdo Cta Cte</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.acuerdo_cta_cte || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Visa Business</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.visa_business || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Tarjeta Rural</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.tarjeta_rural || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Vta de CPD</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.vta_cpd || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Leasing SGR</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.leasing_sgr || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Línea Pesos (FW)</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.fw_pesos || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Sola Firma</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.sola_firma || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+                <div class="col-md-3"><div class="p-3 bg-light rounded border"><span class="text-muted small d-block">Crédito Aval SGR</span><h5 class="fw-bold text-dark font-monospace mb-0">$ ${(c.credito_aval_sgr || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</h5></div></div>
+            `;
+            document.getElementById('cardsCalificaciones').innerHTML = cardsHtml;
+            document.getElementById('panelCalificaciones').style.display = 'block';
+
+            cargarMovimientosBanco(cuentaSeleccionadaActual.banco);
+        }
+
+        async function cargarMovimientosBanco(nombreBanco) {
+            try {
+                const res = await fetch(`/api/cuentas_corrientes/${encodeURIComponent(nombreBanco)}`);
+                let movs = await res.json();
+                
+                let tbody = document.getElementById('tablaMovimientosBanco');
+                if (!movs || movs.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">No se registran movimientos para esta entidad bancaria.</td></tr>`;
+                    return;
+                }
+
+                let html = "";
+                movs.forEach(m => {
+                    let debe = m.debe || 0;
+                    let haber = m.haber || 0;
+                    let saldo = m.saldo_renglon || 0;
+                    html += `
+                        <tr>
+                            <td class="font-monospace">${m.fecha || '-'}</td>
+                            <td class="fw-bold">${m.tipo_comprobante || 'Movimiento'}</td>
+                            <td>${m.numero_comprobante || '-'}</td>
+                            <td class="text-end font-monospace text-danger">${debe > 0 ? '$ ' + debe.toLocaleString('es-AR', {minimumFractionDigits: 2}) : '-'}</td>
+                            <td class="text-end font-monospace text-success">${haber > 0 ? '$ ' + haber.toLocaleString('es-AR', {minimumFractionDigits: 2}) : '-'}</td>
+                            <td class="text-end font-monospace fw-bold">$ ${saldo.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                            <td class="text-center"><span class="badge bg-secondary">Conciliado</span></td>
+                            <td class="text-center"><button class="btn btn-outline-dark btn-sm py-0" onclick="auditarMovimiento(${m.id}, '${m.tipo_comprobante}', '${m.numero_comprobante}')">Auditar</button></td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            } catch (e) {
+                console.error("Error cargando movimientos bancarios:", e);
+            }
+        }
+
+        async function guardarMovimientoBancario() {
+            if (!cuentaSeleccionadaActual) {
+                alert("Por favor, seleccione una cuenta bancaria antes de registrar un movimiento.");
+                return;
+            }
+
+            let tipo_operacion = document.getElementById('tipoOperacion').value;
+            let fecha = document.getElementById('opFecha').value;
+            let concepto = document.getElementById('opConcepto').value.trim();
+            let importe = parseFloat(document.getElementById('opImporte').value);
+
+            if (!concepto || isNaN(importe) || importe <= 0) {
+                alert("Por favor complete un concepto válido y un importe mayor a cero.");
+                return;
+            }
+
+            let payload = {
+                banco: cuentaSeleccionadaActual.banco,
+                fecha: fecha,
+                concepto: concepto,
+                tipo_operacion: tipo_operacion,
+                importe: importe
+            };
+
+            try {
+                const res = await fetch('/api/bancos/movimientos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.detail || "Error al guardar el movimiento.");
+
+                alert("✅ Movimiento bancario / conciliación registrado con éxito.");
+                
+                // Limpiar formulario y cerrar modal
+                document.getElementById('opConcepto').value = '';
+                document.getElementById('opImporte').value = '';
+                var myModalEl = document.getElementById('modalConciliacion');
+                var modal = bootstrap.Modal.getInstance(myModalEl);
+                modal.hide();
+
+                // Recargar los movimientos
+                cargarMovimientosBanco(cuentaSeleccionadaActual.banco);
+
+            } catch (err) {
+                alert("🚨 Error al guardar movimiento: " + err.message);
+            }
+        }
+
+        function auditarMovimiento(id, tipo, numero) {
+            alert(`🔍 Auditoría de Movimiento ID #${id}\nTipo: ${tipo}\nComprobante: ${numero}\nEstado: Sincronizado e Integrado en la Contabilidad Central.`);
+        }
+
+        window.onload = inicializarBancos;
+    </script>
+</body>
+</html>

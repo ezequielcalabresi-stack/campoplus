@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Tambo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-6xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Tambo <span class="text-sm font-normal text-sky-700">Producción · Lactancias · Controles</span></h1>
+            <p class="text-xs text-slate-500 mt-1">Litros diarios, calidad (grasa/proteína/RCS), vacas en ordeño y eventos reproductivos vía Ganadería.</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="Ganaderia.html" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-rose-800">← Ganadería</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
+        </div>
+    </div>
+
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Producción diaria -->
+        <div class="border rounded-xl p-4 bg-sky-50/40">
+            <h2 class="font-bold text-slate-800 mb-3">Producción del día</h2>
+            <form class="grid grid-cols-2 gap-3" onsubmit="return guardarProd(event)">
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Tambo</label>
+                    <select id="tambo_id" class="mt-1 w-full border rounded p-2 text-sm"></select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Fecha</label>
+                    <input id="p_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Turno</label>
+                    <select id="p_turno" class="mt-1 w-full border rounded p-2 text-sm">
+                        <option value="mañana">Mañana</option>
+                        <option value="tarde">Tarde</option>
+                        <option value="total">Total día</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Litros</label>
+                    <input id="p_litros" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Vacas ordeñadas</label>
+                    <input id="p_vacas" type="number" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Grasa %</label>
+                    <input id="p_grasa" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Proteína %</label>
+                    <input id="p_prot" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">RCS</label>
+                    <input id="p_rcs" type="number" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Temp. tanque °C</label>
+                    <input id="p_temp" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Observaciones</label>
+                    <input id="p_obs" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div class="col-span-2">
+                    <button class="bg-sky-700 text-white px-4 py-2 rounded-md text-sm font-bold hover:bg-sky-800">Guardar producción</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Control individual -->
+        <div class="border rounded-xl p-4">
+            <h2 class="font-bold text-slate-800 mb-3">Control lechero individual</h2>
+            <form class="grid grid-cols-2 gap-3" onsubmit="return guardarControl(event)">
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Vaca (ID animal)</label>
+                    <div class="flex gap-2 mt-1">
+                        <input id="c_animal" type="number" class="flex-1 border rounded p-2 text-sm" required placeholder="ID">
+                        <button type="button" onclick="cargarVacas()" class="text-xs px-2 border rounded hover:bg-slate-50">Listar</button>
+                    </div>
+                    <select id="c_lista" class="mt-2 w-full border rounded p-2 text-sm" onchange="document.getElementById('c_animal').value=this.value">
+                        <option value="">— vacas de tambo —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Fecha</label>
+                    <input id="c_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Litros</label>
+                    <input id="c_litros" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Grasa %</label>
+                    <input id="c_grasa" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Proteína %</label>
+                    <input id="c_prot" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">RCS</label>
+                    <input id="c_rcs" type="number" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Obs.</label>
+                    <input id="c_obs" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div class="col-span-2 flex flex-wrap gap-2">
+                    <button class="bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-bold">Guardar control</button>
+                    <a href="Ganaderia.html" class="text-sm text-sky-700 font-semibold self-center hover:underline">Registrar celo / IATF / secado en Ganadería</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="mt-6 border rounded-xl overflow-hidden">
+        <div class="bg-slate-100 px-4 py-2 font-bold text-slate-700 text-sm">Últimas producciones diarias</div>
+        <div class="overflow-x-auto max-h-[40vh]">
+            <table class="w-full text-sm">
+                <thead class="text-xs uppercase text-slate-500 border-b">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2">Turno</th>
+                        <th class="p-2 text-right">Litros</th>
+                        <th class="p-2 text-right">Vacas</th>
+                        <th class="p-2 text-right">L/vaca</th>
+                        <th class="p-2 text-right">Grasa%</th>
+                        <th class="p-2 text-right">Prot%</th>
+                        <th class="p-2 text-right">RCS</th>
+                        <th class="p-2">Firma</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyProd" class="divide-y"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function boot() {
+    const hoy = new Date().toISOString().slice(0,10);
+    document.getElementById('p_fecha').value = hoy;
+    document.getElementById('c_fecha').value = hoy;
+    const tambos = await fetch('/api/tambo/establecimientos').then(r => r.json());
+    const sel = document.getElementById('tambo_id');
+    const sorted = (window.CampoPlusFirma && CampoPlusFirma.sortByLabel)
+        ? CampoPlusFirma.sortByLabel(tambos || [], 'nombre')
+        : (tambos || []).slice().sort((a,b) => String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', {sensitivity:'base'}));
+    sel.innerHTML = sorted.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('');
+    await Promise.all([cargarResumen(), cargarProd(), cargarVacas()]);
+}
+
+async function cargarResumen() {
+    const r = await fetch('/api/tambo/resumen').then(x => x.json());
+    const u = r.ultimo_dia || {};
+    document.getElementById('kpis').innerHTML = `
+        <div class="bg-sky-50 border border-sky-200 rounded-lg p-3"><div class="text-xs font-bold text-sky-800 uppercase">Vacas tambo</div><div class="text-2xl font-extrabold">${r.vacas_tambo||0}</div></div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3"><div class="text-xs font-bold text-emerald-800 uppercase">En ordeño</div><div class="text-2xl font-extrabold">${r.en_ordeno||0}</div></div>
+        <div class="bg-white border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Último día</div><div class="text-2xl font-extrabold">${u.litros!=null?Number(u.litros).toFixed(0):'—'} <span class="text-sm font-normal">L</span></div><div class="text-xs text-slate-500">${esc(u.fecha||'')}</div></div>
+        <div class="bg-slate-50 border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Prom. 30d</div><div class="text-2xl font-extrabold">${Number(r.promedio_litros_30d||0).toFixed(0)} <span class="text-sm font-normal">L</span></div></div>`;
+}
+
+async function cargarProd() {
+    const rows = await fetch('/api/tambo/produccion?limit=45').then(r => r.json());
+    document.getElementById('tbodyProd').innerHTML = rows.map(p => {
+        const lv = p.vacas_ordenadas ? (Number(p.litros_total)/Number(p.vacas_ordenadas)).toFixed(1) : '—';
+        return `<tr class="hover:bg-slate-50">
+            <td class="p-2 font-mono text-xs">${esc(p.fecha)}</td>
+            <td class="p-2 text-center">${esc(p.turno)}</td>
+            <td class="p-2 text-right font-semibold">${Number(p.litros_total||0).toFixed(0)}</td>
+            <td class="p-2 text-right">${p.vacas_ordenadas||'—'}</td>
+            <td class="p-2 text-right font-mono">${lv}</td>
+            <td class="p-2 text-right">${p.grasa_pct??'—'}</td>
+            <td class="p-2 text-right">${p.proteina_pct??'—'}</td>
+            <td class="p-2 text-right">${p.rcs??'—'}</td>
+            <td class="p-2 text-xs">${esc(p.usuario_registro||'')}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="9" class="p-6 text-center text-slate-400">Sin producciones cargadas</td></tr>';
+}
+
+async function cargarVacas() {
+    const rows = await fetch('/api/ganaderia/animales?es_tambo=1&estado=activo&limit=500').then(r => r.json());
+    const sorted = (window.CampoPlusFirma && CampoPlusFirma.sortByLabel)
+        ? CampoPlusFirma.sortByLabel(rows || [], a => a.caravana_visual || a.nombre || String(a.id))
+        : (rows || []).slice().sort((a,b) => String(a.caravana_visual||a.nombre||'').localeCompare(String(b.caravana_visual||b.nombre||''), 'es', {sensitivity:'base'}));
+    const sel = document.getElementById('c_lista');
+    sel.innerHTML = '<option value="">— vacas de tambo —</option>' +
+        sorted.map(a => `<option value="${a.id}">${esc(a.caravana_visual||a.id)} · ${esc(a.nombre||'')}</option>`).join('');
+}
+
+async function guardarProd(ev) {
+    ev.preventDefault();
+    const body = {
+        tambo_id: Number(document.getElementById('tambo_id').value) || null,
+        fecha: document.getElementById('p_fecha').value,
+        turno: document.getElementById('p_turno').value,
+        litros_total: Number(document.getElementById('p_litros').value),
+        vacas_ordenadas: Number(document.getElementById('p_vacas').value) || 0,
+        grasa_pct: document.getElementById('p_grasa').value ? Number(document.getElementById('p_grasa').value) : null,
+        proteina_pct: document.getElementById('p_prot').value ? Number(document.getElementById('p_prot').value) : null,
+        rcs: document.getElementById('p_rcs').value ? Number(document.getElementById('p_rcs').value) : null,
+        temperatura_tanque: document.getElementById('p_temp').value ? Number(document.getElementById('p_temp').value) : null,
+        observaciones: document.getElementById('p_obs').value.trim(),
+    };
+    const res = await fetch('/api/tambo/produccion', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!res.ok) { alert('Error al guardar'); return false; }
+    await Promise.all([cargarResumen(), cargarProd()]);
+    return false;
+}
+
+async function guardarControl(ev) {
+    ev.preventDefault();
+    const body = {
+        animal_id: Number(document.getElementById('c_animal').value),
+        fecha: document.getElementById('c_fecha').value,
+        litros: Number(document.getElementById('c_litros').value),
+        grasa_pct: document.getElementById('c_grasa').value ? Number(document.getElementById('c_grasa').value) : null,
+        proteina_pct: document.getElementById('c_prot').value ? Number(document.getElementById('c_prot').value) : null,
+        rcs: document.getElementById('c_rcs').value ? Number(document.getElementById('c_rcs').value) : null,
+        observaciones: document.getElementById('c_obs').value.trim(),
+    };
+    const res = await fetch('/api/tambo/control-lechero', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Control lechero guardado');
+    return false;
+}
+
+window.onload = boot;
+</script>
+</body>
+</html>

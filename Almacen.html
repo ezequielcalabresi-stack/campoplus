@@ -1,0 +1,328 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Almacén agro (insumos + laboreos)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background:#f1f5f9; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; font-size:14px; color:#1e293b; }
+        .main-card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:20px; margin-bottom:16px; }
+        .hint { font-size:12px; color:#64748b; }
+        .font-mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+        .badge-prod { background:#dbeafe; color:#1e40af; }
+        .badge-lab { background:#fef3c7; color:#92400e; }
+    </style>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body>
+<div class="container my-4" style="max-width:1100px;">
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Almacén agropecuario</small></h4>
+            <p class="hint mb-0">Ingresos a <strong>costo neto (sin impuestos)</strong>. Laboreos de terceros también se almacenan para costear OT.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="recalcularStockExcel()">↻ Recalcular stock (Excel)</button>
+            <a href="ordenestrabajo.html" class="btn btn-sm btn-outline-dark fw-bold">Órdenes de Trabajo</a>
+            <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">← Dashboard</a>
+        </div>
+    </div>
+
+    <div class="main-card">
+        <h5 class="fw-bold">Ingreso a almacén</h5>
+        <div class="row g-2">
+            <div class="col-md-2">
+                <label class="small fw-bold">Tipo</label>
+                <select id="ingTipo" class="form-select form-select-sm" onchange="onTipoIngreso()">
+                    <option value="producto">Producto / Insumo</option>
+                    <option value="laboreo">Laboreo de tercero</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Nombre *</label>
+                <input id="ingNombre" class="form-control form-control-sm" list="listaItems" placeholder="Ej: Glifosato / Pulverización">
+                <datalist id="listaItems"></datalist>
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Categoría</label>
+                <select id="ingCat" class="form-select form-select-sm"></select>
+            </div>
+            <div class="col-md-1">
+                <label class="small fw-bold">Unidad</label>
+                <select id="ingUnidad" class="form-select form-select-sm">
+                    <option>Kg</option><option>Lt</option><option>Un</option><option>Has</option><option>Hs</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Cantidad *</label>
+                <input type="number" step="0.01" id="ingCant" class="form-control form-control-sm font-mono" value="0">
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">$ unit. NETO *</label>
+                <input type="number" step="0.01" id="ingPrecio" class="form-control form-control-sm font-mono" value="0" title="Sin IVA ni impuestos">
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Fecha</label>
+                <input type="date" id="ingFecha" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Proveedor / Contratista</label>
+                <input id="ingProv" class="form-control form-control-sm" placeholder="Razón social">
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Comprobante</label>
+                <input id="ingComp" class="form-control form-control-sm font-mono" placeholder="FC A-123">
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Obs.</label>
+                <input id="ingObs" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-success btn-sm fw-bold w-100" onclick="guardarIngreso()">⬆ Ingresar (neto)</button>
+            </div>
+        </div>
+        <p class="hint mt-2 mb-0" id="hintTipo">Los productos comprados entran al stock valuados sin impuestos.</p>
+    </div>
+
+    <div class="main-card">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <h5 class="fw-bold mb-0">Stock actual</h5>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <input id="filtroBuscar" class="form-control form-control-sm" style="width:180px;"
+                       placeholder="Buscar…" oninput="cargarStock()" title="Filtrar por nombre">
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="filtroSoloStock" checked onchange="cargarStock()">
+                    <label class="form-check-label small" for="filtroSoloStock">Solo con stock ≠ 0</label>
+                </div>
+                <select id="filtroTipo" class="form-select form-select-sm" style="width:140px;" onchange="cargarStock()">
+                    <option value="">Todos tipos</option>
+                    <option value="producto">Productos</option>
+                    <option value="laboreo">Laboreos</option>
+                </select>
+                <select id="filtroCat" class="form-select form-select-sm" style="width:200px;" onchange="cargarStock()">
+                    <option value="">Todas categorías</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="agregarCategoria()" title="Nueva categoría">+ Cat.</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="min-width:110px;">Tipo</th>
+                        <th>Nombre</th>
+                        <th style="min-width:180px;">Categoría <span class="fw-normal opacity-75">(editable)</span></th>
+                        <th class="text-center" title="Aplica a Órdenes de Trabajo">OT</th>
+                        <th class="text-end">Stock</th>
+                        <th>Un.</th>
+                        <th class="text-end">Costo prom. neto</th>
+                        <th class="text-end">Valor stock</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaStock"><tr><td colspan="8" class="text-center text-muted py-3">Cargando…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+let itemsCache = [];
+let catsCache = [];
+
+function onTipoIngreso() {
+    const t = document.getElementById('ingTipo').value;
+    const hint = document.getElementById('hintTipo');
+    if (t === 'laboreo') {
+        hint.innerHTML = 'Laboreo de tercero: se <strong>almacena</strong> (ej. Has de pulverización) a costo neto para imputar luego por OT.';
+        document.getElementById('ingUnidad').value = 'Has';
+        const lab = catsCache.find(c => c.codigo === 'laboreos');
+        if (lab) document.getElementById('ingCat').value = 'laboreos';
+    } else {
+        hint.innerHTML = 'Los productos comprados entran al stock valuados <strong>sin impuestos</strong>. Categorías con OT=sí aparecen en Órdenes de Trabajo.';
+        document.getElementById('ingUnidad').value = 'Kg';
+        if (!document.getElementById('ingCat').value) {
+            document.getElementById('ingCat').value = 'agroquimicos';
+        }
+    }
+}
+
+function optsCats(selected) {
+    return catsCache.map(c => {
+        const ot = c.aplica_ot ? ' · OT' : '';
+        const sel = c.codigo === selected ? ' selected' : '';
+        return `<option value="${c.codigo}"${sel}>${c.nombre}${ot}</option>`;
+    }).join('');
+}
+
+async function cargarCategorias() {
+    const res = await fetch('/api/agro/almacen/categorias');
+    catsCache = await res.json();
+    const ing = document.getElementById('ingCat');
+    const prev = ing.value || 'agroquimicos';
+    ing.innerHTML = optsCats(prev);
+    const filtro = document.getElementById('filtroCat');
+    const fPrev = filtro.value;
+    filtro.innerHTML = '<option value="">Todas categorías</option>' +
+        catsCache.map(c => {
+            const ot = c.aplica_ot ? ' (OT)' : '';
+            return `<option value="${c.codigo}">${c.nombre}${ot}</option>`;
+        }).join('');
+    if (fPrev) filtro.value = fPrev;
+}
+
+async function agregarCategoria() {
+    const nombre = prompt('Nombre de la nueva categoría:');
+    if (!nombre || !nombre.trim()) return;
+    const aplica = confirm('¿Esta categoría aplica a Órdenes de Trabajo?\nAceptar = sí (aparece en OT)\nCancelar = no');
+    const codigo = nombre.trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    const res = await fetch('/api/agro/almacen/categorias', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ codigo, nombre: nombre.trim(), aplica_ot: aplica, orden: 80 }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo crear la categoría');
+    await cargarCategorias();
+    document.getElementById('ingCat').value = codigo;
+    alert('Categoría creada: ' + nombre.trim() + (aplica ? ' (aplica a OT)' : ' (no OT)'));
+}
+
+async function cambiarClasificacion(itemId, campo, valor) {
+    const payload = {};
+    payload[campo] = valor;
+    // si pasa a laboreo y no tocó categoría, sugerir laboreos
+    if (campo === 'tipo' && valor === 'laboreo') {
+        const item = itemsCache.find(x => x.id === itemId);
+        if (item && item.categoria_codigo !== 'laboreos') {
+            payload.categoria_codigo = 'laboreos';
+            payload.unidad = 'Has';
+        }
+    }
+    const res = await fetch(`/api/agro/almacen/items/${itemId}/clasificar`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'Error al guardar clasificación');
+    await cargarStock();
+}
+
+async function cambiarCatItem(itemId, codigo) {
+    return cambiarClasificacion(itemId, 'categoria_codigo', codigo);
+}
+
+async function cargarStock() {
+    const tipo = document.getElementById('filtroTipo').value;
+    const cat = document.getElementById('filtroCat').value;
+    const q = (document.getElementById('filtroBuscar')?.value || '').trim().toLowerCase();
+    const solo = document.getElementById('filtroSoloStock')?.checked ? '1' : '0';
+    const params = new URLSearchParams();
+    if (tipo) params.set('tipo', tipo);
+    if (cat) params.set('categoria_codigo', cat);
+    params.set('solo_con_stock', solo);
+    params.set('orden', 'nombre');
+    const res = await fetch('/api/agro/almacen/items?' + params.toString());
+    let rows = await res.json();
+    if (q) rows = rows.filter(i => (i.nombre || '').toLowerCase().includes(q));
+    itemsCache = rows;
+    const dl = document.getElementById('listaItems');
+    dl.innerHTML = itemsCache.map(i => `<option value="${i.nombre}">`).join('');
+    const tb = document.getElementById('tablaStock');
+    if (!itemsCache.length) {
+        tb.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-3">Sin ítems. Desmarcá filtros o reimportá Stock Almacenes.</td></tr>`;
+        return;
+    }
+    tb.innerHTML = itemsCache.map(i => {
+        const stock = Number(i.stock_cantidad || 0);
+        const costo = Number(i.costo_promedio_neto || 0);
+        const valor = stock * costo;
+        const otBadge = Number(i.aplica_ot) === 1
+            ? '<span class="badge bg-success">sí</span>'
+            : '<span class="badge bg-secondary">no</span>';
+        const manual = Number(i.clasificacion_manual) === 1
+            ? ' <span class="text-muted" title="Clasificación manual (no se pisa al reimportar)">✎</span>'
+            : '';
+        const selTipo = `<select class="form-select form-select-sm" style="font-size:12px;min-width:100px;"
+            onchange="cambiarClasificacion(${i.id}, 'tipo', this.value)" title="Editar tipo">
+            <option value="producto"${i.tipo==='producto'?' selected':''}>producto</option>
+            <option value="laboreo"${i.tipo==='laboreo'?' selected':''}>laboreo</option>
+        </select>`;
+        const selCat = `<select class="form-select form-select-sm" style="min-width:160px;font-size:12px;"
+            onchange="cambiarClasificacion(${i.id}, 'categoria_codigo', this.value)" title="Editar categoría">${optsCats(i.categoria_codigo || '')}</select>${manual}`;
+        const selUn = `<select class="form-select form-select-sm" style="width:72px;font-size:12px;"
+            onchange="cambiarClasificacion(${i.id}, 'unidad', this.value)" title="Editar unidad">
+            ${['Kg','Lt','Un','Has','Hs','Unidad'].map(u =>
+                `<option value="${u}"${(i.unidad||'')===u?' selected':''}>${u}</option>`
+            ).join('')}
+        </select>`;
+        return `<tr>
+            <td>${selTipo}</td>
+            <td class="fw-bold">${i.nombre}</td>
+            <td>${selCat}</td>
+            <td class="text-center">${otBadge}</td>
+            <td class="text-end font-mono">${stock.toLocaleString('es-AR',{maximumFractionDigits:3})}</td>
+            <td>${selUn}</td>
+            <td class="text-end font-mono">$ ${costo.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+            <td class="text-end font-mono fw-bold">$ ${valor.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function guardarIngreso() {
+    const nombre = document.getElementById('ingNombre').value.trim();
+    const cantidad = parseFloat(document.getElementById('ingCant').value || 0);
+    const precio = parseFloat(document.getElementById('ingPrecio').value || 0);
+    if (!nombre) return alert('Indicá el nombre.');
+    if (cantidad <= 0) return alert('Cantidad inválida.');
+    const existente = itemsCache.find(i => (i.nombre || '').toLowerCase() === nombre.toLowerCase()
+        && i.tipo === document.getElementById('ingTipo').value);
+    const catCod = document.getElementById('ingCat').value;
+    const catObj = catsCache.find(c => c.codigo === catCod);
+    const payload = {
+        item_id: existente ? existente.id : null,
+        tipo: document.getElementById('ingTipo').value,
+        nombre,
+        categoria: catObj ? catObj.nombre : '',
+        categoria_codigo: catCod,
+        unidad: document.getElementById('ingUnidad').value,
+        fecha: document.getElementById('ingFecha').value,
+        cantidad,
+        precio_unitario_neto: precio,
+        proveedor_nombre: document.getElementById('ingProv').value.trim(),
+        nro_comprobante: document.getElementById('ingComp').value.trim(),
+        observaciones: document.getElementById('ingObs').value.trim()
+    };
+    const res = await fetch('/api/agro/almacen/ingreso', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const d = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(d.detail || 'Error');
+    alert(`✅ ${d.message}\nStock: ${d.stock_cantidad} · Costo prom. neto: $ ${Number(d.costo_promedio_neto||0).toFixed(2)}`);
+    document.getElementById('ingCant').value = '0';
+    document.getElementById('ingPrecio').value = '0';
+    await cargarStock();
+}
+
+async function recalcularStockExcel() {
+    if (!confirm('¿Recalcular stock desde tablas/tablas.xlsx (solapa Stock Almacenes)?\nUsa ENTRADA − SALIDA porque la columna STOCK del Access suele venir en 0.')) return;
+    const res = await fetch('/api/agro/almacen/recalcular_stock', { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'Error al recalcular');
+    const s = d.stock || {};
+    alert(`OK: ${s.items_con_stock || 0} ítems con stock · ${s.movimientos_actualizados || 0} movs actualizados`);
+    await cargarStock();
+}
+
+document.getElementById('ingFecha').value = new Date().toISOString().split('T')[0];
+(async () => {
+    await cargarCategorias();
+    onTipoIngreso();
+    await cargarStock();
+})();
+</script>
+</body>
+</html>

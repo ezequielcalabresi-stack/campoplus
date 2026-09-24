@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Gestión por actividad</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Gestión · Ingresos vs Egresos</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Panorama por actividad con fechas de corte (gastos de facturas + ingresos de liquidaciones).</p>
+            </div>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 border rounded-lg p-4 mb-6">
+            <div>
+                <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Actividad</label>
+                <select id="actividad" class="w-full border rounded-lg p-2 text-sm bg-white">
+                    <option value="">— Todas —</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Desde</label>
+                <input id="desde" type="date" class="w-full border rounded-lg p-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Hasta</label>
+                <input id="hasta" type="date" class="w-full border rounded-lg p-2 text-sm">
+            </div>
+            <div class="flex items-end">
+                <button type="button" onclick="cargar()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-sm">Actualizar</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <div class="text-xs font-bold uppercase text-emerald-800">Ingresos</div>
+                <div id="kpiIng" class="text-2xl font-extrabold text-emerald-900 mt-1">$ 0</div>
+            </div>
+            <div class="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                <div class="text-xs font-bold uppercase text-rose-800">Egresos</div>
+                <div id="kpiEg" class="text-2xl font-extrabold text-rose-900 mt-1">$ 0</div>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <div class="text-xs font-bold uppercase text-slate-700">Resultado</div>
+                <div id="kpiRes" class="text-2xl font-extrabold text-slate-900 mt-1">$ 0</div>
+            </div>
+        </div>
+
+        <div class="border rounded-xl p-4 mb-6 bg-white">
+            <canvas id="chartGestion" height="110"></canvas>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="border rounded-lg overflow-hidden">
+                <div class="bg-emerald-700 text-white text-xs font-bold uppercase px-3 py-2">Detalle ingresos</div>
+                <table class="w-full text-sm">
+                    <thead><tr class="bg-slate-50 text-xs uppercase text-slate-500"><th class="p-2 text-left">Cuenta</th><th class="p-2 text-right">Neto</th></tr></thead>
+                    <tbody id="tbIng"></tbody>
+                </table>
+            </div>
+            <div class="border rounded-lg overflow-hidden">
+                <div class="bg-rose-700 text-white text-xs font-bold uppercase px-3 py-2">Detalle egresos</div>
+                <table class="w-full text-sm">
+                    <thead><tr class="bg-slate-50 text-xs uppercase text-slate-500"><th class="p-2 text-left">Cuenta</th><th class="p-2 text-right">Neto</th></tr></thead>
+                    <tbody id="tbEg"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chart;
+        function fmt(n) {
+            return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        }
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function initActs() {
+            const rows = await fetch('/api/actividades').then(r => r.ok ? r.json() : []);
+            const sel = document.getElementById('actividad');
+            rows.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+            rows.forEach(a => {
+                const o = document.createElement('option');
+                o.value = a.id; o.textContent = a.nombre;
+                sel.appendChild(o);
+            });
+            const y = new Date().getFullYear();
+            document.getElementById('desde').value = y + '-01-01';
+            document.getElementById('hasta').value = new Date().toISOString().slice(0, 10);
+        }
+
+        function renderChart(data) {
+            const labels = [];
+            const ingMap = {}, egMap = {};
+            (data.ingresos || []).forEach(r => {
+                const k = r.actividad || 'Sin actividad';
+                ingMap[k] = (ingMap[k] || 0) + Number(r.total || 0);
+            });
+            (data.egresos || []).forEach(r => {
+                const k = r.actividad || 'Sin actividad';
+                egMap[k] = (egMap[k] || 0) + Number(r.total || 0);
+            });
+            const keys = [...new Set([...Object.keys(ingMap), ...Object.keys(egMap)])].sort((a,b) => a.localeCompare(b, 'es'));
+            keys.forEach(k => labels.push(k));
+            const ctx = document.getElementById('chartGestion');
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Ingresos', data: labels.map(l => ingMap[l] || 0), backgroundColor: 'rgba(16,185,129,0.75)' },
+                        { label: 'Egresos', data: labels.map(l => egMap[l] || 0), backgroundColor: 'rgba(244,63,94,0.7)' },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: 'top' } },
+                    scales: { y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString('es-AR') } } },
+                },
+            });
+        }
+
+        function renderTables(data) {
+            const tbIng = document.getElementById('tbIng');
+            const tbEg = document.getElementById('tbEg');
+            tbIng.innerHTML = (data.ingresos || []).map(r =>
+                `<tr class="border-t"><td class="p-2">${esc(r.cuenta)} <span class="text-xs text-slate-400">(${esc(r.actividad)})</span></td><td class="p-2 text-right font-mono">${fmt(r.total)}</td></tr>`
+            ).join('') || '<tr><td colspan="2" class="p-4 text-center text-slate-400">Sin ingresos en el período</td></tr>';
+            tbEg.innerHTML = (data.egresos || []).map(r =>
+                `<tr class="border-t"><td class="p-2">${esc(r.cuenta)} <span class="text-xs text-slate-400">(${esc(r.actividad)})</span></td><td class="p-2 text-right font-mono">${fmt(r.total)}</td></tr>`
+            ).join('') || '<tr><td colspan="2" class="p-4 text-center text-slate-400">Sin egresos en el período</td></tr>';
+        }
+
+        async function cargar() {
+            const act = document.getElementById('actividad').value;
+            const desde = document.getElementById('desde').value;
+            const hasta = document.getElementById('hasta').value;
+            let url = `/api/gestion/resumen?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
+            if (act) url += `&actividad_id=${act}`;
+            const res = await fetch(url);
+            if (!res.ok) { alert('No se pudo cargar el resumen'); return; }
+            const data = await res.json();
+            document.getElementById('kpiIng').textContent = fmt(data.totales.ingresos);
+            document.getElementById('kpiEg').textContent = fmt(data.totales.egresos);
+            const resEl = document.getElementById('kpiRes');
+            resEl.textContent = fmt(data.totales.resultado);
+            resEl.className = 'text-2xl font-extrabold mt-1 ' + (data.totales.resultado >= 0 ? 'text-emerald-900' : 'text-rose-900');
+            renderChart(data);
+            renderTables(data);
+        }
+
+        window.onload = async function () {
+            if (window.CampoAuth) await CampoAuth.requireAuth({ redirect: 'Gestion.html' });
+            await initActs();
+            await cargar();
+        };
+    </script>
+</body>
+</html>

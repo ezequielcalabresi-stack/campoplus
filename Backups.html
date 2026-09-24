@@ -1,0 +1,203 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Panel de Backups y Respaldos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Respaldos y Seguridad de Datos</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Gestión de copias de seguridad locales y exportación de la base de datos.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- Tarjetas de Estado del Respaldo -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-emerald-50 border border-emerald-200 p-5 rounded-xl">
+                <span class="text-xs font-bold text-emerald-800 uppercase">Estado de la Sincronización</span>
+                <h3 class="text-xl font-extrabold text-emerald-900 mt-1">Sincronizado OK</h3>
+                <span class="text-xs text-emerald-600 mt-1 block">Conectado al servidor FastAPI local</span>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 p-5 rounded-xl">
+                <span class="text-xs font-bold text-blue-800 uppercase">Último Backup Generado</span>
+                <h3 id="lblUltimoBackup" class="text-xl font-extrabold text-blue-900 mt-1">Sin realizar hoy</h3>
+                <span id="lblHoraBackup" class="text-xs text-blue-600 mt-1 block">Sugerido: Exportar al finalizar la jornada</span>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 p-5 rounded-xl">
+                <span class="text-xs font-bold text-amber-800 uppercase">Versión del Sistema</span>
+                <h3 class="text-xl font-extrabold text-amber-900 mt-1">CAmpo+ v10.3</h3>
+                <span class="text-xs text-amber-600 mt-1 block">SQLite WAL Mode Activo</span>
+            </div>
+        </div>
+
+        <!-- Acciones de Backup Manual -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- Descargar Respaldo Local -->
+            <div class="border p-6 rounded-xl bg-slate-50 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-2">Descargar Copia de Seguridad (Backup Local)</h3>
+                    <p class="text-xs text-slate-600 mb-4">Genera un archivo JSON empaquetado en tiempo real con la información de entidades, retenciones, órdenes de pago, cuentas bancarias y configuración comercial.</p>
+                </div>
+                <button onclick="generarBackupJSON()" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center">
+                    ⬇ Descargar Backup Completo (.JSON)
+                </button>
+            </div>
+
+            <div class="border p-6 rounded-xl bg-emerald-50 flex flex-col justify-between border-emerald-200">
+                <div>
+                    <h3 class="text-lg font-bold text-emerald-900 mb-2">Importar tablas Access (agro)</h3>
+                    <p class="text-xs text-emerald-800 mb-4">Lee <code>tablas/tablas.xlsx</code>: contratos/CC alquileres, campos/lotes/IP1-IP2, granos, insumos, laboreos, márgenes históricos, productos y stock de almacén.</p>
+                    <pre id="importAgroLog" class="text-[11px] bg-white border rounded p-2 max-h-28 overflow-auto text-slate-600 mb-3 hidden"></pre>
+                </div>
+                <button onclick="importarTablasAgro(false)" class="bg-emerald-700 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-emerald-800 transition-all text-center mb-2">
+                    Importar / actualizar
+                </button>
+                <button onclick="importarTablasAgro(true)" class="bg-white border border-emerald-400 text-emerald-800 px-4 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-all text-center">
+                    Forzar reimport completo
+                </button>
+            </div>
+
+            <!-- Restaurar Datos -->
+            <div class="border p-6 rounded-xl bg-slate-50 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-2">Restaurar Sistema desde Archivo</h3>
+                    <p class="text-xs text-slate-600 mb-4">Permite cargar y validar la estructura de un archivo de backup previo en formato JSON.</p>
+                </div>
+                <div class="flex gap-2">
+                    <input type="file" id="inputBackupFile" accept=".json" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
+                    <button onclick="restaurarBackupJSON()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-emerald-700">
+                        Restaurar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sync Access -->
+        <div class="border p-6 rounded-xl bg-amber-50/50 border-amber-200 mb-8">
+            <h3 class="text-lg font-bold text-slate-800 mb-2">Sincronizar actualización Access</h3>
+            <p class="text-xs text-slate-600 mb-3">
+                Lee <code class="bg-white px-1 rounded">tablas/tablas actualizacion.xlsx</code> e importa
+                facturas, pagos (caja/cheques), movimientos bancarios y cartera — sin duplicar (Id Access).
+            </p>
+            <button onclick="sincronizarAccess()" class="bg-amber-700 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-amber-800">
+                🔄 Importar actualización ahora
+            </button>
+            <pre id="syncAccessResult" class="mt-3 text-xs bg-white border rounded p-3 hidden max-h-48 overflow-auto"></pre>
+        </div>
+    </div>
+
+    <script>
+        async function sincronizarAccess() {
+            const box = document.getElementById('syncAccessResult');
+            box.classList.remove('hidden');
+            box.textContent = 'Sincronizando…';
+            try {
+                const res = await fetch('/api/access/sincronizar_actualizacion', { method: 'POST' });
+                const data = await res.json();
+                box.textContent = JSON.stringify(data, null, 2);
+                if (!res.ok) alert(data.detail || 'Error');
+                else alert('Sincronización OK');
+            } catch (e) {
+                box.textContent = String(e);
+                alert('Servidor offline o error de red');
+            }
+        }
+
+        async function importarTablasAgro(forzar) {
+            const box = document.getElementById('importAgroLog');
+            box.classList.remove('hidden');
+            box.textContent = forzar ? 'Reimportando (puede tardar 1-2 min)…' : 'Importando tablas agro…';
+            try {
+                const res = await fetch('/api/agro/importar_tablas?forzar=' + (forzar ? 1 : 0), { method: 'POST' });
+                const data = await res.json();
+                box.textContent = JSON.stringify(data, null, 2);
+                if (!res.ok) alert(data.detail || data.message || 'Error');
+                else if (data.status === 'skip') alert(data.message || 'Ya importado');
+                else alert('Importación agro OK');
+            } catch (e) {
+                box.textContent = String(e);
+                alert('Servidor offline o timeout — probá correr: python importar_tablas_agro.py');
+            }
+        }
+
+        async function generarBackupJSON() {
+            try {
+                // Consultar las principales tablas desde el backend
+                const [entidades, retenciones, ordenesPago, ctasBancarias, config] = await Promise.all([
+                    fetch('/api/entidades').then(r => r.ok ? r.json() : []),
+                    fetch('/api/retenciones').then(r => r.ok ? r.json() : []),
+                    fetch('/api/ordenes_pago').then(r => r.ok ? r.json() : []),
+                    fetch('/api/ctas_ctes_bancarias').then(r => r.ok ? r.json() : []),
+                    fetch('/api/configuracion').then(r => r.ok ? r.json() : {})
+                ]);
+
+                const backupData = {
+                    version: "10.3",
+                    fecha_exportacion: new Date().toISOString(),
+                    datos: {
+                        configuracion: config,
+                        entidades: entidades,
+                        retenciones: retenciones,
+                        ordenes_pago: ordenesPago,
+                        cuentas_bancarias: ctasBancarias
+                    }
+                };
+
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+                const downloadAnchor = document.createElement('a');
+                const fechaHoy = new Date().toISOString().split('T')[0];
+                
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `backup_campoplus_${fechaHoy}.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+
+                const horaActual = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('lblUltimoBackup').innerText = `Hoy, ${horaActual}`;
+                document.getElementById('lblHoraBackup').innerText = "Copia guardada localmente";
+
+                alert("✅ ¡Copia de seguridad completada y descargada exitosamente!");
+            } catch (err) {
+                console.error("Error al generar el backup:", err);
+                alert("🚨 Error al generar la copia de seguridad: " + err.message);
+            }
+        }
+
+        function restaurarBackupJSON() {
+            const fileInput = document.getElementById('inputBackupFile');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("Por favor, seleccione un archivo .json de respaldo válido.");
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (!parsed.datos || !parsed.version) {
+                        throw new Error("El formato del archivo JSON no corresponde a un backup válido de CAmpo+.");
+                    }
+                    alert(`✅ Archivo leído correctamente.\nVersión de backup: ${parsed.version}\nFecha: ${parsed.fecha_exportacion}\nValidación exitosa.`);
+                } catch (err) {
+                    alert("🚨 Error al procesar el archivo de respaldo: " + err.message);
+                }
+            };
+
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>

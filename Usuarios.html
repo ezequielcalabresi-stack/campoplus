@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Gestión de Usuarios y Permisos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Usuarios, Roles y Firmas</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Login de acceso + operadores para firmar altas (trazabilidad).</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="AuditLog.html" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-4 py-2 rounded-md text-sm font-medium hover:bg-emerald-100">Ver log</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+            </div>
+        </div>
+
+        <div class="bg-slate-50 border p-6 rounded-xl mb-8">
+            <h3 class="text-lg font-bold text-slate-800 mb-4" id="formTitle">Alta de Nuevo Usuario</h3>
+            <form id="formUsuario" class="grid grid-cols-1 md:grid-cols-3 gap-4" onsubmit="return guardarUsuario(event)">
+                <input type="hidden" id="editId" value="">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Nombre y Apellido</label>
+                    <input id="nombre" type="text" required placeholder="Ej. Juan Pérez" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Login (usuario de ingreso)</label>
+                    <input id="login" type="text" placeholder="ej. jperez" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-mono text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Correo Electrónico</label>
+                    <input id="email" type="email" placeholder="usuario@campoplus.com" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Contraseña <span class="text-slate-400 font-normal">(alta o cambio)</span></label>
+                    <input id="password" type="password" placeholder="mín. 4 caracteres" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Rol / Permisos</label>
+                    <select id="rol" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium text-emerald-800">
+                        <option>Administrador Total</option>
+                        <option>Administración / Carga</option>
+                        <option>Operativo / Campo</option>
+                        <option>Consulta</option>
+                    </select>
+                </div>
+                <div class="flex items-end gap-2">
+                    <button type="submit" class="flex-1 bg-emerald-600 text-white p-2.5 rounded-md text-sm font-bold hover:bg-emerald-700">
+                        Guardar
+                    </button>
+                    <button type="button" onclick="cancelarEdicion()" class="px-3 py-2.5 text-sm text-slate-600 hover:underline">Cancelar</button>
+                </div>
+            </form>
+            <p class="text-xs text-slate-400 mt-3">Si no indicás contraseña al crear, queda <code class="bg-white border px-1 rounded">campo+</code>. En edición, dejá vacío para no cambiarla.</p>
+        </div>
+
+        <div class="border rounded-lg p-4 bg-white">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-lg font-semibold text-slate-700">Usuarios del sistema</h3>
+                <label class="text-xs text-slate-500 flex items-center gap-1">
+                    <input type="checkbox" id="verInactivos" onchange="cargarUsuarios()"> Incluir inactivos
+                </label>
+            </div>
+            <div class="overflow-x-auto border rounded-lg">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-700 text-xs uppercase font-semibold border-b">
+                            <th class="p-3">Usuario</th>
+                            <th class="p-3">Login</th>
+                            <th class="p-3">Email</th>
+                            <th class="p-3">Rol</th>
+                            <th class="p-3 text-center">Estado</th>
+                            <th class="p-3 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyUsuarios" class="text-sm divide-y divide-slate-200"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let _usuariosById = {};
+
+        async function cargarUsuarios() {
+            const solo = document.getElementById('verInactivos').checked ? 0 : 1;
+            const res = await fetch('/api/usuarios?solo_activos=' + solo);
+            const rows = res.ok ? await res.json() : [];
+            _usuariosById = {};
+            rows.forEach(u => { _usuariosById[u.id] = u; });
+            const tb = document.getElementById('tbodyUsuarios');
+            tb.innerHTML = rows.map(u => {
+                const activo = Number(u.activo) === 1;
+                return `<tr class="hover:bg-slate-50">
+                    <td class="p-3 font-medium text-slate-800">${esc(u.nombre)}</td>
+                    <td class="p-3 font-mono text-xs text-slate-600">${esc(u.login || '—')}</td>
+                    <td class="p-3 text-slate-600">${esc(u.email || '—')}</td>
+                    <td class="p-3 font-semibold text-emerald-700">${esc(u.rol || '')}</td>
+                    <td class="p-3 text-center">
+                        <span class="${activo ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'} text-xs px-2 py-0.5 rounded-full font-medium">
+                            ${activo ? 'Activo' : 'Inactivo'}
+                        </span>
+                    </td>
+                    <td class="p-3 text-center space-x-2">
+                        <button onclick="editar(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">Editar</button>
+                        <button onclick="toggleActivo(${u.id}, ${activo ? 0 : 1})" class="text-amber-700 hover:underline text-xs font-bold">
+                            ${activo ? 'Desactivar' : 'Activar'}
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('') || '<tr><td colspan="6" class="p-6 text-center text-slate-400">Sin usuarios</td></tr>';
+        }
+
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function editar(id) {
+            const u = _usuariosById[id];
+            if (!u) return;
+            document.getElementById('editId').value = u.id;
+            document.getElementById('nombre').value = u.nombre || '';
+            document.getElementById('login').value = u.login || '';
+            document.getElementById('email').value = u.email || '';
+            document.getElementById('password').value = '';
+            document.getElementById('rol').value = u.rol || 'Administración / Carga';
+            document.getElementById('formTitle').textContent = 'Editar usuario #' + u.id;
+        }
+
+        function cancelarEdicion() {
+            document.getElementById('editId').value = '';
+            document.getElementById('formUsuario').reset();
+            document.getElementById('formTitle').textContent = 'Alta de Nuevo Usuario';
+        }
+
+        async function guardarUsuario(ev) {
+            ev.preventDefault();
+            const id = document.getElementById('editId').value;
+            const password = document.getElementById('password').value;
+            const login = document.getElementById('login').value.trim().toLowerCase();
+            const body = {
+                nombre: document.getElementById('nombre').value.trim(),
+                email: document.getElementById('email').value.trim(),
+                rol: document.getElementById('rol').value,
+                activo: 1
+            };
+            if (!id) {
+                const res = await fetch('/api/auth/usuarios', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...body,
+                        login: login || body.email || body.nombre,
+                        password: password || 'campo+',
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.detail || 'Error al crear');
+                    return false;
+                }
+            } else {
+                const res = await fetch('/api/usuarios/' + id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...body,
+                        login: login || undefined,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.detail || 'Error al guardar');
+                    return false;
+                }
+                if (password && password.length >= 4) {
+                    const pr = await fetch('/api/auth/usuarios/' + id + '/password', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password }),
+                    });
+                    if (!pr.ok) {
+                        const err = await pr.json().catch(() => ({}));
+                        alert(err.detail || 'Usuario OK pero no se pudo cambiar password');
+                    }
+                }
+            }
+            cancelarEdicion();
+            await cargarUsuarios();
+            return false;
+        }
+
+        async function toggleActivo(id, activo) {
+            const res = await fetch('/api/usuarios/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activo })
+            });
+            if (!res.ok) alert('No se pudo actualizar');
+            await cargarUsuarios();
+        }
+
+        window.onload = async function () {
+            await CampoAuth.requireAuth({ redirect: 'Usuarios.html' });
+            await cargarUsuarios();
+        };
+    </script>
+</body>
+</html>

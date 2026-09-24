@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Dashboard Principal & Gestión Multi-Empresa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="bg-amber-500 text-amber-950 text-center text-sm font-semibold py-2 px-4 shadow">
+        Entorno demostración — datos de ejemplo. No contiene información de clientes reales.
+    </div>
+
+    <div class="max-w-7xl mx-auto p-6 my-6 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera, Selector de Tenant y Acceso a Gestión de Empresas -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b pb-4 gap-4">
+            <div class="flex items-center gap-3">
+                <img id="logoEmpresaHeader" alt="" class="h-12 w-12 object-contain rounded-lg border border-slate-200 bg-slate-50 hidden">
+                <div>
+                    <h1 class="text-3xl font-extrabold text-slate-800">CAmpo+ <span class="text-sm font-normal text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full font-semibold">Sistema de Gestión Agropecuaria</span></h1>
+                    <p class="text-xs text-slate-500 mt-1"><span id="nombreEmpresaHeader">—</span> · <span id="planEmpresaHeader" class="font-semibold text-slate-600"></span></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2 bg-slate-50 p-2 border border-slate-200 rounded-lg shadow-sm flex-wrap">
+                    <span class="text-xs font-bold text-slate-600 uppercase">Empresa:</span>
+                    <select id="selectTenantHeader" class="form-select text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1" onchange="cambiarTenantHeader(this.value)"></select>
+                    <span id="userSessionLabel" class="text-xs text-slate-500 px-1"></span>
+                    <a href="Empresas.html" class="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded font-bold hover:bg-emerald-700 transition" title="Administrar empresas">Empresas</a>
+                    <a href="Usuarios.html" class="text-xs bg-slate-700 text-white px-2.5 py-1 rounded font-bold hover:bg-slate-800 transition">Usuarios</a>
+                    <a href="AuditLog.html" class="text-xs bg-amber-600 text-white px-2.5 py-1 rounded font-bold hover:bg-amber-700 transition">Log</a>
+                    <button type="button" onclick="cerrarSesion()" class="text-xs bg-rose-100 text-rose-800 px-2.5 py-1 rounded font-bold hover:bg-rose-200 transition">Salir</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TARJETAS RESUMEN GENERAL (KPIs DINÁMICOS) -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-emerald-800 uppercase">Compromisos a Pagar (ARS)</span>
+                <h3 id="kpiCompromisos" class="text-2xl font-extrabold text-emerald-900 mt-1">Cargando...</h3>
+                <span id="kpiCompromisosSub" class="text-xs text-emerald-700 mt-1 block">Saldo pendiente con proveedores</span>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-blue-800 uppercase">Acuerdos Bancarios Totales</span>
+                <h3 id="kpiBancos" class="text-2xl font-extrabold text-blue-900 mt-1">Cargando...</h3>
+                <span class="text-xs text-blue-700 mt-1 block">Línea de crédito en Ctas. Ctes.</span>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-amber-800 uppercase">Deuda en Dólares (USD)</span>
+                <h3 id="kpiDeudaUsd" class="text-2xl font-extrabold text-amber-900 mt-1">Cargando...</h3>
+                <span class="text-xs text-amber-700 mt-1 block">Forwards / líneas en USD</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-slate-700 uppercase">Alquileres (Kilos Soja)</span>
+                <h3 id="kpiAlquileres" class="text-2xl font-extrabold text-slate-900 mt-1">Cargando...</h3>
+                <span class="text-xs text-slate-500 mt-1 block">Total Campaña Pactado</span>
+            </div>
+        </div>
+
+        <!-- MÓDULO 1: ADMINISTRACIÓN, TESORERÍA Y VENTAS -->
+        <div class="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-xl" data-mod="mod_bancos">
+            <h3 class="text-md font-extrabold text-slate-800 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <span>💼</span> Administración, Tesorería y Ventas
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <a href="Bancos.html" data-mod="mod_bancos" class="bg-white border-2 border-sky-500 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🏦 Bancos y Tesorería</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Cuentas, cheques y conciliaciones.</p>
+                </a>
+                <a href="financiero.html" data-mod="mod_bancos" class="bg-white border-2 border-indigo-600 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📑 Consulta de Estado Financiero</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Cheques Empresa, extras, sueldos y proyección Access.</p>
+                </a>
+                <a href="ordenes_pago.html" data-mod="mod_bancos" class="bg-white border-2 border-emerald-500 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">💸 Órdenes de Pago</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Pagos y retenciones.</p>
+                </a>
+                <a href="cuentacorriente.html" data-mod="mod_bancos" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-indigo-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📊 Cta Cte (Proveedores)</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Saldos a pagar.</p>
+                </a>
+                <a href="clientes_cobrar.html" data-mod="mod_bancos" class="bg-white border-2 border-blue-500 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">👥 Clientes a Cobrar</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Saldos de clientes.</p>
+                </a>
+                <a href="ingresofacturas.html" data-mod="mod_bancos" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-emerald-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📄 Carga de Facturas</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Imputación e impuestos.</p>
+                </a>
+                <a href="Actividades.html" data-mod="mod_bancos" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-amber-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📂 Actividades / Ctas gasto</div>
+                    <p class="text-xs text-slate-500 mt-0.5">ABM de imputaciones por actividad.</p>
+                </a>
+                <a href="proveedoresclientes.html" data-mod="mod_bancos" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-blue-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📒 Padrón Unificado</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Proveedores y Clientes.</p>
+                </a>
+                <a href="liquidacionesgranos.html" data-mod="mod_liquidaciones" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-amber-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🌾 Ventas (LPG)</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Granos y certificados.</p>
+                </a>
+                <a href="liquidacioneshacienda.html" data-mod="mod_liquidaciones" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-rose-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🐂 Hacienda y Remates</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Tropas y liquidaciones.</p>
+                </a>
+                <a href="Gestion.html" data-mod="mod_liquidaciones" class="bg-white border-2 border-emerald-500 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📈 Gestión por actividad</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Ingresos vs egresos · gráfico y fechas.</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- MÓDULO GANADERÍA / TAMBO -->
+        <div class="mb-6 p-4 bg-rose-50/50 border border-rose-200 rounded-xl" data-mod-any="mod_ganaderia,mod_tambo">
+            <h3 class="text-md font-extrabold text-rose-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <span>🐄</span> Ganadería y Tambo
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <a href="Ganaderia.html" data-mod="mod_ganaderia" class="bg-white border-2 border-rose-500 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🐄 Ganadería (ciclo completo)</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Cría, recría, encierre, feedlot, EID, IATF, pesadas.</p>
+                </a>
+                <a href="Tambo.html" data-mod="mod_tambo" class="bg-white border-2 border-sky-500 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🥛 Tambo</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Producción diaria, calidad y controles lecheros.</p>
+                </a>
+                <a href="liquidacioneshacienda.html" data-mod="mod_liquidaciones" class="bg-white border border-rose-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-rose-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📋 Liquidaciones hacienda</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Remates y consignatarios.</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- MÓDULO 2: AGRICULTURA Y PRODUCCIÓN -->
+        <div class="mb-6 p-4 bg-emerald-50/50 border border-emerald-200 rounded-xl" data-mod-any="mod_agro,mod_almacen">
+            <h3 class="text-md font-extrabold text-emerald-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <span>🌱</span> Agricultura, Cultivos y Agronomía
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <a href="Margenesbrutos.html" data-mod="mod_agro" class="bg-white border border-emerald-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-emerald-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🌱 Márgenes Brutos / Campaña</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Campos, lotes, rotación y plan de siembra.</p>
+                </a>
+                <a href="Almacen.html" data-mod="mod_almacen" class="bg-white border border-emerald-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-emerald-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📦 Almacén agro</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Insumos y laboreos a costo neto (s/imp).</p>
+                </a>
+                <a href="ordenestrabajo.html" data-mod="mod_almacen" class="bg-white border-2 border-emerald-500 p-3 rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📝 Órdenes de Trabajo</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Asignar stock del almacén al lote.</p>
+                </a>
+                <a href="Contratosalquileres.html" data-mod="mod_agro" class="bg-white border border-emerald-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-emerald-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🌾 Contratos y Alquileres</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Kilos de soja pactados y aparcerías.</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- MÓDULO 3: ÁREA IMPOSITIVA / FISCAL -->
+        <div class="mb-6 p-4 bg-purple-50/50 border border-purple-200 rounded-xl" data-mod-any="mod_arba,mod_sicore,mod_agro">
+            <h3 class="text-md font-extrabold text-purple-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <span>🏛️</span> Área Impositiva y Fiscal (ARBA / SICORE / IP)
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <a href="Arba.html" data-mod="mod_arba" class="bg-white border border-purple-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-purple-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🏛️ Padrón ARBA (DFE)</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Alícuotas IIBB y generación XML DFE.</p>
+                </a>
+                <a href="Sicore.html" data-mod="mod_sicore" class="bg-white border border-purple-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-purple-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">📑 SICORE (RG 830)</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Exportación TXT de retenciones de ganancias.</p>
+                </a>
+                <a href="InformacionProductiva1.html" data-mod="mod_agro" class="bg-white border border-purple-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-purple-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🌾 Información productiva 1 (Fina)</div>
+                    <p class="text-xs text-slate-500 mt-0.5">ARCA IP1 — cultivos de fina (trigo, cebada…).</p>
+                </a>
+                <a href="InformacionProductiva2.html" data-mod="mod_agro" class="bg-white border border-purple-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-purple-500 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🌽 Información productiva 2 (Gruesa)</div>
+                    <p class="text-xs text-slate-500 mt-0.5">ARCA IP2 — cultivos de gruesa (soja, maíz…).</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- MÓDULO 4: CONTABILIDAD Y UTILIDADES -->
+        <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
+            <h3 class="text-md font-extrabold text-slate-800 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <span>🗂️</span> Contabilidad, Personal y Configuración
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                <a href="Contabilidad.html" data-mod="mod_contabilidad" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🗂️ Contabilidad General</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Plan de cuentas, mayor y EECC.</p>
+                </a>
+                <a href="empleados.html" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">👷‍♂️ Sueldos y Personal</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Indexación IPC y recibos.</p>
+                </a>
+                <a href="Baul.html" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">🔐 Baúl de Claves</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Accesos y portales fiscales.</p>
+                </a>
+                <a href="Empresas.html" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-emerald-400 transition-all">
+                    <div class="font-bold text-emerald-800 text-sm">🏢 Gestión Empresas</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Planes, módulos, logo y acceso.</p>
+                </a>
+                <a href="Backups.html" class="bg-white border border-slate-200 p-3 rounded-lg shadow-sm hover:shadow-md hover:border-slate-400 transition-all">
+                    <div class="font-bold text-slate-800 text-sm">💾 Backups Multi-Base</div>
+                    <p class="text-xs text-slate-500 mt-0.5">Respaldos independientes.</p>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function cargarEmpresasHeader() {
+            const select = document.getElementById('selectTenantHeader');
+            try {
+                const [resEmpresas, resActiva] = await Promise.all([
+                    fetch('/api/empresas'),
+                    fetch('/api/empresa_activa')
+                ]);
+
+                if (!resEmpresas.ok) {
+                    select.innerHTML = '<option value="">Error al cargar empresas</option>';
+                    return;
+                }
+
+                const empresas = await resEmpresas.json();
+                select.innerHTML = '';
+
+                if (!empresas.length) {
+                    select.innerHTML = '<option value="">No hay empresas registradas</option>';
+                    return;
+                }
+
+                empresas.forEach(emp => {
+                    const opt = document.createElement('option');
+                    opt.value = emp.id;
+                    opt.textContent = emp.razon_social;
+                    select.appendChild(opt);
+                });
+
+                let activaId = null;
+                if (resActiva.ok) {
+                    const activa = await resActiva.json();
+                    activaId = activa.id;
+                }
+
+                if (activaId && empresas.some(e => e.id === activaId)) {
+                    select.value = String(activaId);
+                } else {
+                    select.value = String(empresas[0].id);
+                    await cambiarTenantHeader(empresas[0].id, false);
+                }
+
+                localStorage.setItem('campoplus_tenant_activo', select.value);
+            } catch (e) {
+                console.error('Error al cargar empresas desde SQLite:', e);
+                select.innerHTML = '<option value="">Servidor offline</option>';
+            }
+        }
+
+        async function cargarMetricasBackend() {
+            const fmtArs = (n) => "$ " + Math.abs(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+            const fmtUsd = (n) => "USD " + Math.abs(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+            const fmtKg = (n) => Math.abs(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 0}) + " Kg";
+            try {
+                const res = await fetch('/api/dashboard/kpis');
+                if (!res.ok) throw new Error('KPI offline');
+                const kpis = await res.json();
+                document.getElementById('kpiCompromisos').innerText = fmtArs(kpis.compromisos_neto_fci_ars != null ? kpis.compromisos_neto_fci_ars : kpis.compromisos_ars);
+                const subComp = document.getElementById('kpiCompromisosSub');
+                if (subComp) {
+                    const fci = Number(kpis.fci_activos_ars || 0);
+                    subComp.innerText = fci > 0.01
+                        ? `Bruto $ ${Math.abs(kpis.compromisos_ars||0).toLocaleString('es-AR',{maximumFractionDigits:0})} − FCI $ ${fci.toLocaleString('es-AR',{maximumFractionDigits:0})}`
+                        : 'Saldo pendiente con proveedores';
+                }
+                document.getElementById('kpiBancos').innerText = fmtArs(kpis.acuerdos_bancarios_ars);
+                document.getElementById('kpiDeudaUsd').innerText = fmtUsd(kpis.deuda_usd);
+                document.getElementById('kpiAlquileres').innerText = fmtKg(kpis.alquileres_kg);
+            } catch (e) {
+                console.error("Error al cargar métricas del backend:", e);
+                document.getElementById('kpiCompromisos').innerText = "Servidor Offline";
+                document.getElementById('kpiBancos').innerText = "Servidor Offline";
+                document.getElementById('kpiDeudaUsd').innerText = "Servidor Offline";
+                document.getElementById('kpiAlquileres').innerText = "Servidor Offline";
+            }
+        }
+
+        async function cambiarTenantHeader(tenantId, recargarMetricas = true) {
+            const empresaId = parseInt(tenantId, 10);
+            if (!empresaId) return;
+
+            localStorage.setItem('campoplus_tenant_activo', String(empresaId));
+            try {
+                const res = await fetch('/api/empresa_activa', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ empresa_activa_id: empresaId })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    console.error('No se pudo actualizar empresa activa:', err.detail || res.status);
+                }
+                const det = await fetch('/api/empresas/' + empresaId);
+                if (det.ok) {
+                    const emp = await det.json();
+                    localStorage.setItem('campoplus_session_empresa', JSON.stringify(emp));
+                    refrescarBranding(emp);
+                }
+            } catch (e) {
+                console.error("Error al actualizar la empresa activa en el servidor:", e);
+            }
+            if (recargarMetricas) cargarMetricasBackend();
+        }
+
+        function refrescarBranding(emp) {
+            if (!emp) return;
+            CampoAuth.paintLogo(emp, '#logoEmpresaHeader', '#nombreEmpresaHeader');
+            const logo = document.getElementById('logoEmpresaHeader');
+            if (logo && emp.logo_url) logo.classList.remove('hidden');
+            const plan = document.getElementById('planEmpresaHeader');
+            if (plan) plan.textContent = 'Plan ' + (emp.plan || 'full') + (Number(emp.acceso_habilitado) ? '' : ' · SUSPENDIDA');
+            CampoAuth.applyModuleVisibility(emp);
+        }
+
+        async function cerrarSesion() {
+            await CampoAuth.logout();
+            location.href = 'Login.html';
+        }
+
+        window.onload = async function() {
+            const ses = await CampoAuth.requireAuth({ redirect: 'Index.html' });
+            if (!ses) return;
+            const u = ses.usuario || {};
+            const ul = document.getElementById('userSessionLabel');
+            if (ul) ul.textContent = (u.nombre || '') + (Number(u.es_superadmin) ? ' · admin' : '');
+            refrescarBranding(ses.empresa);
+            await cargarEmpresasHeader();
+            cargarMetricasBackend();
+        };
+    </script>
+</body>
+</html>

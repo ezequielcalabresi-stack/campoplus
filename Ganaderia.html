@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Ganadería (ciclo completo)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js"></script>
+    <style>
+        .tab-btn.active { background:#0f172a; color:#fff; }
+        .chip { @apply text-xs font-semibold px-2 py-0.5 rounded-full; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-7xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Ganadería <span class="text-sm font-normal text-rose-700">Cría · Recría · Encierre · Feedlot</span></h1>
+            <p class="text-xs text-slate-500 mt-1">Inventario individual, EID, celos, IATF, pesadas y movimientos de ciclo.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 items-start">
+            <a href="Tambo.html" class="bg-sky-600 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-sky-700">Tambo →</a>
+            <a href="liquidacioneshacienda.html" class="bg-rose-50 text-rose-800 border border-rose-200 px-3 py-2 rounded-md text-sm font-medium">Liquidaciones</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">← Dashboard</a>
+        </div>
+    </div>
+
+    <!-- KPIs -->
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5"></div>
+
+    <!-- Tabs -->
+    <div class="flex flex-wrap gap-1 mb-4 border-b pb-2">
+        <button class="tab-btn active px-3 py-1.5 rounded text-sm font-semibold" data-tab="stock" onclick="showTab('stock')">Stock</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="alta" onclick="showTab('alta')">Alta animal</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="evento" onclick="showTab('evento')">Eventos / IATF</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="eid" onclick="showTab('eid')">Lecturas EID</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="rodeos" onclick="showTab('rodeos')">Rodeos</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="historial" onclick="showTab('historial')">Historial</button>
+    </div>
+
+    <!-- STOCK -->
+    <section id="tab-stock" class="tab-panel">
+        <div class="flex flex-wrap gap-2 mb-3">
+            <input id="filtroQ" class="border rounded px-2 py-1.5 text-sm" placeholder="Caravana / EID / nombre…" onkeydown="if(event.key==='Enter')cargarAnimales()">
+            <select id="filtroSistema" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
+                <option value="">Todos los sistemas</option>
+                <option value="cria">Cría</option>
+                <option value="recria">Recría</option>
+                <option value="encierre">Encierre</option>
+                <option value="feedlot">Feedlot</option>
+                <option value="ciclo_completo">Ciclo completo</option>
+                <option value="tambo">Tambo</option>
+            </select>
+            <select id="filtroRodeo" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
+                <option value="">Todos los rodeos</option>
+            </select>
+            <button onclick="cargarAnimales()" class="bg-slate-800 text-white px-3 py-1.5 rounded text-sm font-bold">Buscar</button>
+        </div>
+        <div class="overflow-x-auto border rounded-lg max-h-[55vh]">
+            <table class="w-full text-sm text-left">
+                <thead class="sticky top-0 bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2">Caravana</th>
+                        <th class="p-2">EID</th>
+                        <th class="p-2">Sexo</th>
+                        <th class="p-2">Categoría</th>
+                        <th class="p-2">Sistema</th>
+                        <th class="p-2">Rodeo</th>
+                        <th class="p-2 text-right">Peso</th>
+                        <th class="p-2">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyAnimales" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- ALTA -->
+    <section id="tab-alta" class="tab-panel hidden">
+        <form class="grid grid-cols-1 md:grid-cols-3 gap-3" onsubmit="return guardarAnimal(event)">
+            <div>
+                <label class="text-xs font-bold text-slate-600">Caravana visual</label>
+                <input id="a_visual" class="mt-1 w-full border rounded p-2 text-sm" required>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Caravana electrónica (EID)</label>
+                <input id="a_eid" class="mt-1 w-full border rounded p-2 text-sm font-mono" placeholder="RFID / ISO">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">SENASA / ID</label>
+                <input id="a_senasa" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Sexo</label>
+                <select id="a_sexo" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option>Hembra</option><option>Macho</option><option>Indefinido</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Raza</label>
+                <input id="a_raza" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Angus, Hereford…">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Nacimiento</label>
+                <input id="a_nac" type="date" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Sistema</label>
+                <select id="a_sistema" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option value="cria">Cría</option>
+                    <option value="recria">Recría</option>
+                    <option value="encierre">Encierre</option>
+                    <option value="feedlot">Feedlot</option>
+                    <option value="ciclo_completo">Ciclo completo</option>
+                    <option value="tambo">Tambo</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Categoría</label>
+                <select id="a_categoria" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Rodeo</label>
+                <select id="a_rodeo" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Peso alta (kg)</label>
+                <input id="a_peso" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Origen</label>
+                <input id="a_origen" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Nacimiento / Compra…">
+            </div>
+            <div class="flex items-end gap-2">
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="a_tambo"> Es animal de tambo</label>
+            </div>
+            <div class="md:col-span-3">
+                <label class="text-xs font-bold text-slate-600">Observaciones</label>
+                <input id="a_obs" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div class="md:col-span-3">
+                <button class="bg-rose-700 text-white px-5 py-2.5 rounded-md text-sm font-bold hover:bg-rose-800">Guardar animal</button>
+            </div>
+        </form>
+    </section>
+
+    <!-- EVENTOS -->
+    <section id="tab-evento" class="tab-panel hidden">
+        <form class="grid grid-cols-1 md:grid-cols-3 gap-3" onsubmit="return guardarEvento(event)">
+            <div>
+                <label class="text-xs font-bold text-slate-600">Animal (ID)</label>
+                <input id="e_animal" type="number" class="mt-1 w-full border rounded p-2 text-sm" placeholder="ID o elegí desde stock" required>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Fecha</label>
+                <input id="e_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Tipo de evento</label>
+                <select id="e_tipo" class="mt-1 w-full border rounded p-2 text-sm" onchange="toggleEventoFields()">
+                    <option value="pesada">Pesada</option>
+                    <option value="celo">Celo</option>
+                    <option value="iatf">IATF</option>
+                    <option value="inseminacion">Inseminación</option>
+                    <option value="servicio_natural">Servicio natural</option>
+                    <option value="diagnostico_prenez">Diagnóstico de preñez</option>
+                    <option value="parto">Parto</option>
+                    <option value="aborto">Aborto</option>
+                    <option value="destete">Destete → Recría</option>
+                    <option value="ingreso_feedlot">Ingreso feedlot</option>
+                    <option value="salida_feedlot">Salida feedlot</option>
+                    <option value="cambio_rodeo">Cambio de rodeo</option>
+                    <option value="cambio_categoria">Cambio de categoría</option>
+                    <option value="vacunacion">Vacunación</option>
+                    <option value="tratamiento">Tratamiento</option>
+                    <option value="sanidad">Sanidad</option>
+                    <option value="venta">Venta</option>
+                    <option value="mortandad">Mortandad</option>
+                    <option value="nota">Nota</option>
+                </select>
+            </div>
+            <div id="fld_peso">
+                <label class="text-xs font-bold text-slate-600">Peso (kg)</label>
+                <input id="e_peso" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div id="fld_protocolo" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Protocolo IATF</label>
+                <select id="e_protocolo" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div id="fld_resultado" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Resultado</label>
+                <select id="e_resultado" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option value="">—</option>
+                    <option>Preñada</option>
+                    <option>Vacía</option>
+                    <option>Dudosa</option>
+                    <option>Celo observado</option>
+                    <option>Parto normal</option>
+                    <option>Parto asistido</option>
+                </select>
+            </div>
+            <div id="fld_semen" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Lote semen / toro</label>
+                <input id="e_semen" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div id="fld_tecnico" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Técnico</label>
+                <input id="e_tecnico" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div id="fld_rodeo" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Rodeo destino</label>
+                <select id="e_rodeo" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div id="fld_categoria" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Categoría destino</label>
+                <select id="e_categoria" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div id="fld_med" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Medicamento / dosis</label>
+                <div class="flex gap-2 mt-1">
+                    <input id="e_med" class="flex-1 border rounded p-2 text-sm" placeholder="Producto">
+                    <input id="e_dosis" class="w-28 border rounded p-2 text-sm" placeholder="Dosis">
+                </div>
+            </div>
+            <div class="md:col-span-3">
+                <label class="text-xs font-bold text-slate-600">Detalle</label>
+                <input id="e_detalle" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div class="md:col-span-3">
+                <button class="bg-emerald-700 text-white px-5 py-2.5 rounded-md text-sm font-bold hover:bg-emerald-800">Registrar evento</button>
+            </div>
+        </form>
+    </section>
+
+    <!-- EID -->
+    <section id="tab-eid" class="tab-panel hidden">
+        <p class="text-sm text-slate-600 mb-2">Pegá lecturas del stick/manga: una por línea. Formato <code class="bg-slate-100 px-1 rounded">EID</code> o <code class="bg-slate-100 px-1 rounded">EID;peso;caravana_visual</code></p>
+        <textarea id="eid_texto" rows="8" class="w-full border rounded p-3 font-mono text-sm" placeholder="982000123456789&#10;982000123456790;320;A-101"></textarea>
+        <div class="flex flex-wrap gap-3 mt-3 items-center">
+            <label class="text-sm flex items-center gap-2"><input type="checkbox" id="eid_crear"> Crear animal si el EID no existe</label>
+            <select id="eid_sistema" class="border rounded px-2 py-1.5 text-sm">
+                <option value="cria">Sistema: Cría</option>
+                <option value="recria">Recría</option>
+                <option value="encierre">Encierre</option>
+                <option value="feedlot">Feedlot</option>
+                <option value="tambo">Tambo</option>
+            </select>
+            <button onclick="importarEID()" class="bg-indigo-700 text-white px-4 py-2 rounded text-sm font-bold hover:bg-indigo-800">Importar lecturas</button>
+        </div>
+        <pre id="eid_result" class="mt-3 text-xs bg-slate-50 border rounded p-3 hidden"></pre>
+    </section>
+
+    <!-- RODEOS -->
+    <section id="tab-rodeos" class="tab-panel hidden">
+        <form class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4" onsubmit="return guardarRodeo(event)">
+            <input id="r_nombre" class="border rounded p-2 text-sm" placeholder="Nombre rodeo" required>
+            <select id="r_sistema" class="border rounded p-2 text-sm">
+                <option value="cria">Cría</option>
+                <option value="recria">Recría</option>
+                <option value="encierre">Encierre</option>
+                <option value="feedlot">Feedlot</option>
+                <option value="ciclo_completo">Ciclo completo</option>
+                <option value="tambo">Tambo</option>
+            </select>
+            <input id="r_campo" class="border rounded p-2 text-sm" placeholder="Campo / potrero">
+            <button class="bg-slate-800 text-white rounded text-sm font-bold">+ Rodeo</button>
+        </form>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr><th class="p-2 text-left">Nombre</th><th class="p-2">Sistema</th><th class="p-2">Campo</th><th class="p-2 text-right">Cabezas</th></tr>
+                </thead>
+                <tbody id="tbodyRodeos"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- HISTORIAL -->
+    <section id="tab-historial" class="tab-panel hidden">
+        <div class="flex gap-2 mb-3">
+            <select id="h_tipo" class="border rounded px-2 py-1.5 text-sm" onchange="cargarHistorial()">
+                <option value="">Todos los tipos</option>
+            </select>
+            <button onclick="cargarHistorial()" class="bg-slate-800 text-white px-3 py-1.5 rounded text-sm font-bold">Actualizar</button>
+        </div>
+        <div class="overflow-x-auto border rounded-lg max-h-[55vh]">
+            <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2">Tipo</th>
+                        <th class="p-2">Animal</th>
+                        <th class="p-2">Peso</th>
+                        <th class="p-2">Resultado</th>
+                        <th class="p-2">Detalle</th>
+                        <th class="p-2">Firma</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyHist" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function showTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
+}
+
+async function boot() {
+    document.getElementById('e_fecha').value = new Date().toISOString().slice(0,10);
+    const [cats, rodeos, meta] = await Promise.all([
+        fetch('/api/ganaderia/categorias').then(r => r.json()),
+        fetch('/api/ganaderia/rodeos').then(r => r.json()),
+        fetch('/api/ganaderia/meta').then(r => r.json()),
+    ]);
+    window._cats = cats; window._rodeos = rodeos;
+    fillSelect('a_categoria', cats, 'id', 'nombre', true);
+    fillSelect('e_categoria', cats, 'id', 'nombre', true);
+    fillSelect('a_rodeo', rodeos, 'id', x => `${x.nombre} (${x.sistema})`, true);
+    fillSelect('e_rodeo', rodeos, 'id', x => `${x.nombre} (${x.sistema})`, true);
+    fillSelect('filtroRodeo', rodeos, 'id', 'nombre', true);
+    const protos = await fetch('/api/ganaderia/protocolos-iatf').then(r => r.json());
+    fillSelect('e_protocolo', protos, 'nombre', 'nombre', true);
+    const hTipo = document.getElementById('h_tipo');
+    (meta.tipos_evento || []).forEach(t => {
+        const o = document.createElement('option'); o.value = t; o.textContent = t; hTipo.appendChild(o);
+    });
+    await Promise.all([cargarResumen(), cargarAnimales(), cargarRodeosTabla(), cargarHistorial()]);
+    toggleEventoFields();
+}
+
+function fillSelect(id, rows, valKey, label, withEmpty) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const keep = sel.value;
+    const getLab = typeof label === 'function' ? label : (r => r[label]);
+    const sorted = (window.CampoPlusFirma && CampoPlusFirma.sortByLabel)
+        ? CampoPlusFirma.sortByLabel(rows || [], getLab)
+        : (rows || []).slice().sort((a,b) => String(getLab(a)||'').localeCompare(String(getLab(b)||''), 'es', {sensitivity:'base'}));
+    sel.innerHTML = withEmpty ? '<option value="">—</option>' : '';
+    sorted.forEach(r => {
+        const o = document.createElement('option');
+        o.value = r[valKey] ?? r.id;
+        o.textContent = getLab(r);
+        sel.appendChild(o);
+    });
+    if (keep) sel.value = keep;
+}
+
+async function cargarResumen() {
+    const r = await fetch('/api/ganaderia/resumen').then(x => x.json());
+    const por = Object.fromEntries((r.por_sistema || []).map(x => [x.sistema, x.n]));
+    document.getElementById('kpis').innerHTML = `
+        <div class="bg-rose-50 border border-rose-200 rounded-lg p-3"><div class="text-xs font-bold text-rose-800 uppercase">Stock activo</div><div class="text-2xl font-extrabold text-rose-900">${r.total_activos||0}</div></div>
+        <div class="bg-slate-50 border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Con EID</div><div class="text-2xl font-extrabold">${r.con_eid||0}</div></div>
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3"><div class="text-xs font-bold text-amber-800 uppercase">Cría</div><div class="text-2xl font-extrabold">${por.cria||0}</div></div>
+        <div class="bg-orange-50 border border-orange-200 rounded-lg p-3"><div class="text-xs font-bold text-orange-800 uppercase">Recría / Encierre</div><div class="text-2xl font-extrabold">${(por.recria||0)+(por.encierre||0)}</div></div>
+        <div class="bg-stone-100 border rounded-lg p-3"><div class="text-xs font-bold text-stone-700 uppercase">Feedlot</div><div class="text-2xl font-extrabold">${por.feedlot||0}</div></div>`;
+}
+
+async function cargarAnimales() {
+    const q = document.getElementById('filtroQ').value.trim();
+    const sistema = document.getElementById('filtroSistema').value;
+    const rodeo_id = document.getElementById('filtroRodeo').value;
+    const params = new URLSearchParams({ estado: 'activo', limit: '500' });
+    if (q) params.set('q', q);
+    if (sistema) params.set('sistema', sistema);
+    if (rodeo_id) params.set('rodeo_id', rodeo_id);
+    const rows = await fetch('/api/ganaderia/animales?' + params).then(r => r.json());
+    document.getElementById('tbodyAnimales').innerHTML = rows.map(a => `
+        <tr class="hover:bg-slate-50">
+            <td class="p-2 font-semibold">${esc(a.caravana_visual||'—')}</td>
+            <td class="p-2 font-mono text-xs text-slate-500">${esc(a.caravana_electronica||'')}</td>
+            <td class="p-2">${esc(a.sexo)}</td>
+            <td class="p-2">${esc(a.categoria_nombre||'')}</td>
+            <td class="p-2"><span class="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-semibold">${esc(a.sistema_actual)}</span></td>
+            <td class="p-2 text-slate-600">${esc(a.rodeo_nombre||'')}</td>
+            <td class="p-2 text-right font-mono">${a.peso_ultimo != null ? Number(a.peso_ultimo).toFixed(0) : '—'}</td>
+            <td class="p-2 whitespace-nowrap">
+                <button onclick="usarAnimal(${a.id})" class="text-emerald-700 text-xs font-bold hover:underline">Evento</button>
+                <button onclick="verFicha(${a.id})" class="text-slate-600 text-xs font-bold hover:underline ml-2">Ficha</button>
+            </td>
+        </tr>`).join('') || '<tr><td colspan="8" class="p-6 text-center text-slate-400">Sin animales. Cargá altas o importá EID.</td></tr>';
+}
+
+function usarAnimal(id) {
+    document.getElementById('e_animal').value = id;
+    showTab('evento');
+}
+
+async function verFicha(id) {
+    const data = await fetch('/api/ganaderia/animales/' + id).then(r => r.json());
+    const a = data.animal;
+    const ev = (data.eventos || []).slice(0, 15).map(e =>
+        `${e.fecha} · ${e.tipo}${e.peso_kg!=null?' · '+e.peso_kg+'kg':''}${e.resultado?' · '+e.resultado:''}`
+    ).join('\n');
+    alert(`#${a.id} ${a.caravana_visual||''}\nEID: ${a.caravana_electronica||'—'}\n${a.sexo} · ${a.sistema_actual}\nPeso: ${a.peso_ultimo??'—'} kg\n\nÚltimos eventos:\n${ev||'(sin eventos)'}`);
+}
+
+async function guardarAnimal(ev) {
+    ev.preventDefault();
+    const body = {
+        caravana_visual: document.getElementById('a_visual').value.trim(),
+        caravana_electronica: document.getElementById('a_eid').value.trim(),
+        senasa_id: document.getElementById('a_senasa').value.trim(),
+        sexo: document.getElementById('a_sexo').value,
+        raza: document.getElementById('a_raza').value.trim(),
+        fecha_nacimiento: document.getElementById('a_nac').value,
+        sistema_actual: document.getElementById('a_sistema').value,
+        categoria_id: Number(document.getElementById('a_categoria').value) || null,
+        rodeo_id: Number(document.getElementById('a_rodeo').value) || null,
+        peso_ultimo: document.getElementById('a_peso').value ? Number(document.getElementById('a_peso').value) : null,
+        origen: document.getElementById('a_origen').value.trim(),
+        observaciones: document.getElementById('a_obs').value.trim(),
+        es_tambo: document.getElementById('a_tambo').checked ? 1 : 0,
+    };
+    const res = await fetch('/api/ganaderia/animales', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Animal guardado #' + (await res.json()).id);
+    showTab('stock');
+    await Promise.all([cargarResumen(), cargarAnimales()]);
+    return false;
+}
+
+function toggleEventoFields() {
+    const t = document.getElementById('e_tipo').value;
+    const show = (id, on) => document.getElementById(id).classList.toggle('hidden', !on);
+    show('fld_peso', ['pesada','ingreso_feedlot','salida_feedlot','destete','venta'].includes(t));
+    show('fld_protocolo', t === 'iatf');
+    show('fld_resultado', ['celo','diagnostico_prenez','parto','aborto'].includes(t));
+    show('fld_semen', ['iatf','inseminacion','servicio_natural'].includes(t));
+    show('fld_tecnico', ['iatf','inseminacion','diagnostico_prenez','tratamiento','vacunacion'].includes(t));
+    show('fld_rodeo', ['cambio_rodeo','ingreso_feedlot','salida_feedlot','destete'].includes(t));
+    show('fld_categoria', ['cambio_categoria','destete'].includes(t));
+    show('fld_med', ['tratamiento','vacunacion','sanidad'].includes(t));
+}
+
+async function guardarEvento(ev) {
+    ev.preventDefault();
+    const body = {
+        animal_id: Number(document.getElementById('e_animal').value),
+        fecha: document.getElementById('e_fecha').value,
+        tipo: document.getElementById('e_tipo').value,
+        peso_kg: document.getElementById('e_peso').value ? Number(document.getElementById('e_peso').value) : null,
+        protocolo: document.getElementById('e_protocolo').value || null,
+        resultado: document.getElementById('e_resultado').value || null,
+        semen_lote: document.getElementById('e_semen').value || null,
+        tecnico: document.getElementById('e_tecnico').value || null,
+        rodeo_id: Number(document.getElementById('e_rodeo').value) || null,
+        categoria_id: Number(document.getElementById('e_categoria').value) || null,
+        medicamento: document.getElementById('e_med').value || null,
+        dosis: document.getElementById('e_dosis').value || null,
+        detalle: document.getElementById('e_detalle').value || null,
+    };
+    const res = await fetch('/api/ganaderia/eventos', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Evento registrado');
+    await Promise.all([cargarResumen(), cargarAnimales(), cargarHistorial()]);
+    return false;
+}
+
+async function importarEID() {
+    const lines = document.getElementById('eid_texto').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const crear = document.getElementById('eid_crear').checked;
+    const sistema = document.getElementById('eid_sistema').value;
+    const lecturas = lines.map(line => {
+        const p = line.split(/[;,\t]/).map(x => x.trim());
+        return {
+            eid: p[0],
+            peso_kg: p[1] ? Number(p[1]) : null,
+            caravana_visual: p[2] || '',
+            crear_si_no_existe: crear,
+            sistema_actual: sistema,
+        };
+    });
+    const res = await fetch('/api/ganaderia/lecturas-eid', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ lecturas })
+    });
+    const data = await res.json();
+    const box = document.getElementById('eid_result');
+    box.classList.remove('hidden');
+    box.textContent = JSON.stringify(data, null, 2);
+    await Promise.all([cargarResumen(), cargarAnimales(), cargarHistorial()]);
+}
+
+async function cargarRodeosTabla() {
+    const rows = await fetch('/api/ganaderia/rodeos').then(r => r.json());
+    window._rodeos = rows;
+    fillSelect('filtroRodeo', rows, 'id', 'nombre', true);
+    fillSelect('a_rodeo', rows, 'id', x => `${x.nombre} (${x.sistema})`, true);
+    fillSelect('e_rodeo', rows, 'id', x => `${x.nombre} (${x.sistema})`, true);
+    document.getElementById('tbodyRodeos').innerHTML = rows.map(r => `
+        <tr class="border-t"><td class="p-2 font-medium">${esc(r.nombre)}</td>
+        <td class="p-2 text-center text-xs font-semibold">${esc(r.sistema)}</td>
+        <td class="p-2 text-slate-600">${esc(r.campo_ref||'')}</td>
+        <td class="p-2 text-right font-mono">${r.cabezas||0}</td></tr>`).join('');
+}
+
+async function guardarRodeo(ev) {
+    ev.preventDefault();
+    const body = {
+        nombre: document.getElementById('r_nombre').value.trim(),
+        sistema: document.getElementById('r_sistema').value,
+        campo_ref: document.getElementById('r_campo').value.trim(),
+    };
+    const res = await fetch('/api/ganaderia/rodeos', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!res.ok) { alert('Error al crear rodeo'); return false; }
+    document.getElementById('r_nombre').value = '';
+    await cargarRodeosTabla();
+    return false;
+}
+
+async function cargarHistorial() {
+    const tipo = document.getElementById('h_tipo').value;
+    const params = new URLSearchParams({ limit: '200' });
+    if (tipo) params.set('tipo', tipo);
+    const rows = await fetch('/api/ganaderia/eventos?' + params).then(r => r.json());
+    document.getElementById('tbodyHist').innerHTML = rows.map(e => `
+        <tr class="hover:bg-slate-50">
+            <td class="p-2 whitespace-nowrap font-mono text-xs">${esc(e.fecha)}</td>
+            <td class="p-2"><span class="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-bold">${esc(e.tipo)}</span></td>
+            <td class="p-2">${esc(e.caravana_visual||e.animal_id||'—')} <span class="text-xs text-slate-400">${esc(e.caravana_electronica||'')}</span></td>
+            <td class="p-2 text-right font-mono">${e.peso_kg!=null?e.peso_kg:'—'}</td>
+            <td class="p-2">${esc(e.resultado||e.protocolo||'')}</td>
+            <td class="p-2 text-xs text-slate-500 max-w-xs truncate">${esc(e.detalle||'')}</td>
+            <td class="p-2 text-xs">${esc(e.usuario_registro||'')}</td>
+        </tr>`).join('') || '<tr><td colspan="7" class="p-6 text-center text-slate-400">Sin eventos</td></tr>';
+}
+
+window.onload = boot;
+</script>
+</body>
+</html>

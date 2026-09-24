@@ -1,0 +1,365 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Padrón Unificado de Entidades & Datos Fiscales (SICORE)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 20px; }
+        .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; padding: 12px; letter-spacing: 0.5px; }
+        .table tbody td { padding: 12px; vertical-align: middle; }
+        
+        .btn-accion-cc {
+            background-color: #0284c7;
+            color: #ffffff;
+            border: none;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+        }
+        .btn-accion-cc:hover { background-color: #0369a1; color: #ffffff; }
+
+        .btn-accion-editar {
+            background-color: #475569;
+            color: #ffffff;
+            border: none;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+        }
+        .btn-accion-editar:hover { background-color: #334155; color: #ffffff; }
+
+        .btn-accion-eliminar {
+            background-color: #ef4444;
+            color: #ffffff;
+            border: none;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+        }
+        .btn-accion-eliminar:hover { background-color: #dc2626; color: #ffffff; }
+    </style>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body>
+    <div class="container my-4" style="max-width: 1280px;">
+        <!-- CABECERA -->
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Padrón Unificado de Entidades & Datos Fiscales</small></h4>
+            </div>
+            <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600; padding: 8px 16px;">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <div class="alert alert-success py-2 px-3 mb-4 fs-6 rounded-3 shadow-sm border-0 d-flex align-items-center gap-2" style="background-color: #ecfdf5; color: #065f46;">
+            <span>✓</span> <strong>Conectado al backend FastAPI.</strong> Padrón sincronizado en tiempo real.
+        </div>
+
+        <!-- FORMULARIO DE LEGAJO FISCAL -->
+        <div class="main-card">
+            <h5 class="mb-3 text-secondary fw-bold fs-6 text-uppercase tracking-wide" id="form-titulo">📋 Legajo Fiscal y Domiciliario de la Entidad</h5>
+            <form id="form-entidad">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-slate-700">CUIT (Solo números, sin guiones)*</label>
+                        <input type="text" class="form-control" id="cuit" required placeholder="Ej: 30554380749">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label fw-bold text-slate-700">Razón Social / Apellido y Nombre*</label>
+                        <input type="text" class="form-control" id="razon_social" required placeholder="Ej: ANDREOLI S.A.">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold text-slate-700">Domicilio Fiscal (Calle y Número)*</label>
+                        <input type="text" class="form-control" id="domicilio" placeholder="Ej: Av. San Martín 450">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-slate-700">Localidad*</label>
+                        <input type="text" class="form-control" id="localidad" placeholder="Ej: Chivilcoy">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold text-slate-700">Código Postal (CP)*</label>
+                        <input type="text" class="form-control" id="codigo_postal" placeholder="Ej: 6620">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-slate-700">Provincia (Código AFIP)*</label>
+                        <select class="form-select" id="provincia">
+                            <option value="01 - Buenos Aires">01 - Buenos Aires</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-slate-700">Centro de Costos</label>
+                        <select class="form-select" id="centro_costo">
+                            <option value="1">1 — Contabilidad oficial (genera asientos)</option>
+                            <option value="SP">S/P — Sin Partida (cta cte sí, asiento oficial no)</option>
+                        </select>
+                        <div class="form-text">Secretito operativo: S/P no impacta el libro diario oficial.</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-slate-700">Régimen SICORE (RG 830)</label>
+                        <select class="form-select" id="regimen_sicore">
+                            <option value="">— Sin definir —</option>
+                            <option value="032">032 — Bienes Inmuebles Rurales (incluye leasing)</option>
+                            <option value="031">031 — Bienes Inmuebles Urbanos (incluye leasing)</option>
+                            <option value="030">030 — Alquileres bienes muebles</option>
+                            <option value="078">078 — Enajenación bienes muebles</option>
+                            <option value="094">094 — Locaciones obra/servicios</option>
+                            <option value="095">095 — Transporte de carga</option>
+                            <option value="025">025 — Comisiones comercio</option>
+                            <option value="116">116 — Honorarios director/síndico</option>
+                            <option value="119">119 — Profesiones liberales</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end pb-1">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="es_propietario_inmueble" onchange="onPropietarioInmueble()">
+                            <label class="form-check-label fw-semibold" for="es_propietario_inmueble">
+                                Propietario / arrendador de inmueble
+                            </label>
+                            <div class="form-text">Precarga SICORE <strong>032</strong> (RG 830) en órdenes de pago.</div>
+                        </div>
+                    </div>
+                    <div class="col-md-8 d-flex align-items-center pt-3 flex-wrap gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="es_proveedor" checked>
+                            <label class="form-check-label fw-semibold" for="es_proveedor">Proveedor</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="es_cliente">
+                            <label class="form-check-label fw-semibold" for="es_cliente">Cliente</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="es_cuenta_ajuste" onchange="onCuentaAjuste()">
+                            <label class="form-check-label fw-semibold text-danger" for="es_cuenta_ajuste">Cta de ajuste / banco</label>
+                            <div class="form-text">Se oculta del padrón comercial y de “a pagar”.</div>
+                        </div>
+                        <div class="ms-auto d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm px-3 fw-semibold" id="btn-cancelar" style="display:none;" onclick="limpiarForm()">Cancelar</button>
+                            <button type="submit" class="btn btn-primary px-4 fw-bold" id="btn-guardar" style="background-color: #0284c7; border: none;">＋ Guardar Entidad</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- BUSCADOR + FILTRO -->
+        <div class="mb-4 d-flex flex-wrap gap-2 align-items-center">
+            <input type="text" id="buscador" class="form-control form-control-lg shadow-sm fs-6 flex-grow-1" style="min-width:220px;" placeholder="🔍 Búsqueda rápida por CUIT o Razón Social..." onkeyup="filtrarEntidades()">
+            <select id="filtroVista" class="form-select form-select-lg shadow-sm" style="max-width:260px;" onchange="cargarEntidades()">
+                <option value="comerciales" selected>Comerciales (sin ctas ajuste)</option>
+                <option value="ajuste">Solo ctas de ajuste / banco</option>
+                <option value="todas">Todas</option>
+            </select>
+        </div>
+
+        <!-- DIRECTORIO GENERAL -->
+        <div class="main-card">
+            <h5 class="mb-3 text-secondary fw-bold fs-6 text-uppercase tracking-wide">Directorio General de Entidades y Datos Fiscales</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>CUIT</th>
+                            <th>Razón Social</th>
+                            <th>Domicilio Fiscal</th>
+                            <th>Localidad (CP / Prov)</th>
+                            <th>Roles</th>
+                            <th>SICORE</th>
+                            <th>Centro</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-entidades">
+                        <tr><td colspan="8" class="text-center py-4 text-muted">Cargando entidades...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let entidadesGlobal = [];
+
+        async function cargarEntidades() {
+            try {
+                const vista = document.getElementById('filtroVista').value;
+                let qs = '';
+                if (vista === 'ajuste') qs = '?solo_ajuste=true';
+                else if (vista === 'todas') qs = '?incluir_ajuste=true';
+                // comerciales = default API (sin ajuste)
+                let res = await fetch('/api/entidades' + qs);
+                entidadesGlobal = await res.json();
+                filtrarEntidades();
+            } catch (err) {
+                console.error("Error cargando entidades:", err);
+            }
+        }
+
+        function renderTabla(data) {
+            let tbody = document.getElementById('tabla-entidades');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">No se encontraron entidades.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.map(e => {
+                const reg = (e.regimen_sicore || (e.es_propietario_inmueble ? '032' : '') || '').toString().padStart(3, '0').replace(/^000$/, '');
+                const regBadge = reg
+                    ? `<span class="badge ${reg === '032' ? 'bg-warning text-dark' : 'bg-dark'} font-monospace px-2 py-1" title="${e.es_propietario_inmueble ? 'Propietario de inmueble → OP precarga 032' : 'Régimen SICORE'}">${reg}</span>`
+                    : '<span class="text-muted">—</span>';
+                const esAj = Number(e.es_cuenta_ajuste) === 1;
+                return `
+                <tr class="${esAj ? 'table-secondary' : ''}">
+                    <td class="fw-bold font-monospace">${e.cuit}</td>
+                    <td class="fw-semibold text-slate-800">${e.nombre_fantasia || e.razon_social}
+                        ${e.es_propietario_inmueble ? ' <span class="badge bg-warning-subtle text-dark border">Arrendador</span>' : ''}
+                        ${esAj ? ' <span class="badge bg-danger-subtle text-danger border">Cta ajuste</span>' : ''}
+                    </td>
+                    <td class="text-muted">${e.domicilio || '-'}</td>
+                    <td class="text-muted">${e.localidad || '-'}</td>
+                    <td>
+                        <div class="d-flex gap-1 flex-wrap">
+                            ${e.es_proveedor ? '<span class="badge bg-primary px-2 py-1">Proveedor</span>' : ''}
+                            ${e.es_cliente ? '<span class="badge bg-success px-2 py-1">Cliente</span>' : ''}
+                            ${esAj ? '<span class="badge bg-danger px-2 py-1">Ajuste</span>' : ''}
+                        </div>
+                    </td>
+                    <td>${regBadge}</td>
+                    <td>${(e.centro_costo || '1') === 'SP'
+                        ? '<span class="badge bg-warning text-dark px-2 py-1" title="Sin asiento en contabilidad oficial">S/P</span>'
+                        : '<span class="badge bg-secondary px-2 py-1">1</span>'}</td>
+                    <td class="text-center">
+                        <div class="d-flex justify-content-center gap-1">
+                            <button class="btn-accion-cc" onclick="window.location.href='detallegestioncc.html?cuit=${e.cuit}'">📊 Cta Cte</button>
+                            <button class="btn-accion-editar" onclick="editarEntidad('${String(e.cuit).replace(/'/g, "\\'")}')">✏️ Editar</button>
+                            <button class="btn-accion-eliminar" onclick="eliminarEntidad('${String(e.cuit).replace(/'/g, "\\'")}')">🗑️ Eliminar</button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function onPropietarioInmueble() {
+            const chk = document.getElementById('es_propietario_inmueble');
+            const sel = document.getElementById('regimen_sicore');
+            if (chk.checked) {
+                sel.value = '032';
+                document.getElementById('es_proveedor').checked = true;
+                document.getElementById('es_cuenta_ajuste').checked = false;
+            }
+        }
+
+        function onCuentaAjuste() {
+            if (document.getElementById('es_cuenta_ajuste').checked) {
+                // Ajuste puede seguir siendo "proveedor" técnicamente pero se oculta del listado comercial
+            }
+        }
+
+        function filtrarEntidades() {
+            let query = document.getElementById('buscador').value.toLowerCase();
+            let filtrados = entidadesGlobal.filter(e =>
+                (e.cuit && String(e.cuit).toLowerCase().includes(query)) ||
+                (e.nombre_fantasia && e.nombre_fantasia.toLowerCase().includes(query)) ||
+                (e.razon_social && e.razon_social.toLowerCase().includes(query)) ||
+                (e.domicilio && e.domicilio.toLowerCase().includes(query)) ||
+                (e.regimen_sicore && String(e.regimen_sicore).includes(query))
+            );
+            renderTabla(filtrados);
+        }
+
+        function editarEntidad(cuit) {
+            let e = entidadesGlobal.find(x => String(x.cuit) === String(cuit) || String(x.cuit).replace(/\D/g,'') === String(cuit).replace(/\D/g,''));
+            if (!e) return;
+            document.getElementById('cuit').value = e.cuit;
+            document.getElementById('cuit').readOnly = true;
+            document.getElementById('razon_social').value = e.nombre_fantasia || e.razon_social || '';
+            document.getElementById('domicilio').value = e.domicilio || '';
+            document.getElementById('localidad').value = e.localidad || '';
+            document.getElementById('es_proveedor').checked = !!e.es_proveedor;
+            document.getElementById('es_cliente').checked = !!e.es_cliente;
+            document.getElementById('es_cuenta_ajuste').checked = !!e.es_cuenta_ajuste;
+            document.getElementById('centro_costo').value = (e.centro_costo || '1') === 'SP' ? 'SP' : '1';
+            document.getElementById('es_propietario_inmueble').checked = !!e.es_propietario_inmueble;
+            const reg = (e.regimen_sicore || (e.es_propietario_inmueble ? '032' : '') || '').toString();
+            document.getElementById('regimen_sicore').value = reg ? reg.padStart(3, '0') : '';
+            document.getElementById('form-titulo').innerText = "✏️ EDITAR ENTIDAD: " + (e.nombre_fantasia || e.cuit);
+            document.getElementById('btn-guardar').innerText = "Guardar Cambios";
+            document.getElementById('btn-cancelar').style.display = 'inline-block';
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        function limpiarForm() {
+            document.getElementById('form-entidad').reset();
+            document.getElementById('cuit').readOnly = false;
+            document.getElementById('form-titulo').innerText = "📋 Legajo Fiscal y Domiciliario de la Entidad";
+            document.getElementById('btn-guardar').innerText = "＋ Guardar Entidad";
+            document.getElementById('btn-cancelar').style.display = 'none';
+            document.getElementById('regimen_sicore').value = '';
+            document.getElementById('es_propietario_inmueble').checked = false;
+            document.getElementById('es_cuenta_ajuste').checked = false;
+            document.getElementById('es_proveedor').checked = true;
+        }
+
+        document.getElementById('form-entidad').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const esProp = document.getElementById('es_propietario_inmueble').checked;
+            const esAj = document.getElementById('es_cuenta_ajuste').checked;
+            let reg = document.getElementById('regimen_sicore').value || '';
+            if (esProp && !reg) reg = '032';
+            let data = {
+                cuit: document.getElementById('cuit').value,
+                razon_social: document.getElementById('razon_social').value,
+                nombre_fantasia: document.getElementById('razon_social').value,
+                domicilio: document.getElementById('domicilio').value,
+                localidad: document.getElementById('localidad').value,
+                provincia: document.getElementById('provincia').value,
+                es_proveedor: document.getElementById('es_proveedor').checked ? 1 : 0,
+                es_cliente: document.getElementById('es_cliente').checked ? 1 : 0,
+                es_cuenta_ajuste: esAj ? 1 : 0,
+                centro_costo: document.getElementById('centro_costo').value || '1',
+                regimen_sicore: reg,
+                es_propietario_inmueble: esProp ? 1 : 0
+            };
+
+            let res = await fetch('/api/entidades', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                const msg = esAj
+                    ? "Guardada como cta de ajuste (no aparece en el padrón comercial)."
+                    : (esProp ? "Guardada como proveedor/arrendador con SICORE 032." : "¡Entidad guardada/actualizada!");
+                alert(msg);
+                limpiarForm();
+                cargarEntidades();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                alert(err.detail || "Error al guardar la entidad.");
+            }
+        });
+
+        async function eliminarEntidad(cuit) {
+            if (!confirm("¿Estás seguro de eliminar esta entidad?")) return;
+            let res = await fetch(`/api/entidades/${cuit}`, { method: 'DELETE' });
+            if (res.ok) {
+                cargarEntidades();
+            } else {
+                alert("Error al eliminar.");
+            }
+        }
+
+        cargarEntidades();
+    </script>
+</body>
+</html>

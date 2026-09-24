@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Log de auditoría / Firmas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+    <div class="max-w-7xl mx-auto p-6 my-6 bg-white rounded-xl shadow-lg">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b pb-4 gap-3">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">Log de auditoría</h2>
+                <p class="text-xs text-slate-500 mt-1">Trazabilidad de altas y modificaciones con firma del operador.</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="Usuarios.html" class="bg-slate-100 text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-200">Usuarios</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+            <div>
+                <label class="text-xs font-bold text-slate-600">Usuario</label>
+                <input id="filtroUsuario" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Nombre…" onkeydown="if(event.key==='Enter')cargar()">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Módulo</label>
+                <input id="filtroModulo" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="ej. agro, bancos…" onkeydown="if(event.key==='Enter')cargar()">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Buscar</label>
+                <input id="filtroQ" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Ruta / detalle…" onkeydown="if(event.key==='Enter')cargar()">
+            </div>
+            <div class="flex items-end gap-2">
+                <button onclick="cargar()" class="flex-1 bg-emerald-600 text-white p-2 rounded-md text-sm font-bold hover:bg-emerald-700">Filtrar</button>
+                <button onclick="exportarCsv()" class="bg-slate-700 text-white p-2 rounded-md text-sm font-bold hover:bg-slate-800">CSV</button>
+            </div>
+        </div>
+
+        <p id="meta" class="text-xs text-slate-500 mb-2"></p>
+        <div class="overflow-x-auto border rounded-lg max-h-[70vh]">
+            <table class="w-full text-left text-sm border-collapse">
+                <thead class="sticky top-0 bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2">Fecha/hora</th>
+                        <th class="p-2">Firma</th>
+                        <th class="p-2">Acción</th>
+                        <th class="p-2">Módulo</th>
+                        <th class="p-2">Ruta</th>
+                        <th class="p-2 text-center">HTTP</th>
+                        <th class="p-2">Detalle</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody" class="divide-y divide-slate-100"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let _lastItems = [];
+
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function cargar() {
+            const u = document.getElementById('filtroUsuario').value.trim();
+            const m = document.getElementById('filtroModulo').value.trim();
+            const q = document.getElementById('filtroQ').value.trim();
+            const params = new URLSearchParams({ limit: '300', offset: '0' });
+            if (u) params.set('usuario', u);
+            if (m) params.set('modulo', m);
+            if (q) params.set('q', q);
+            const res = await fetch('/api/audit/log?' + params.toString());
+            if (!res.ok) {
+                document.getElementById('meta').textContent = 'No se pudo cargar el log (¿servidor offline?).';
+                return;
+            }
+            const data = await res.json();
+            _lastItems = data.items || [];
+            document.getElementById('meta').textContent =
+                `Mostrando ${_lastItems.length} de ${data.total} eventos.`;
+            const tb = document.getElementById('tbody');
+            tb.innerHTML = _lastItems.map(r => {
+                const ok = r.status_code >= 200 && r.status_code < 300;
+                const badge = ok ? 'text-emerald-700' : 'text-red-600 font-bold';
+                const det = (r.detalle || '').slice(0, 180);
+                return `<tr class="hover:bg-slate-50 align-top">
+                    <td class="p-2 whitespace-nowrap font-mono text-xs">${esc(r.ts)}</td>
+                    <td class="p-2 font-semibold text-slate-800">${esc(r.usuario_nombre)}</td>
+                    <td class="p-2"><span class="text-xs font-bold bg-slate-100 px-1.5 py-0.5 rounded">${esc(r.accion)}</span></td>
+                    <td class="p-2 text-slate-600">${esc(r.modulo)}</td>
+                    <td class="p-2 font-mono text-xs text-slate-500">${esc(r.ruta)}</td>
+                    <td class="p-2 text-center ${badge}">${esc(r.status_code)}</td>
+                    <td class="p-2 text-xs text-slate-500 max-w-md truncate" title="${esc(r.detalle)}">${esc(det)}</td>
+                </tr>`;
+            }).join('') || '<tr><td colspan="7" class="p-6 text-center text-slate-400">Sin eventos aún. Las cargas y modificaciones quedan firmadas acá.</td></tr>';
+        }
+
+        function exportarCsv() {
+            if (!_lastItems.length) { alert('No hay filas para exportar'); return; }
+            const cols = ['ts','usuario_nombre','accion','modulo','ruta','status_code','detalle','empresa_id','ip'];
+            const lines = [cols.join(';')];
+            _lastItems.forEach(r => {
+                lines.push(cols.map(c => '"' + String(r[c] ?? '').replace(/"/g, '""') + '"').join(';'));
+            });
+            const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'audit_log_campoplus.csv';
+            a.click();
+        }
+
+        window.onload = cargar;
+    </script>
+</body>
+</html>

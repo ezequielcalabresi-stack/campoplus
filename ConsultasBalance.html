@@ -1,0 +1,158 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Consulta General de Estados Contables (Demo)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-7xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg relative">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Repositorio Oficial de Balances y Notas (Demo)</span></h2>
+                <p id="estado-db" class="text-xs text-emerald-600 mt-1 font-medium">✅ Datos contables del PDF adjunto sincronizados.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- FILTROS DE CONSULTA -->
+        <div class="bg-slate-50 p-4 rounded-lg border mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div>
+                <label class="block font-medium text-slate-700 mb-1">Filtrar por Capítulo / Nota / Anexo</label>
+                <select id="filtroCapitulo" onchange="filtrarDatos()" class="w-full rounded border p-2 bg-white font-medium">
+                    <option value="">-- Todos los Capítulos --</option>
+                    <option value="ACTIVO">Activo (Corriente y No Corriente)</option>
+                    <option value="PASIVO">Pasivo y Patrimonio Neto</option>
+                    <option value="ESTADO DE RESULTADOS">Estado de Resultados</option>
+                    <option value="NOTA 3">Nota 3: Caja y Bancos (Detalle cuentas corrientes)</option>
+                    <option value="NOTA 4">Nota 4: Cuentas a Cobrar</option>
+                    <option value="NOTA 6">Nota 6: Bienes de Cambio (Granos, Hacienda, Sementera)</option>
+                    <option value="NOTA 7">Nota 7: Deudas Financieras (Bancos, SGR, ON)</option>
+                    <option value="NOTA 8">Nota 8: Deudas Comerciales (Proveedores)</option>
+                    <option value="ANEXO II">Anexo II: Bienes de Uso y Amortizaciones</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-medium text-slate-700 mb-1">Búsqueda Rápida de Texto</label>
+                <input type="text" id="buscadorContable" onkeyup="filtrarDatos()" placeholder="Ej: Galicia, Andreoli, Hacienda, Sementera..." class="w-full rounded border p-2 bg-white">
+            </div>
+            <div class="flex items-end">
+                <span class="text-[11px] text-slate-500 pb-2">Ejercicio Económico Nº 19 (Cierre 30/06/2025)</span>
+            </div>
+        </div>
+
+        <!-- TABLA DE DATOS CONTABLES CONSULTABLES -->
+        <div class="border rounded-lg p-4 bg-white">
+            <h3 class="text-md font-bold text-slate-800 mb-3">📋 Detalle de Partidas, Notas y Anexos Oficiales</h3>
+            <div class="overflow-x-auto border rounded-lg text-xs">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-600 uppercase font-semibold border-b">
+                            <th class="p-3">Ejercicio</th>
+                            <th class="p-3">Capítulo / Nota</th>
+                            <th class="p-3">Rubro / Concepto Contable</th>
+                            <th class="p-3 text-right">Monto en Moneda Homogénea ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaContable" class="divide-y divide-slate-200">
+                        <!-- Datos precargados directamente desde el PDF de Silo Chico S.A. -->
+                        <tr class="hover:bg-slate-50" data-cap="ACTIVO" data-text="activo caja y bancos corrientes">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-blue-900">ACTIVO CORRIENTE[cite: 25]</td>
+                            <td class="p-3">Caja y Bancos (Nota 3)[cite: 25]</td>
+                            <td class="p-3 text-right font-mono font-bold">$ 1.046.194.081,22[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 3" data-text="banco galicia cta cte nota 3">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-purple-900">NOTA 3: CAJA Y BANCOS[cite: 25]</td>
+                            <td class="p-3">Banco Galicia S.A.U. - Cta. Cte.[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 66.573.509,36[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 3" data-text="banco provincia cta cte nota 3">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-purple-900">NOTA 3: CAJA Y BANCOS[cite: 25]</td>
+                            <td class="p-3">Banco Provincia - Cta. Cte.[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 8.250.281,42[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 3" data-text="recaudaciones depositar cheques diferidos nota 3">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-purple-900">NOTA 3: CAJA Y BANCOS[cite: 25]</td>
+                            <td class="p-3">Recaudaciones a Depositar / Ch. Diferidos[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 970.831.763,69[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 6" data-text="bienes de cambio hacienda nota 6">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-emerald-900">NOTA 6: BIENES DE CAMBIO[cite: 25]</td>
+                            <td class="p-3">Hacienda Bovina[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 4.229.934.092,69[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 6" data-text="bienes de cambio sementera nota 6">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-emerald-900">NOTA 6: BIENES DE CAMBIO[cite: 25]</td>
+                            <td class="p-3">Sementera (Cultivos en curso)[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 2.277.521.179,13[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 6" data-text="bienes de cambio granos terminados nota 6">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-emerald-900">NOTA 6: BIENES DE CAMBIO[cite: 25]</td>
+                            <td class="p-3">Bienes de Cambio Terminados - Granos (Soja/Maíz)[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 3.152.291.174,00[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 8" data-text="deudas comerciales andreoli sa nota 8">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-rose-900">NOTA 8: DEUDAS COMERCIALES[cite: 25]</td>
+                            <td class="p-3">Proveedor: Andreoli S.A.[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 1.408.353.662,21[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="NOTA 8" data-text="deudas comerciales eduardo beraza sa nota 8">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-rose-900">NOTA 8: DEUDAS COMERCIALES[cite: 25]</td>
+                            <td class="p-3">Proveedor: Eduardo Beraza S.A.[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 561.352.694,83[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="ANEXO II" data-text="bienes de uso campos anexo ii">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-amber-900">ANEXO II: BIENES DE USO[cite: 25]</td>
+                            <td class="p-3">Campos (Valor Neto)[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 3.475.039.900,66[cite: 25]</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50" data-cap="ANEXO II" data-text="bienes de uso maquinas y herramientas anexo ii">
+                            <td class="p-3 font-mono">30/06/2025[cite: 25]</td>
+                            <td class="p-3 font-semibold text-amber-900">ANEXO II: BIENES DE USO[cite: 25]</td>
+                            <td class="p-3">Máquinas y Herramientas (Neto Amortizado)[cite: 25]</td>
+                            <td class="p-3 text-right font-mono">$ 3.368.954.924,53[cite: 25]</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function filtrarDatos() {
+            let filtroCap = document.getElementById('filtroCapitulo').value;
+            let filtroTexto = document.getElementById('buscadorContable').value.toLowerCase();
+            let filas = document.querySelectorAll('#tablaContable tr');
+
+            filas.forEach(fila => {
+                let cap = fila.getAttribute('data-cap');
+                let texto = fila.getAttribute('data-text');
+
+                let coincideCap = !filtroCap || cap === filtroCap;
+                let coincideTexto = !filtroTexto || texto.includes(filtroTexto);
+
+                if (coincideCap && coincideTexto) {
+                    fila.style.display = '';
+                } else {
+                    fila.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

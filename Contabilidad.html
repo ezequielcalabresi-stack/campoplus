@@ -1,0 +1,232 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Contabilidad y Plan de Cuentas (Demo)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-7xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg relative">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Contabilidad General - Demo</span></h2>
+                <p id="estado-db" class="text-xs text-amber-600 mt-1">Conectando al núcleo central...</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- VISUALIZADOR EN TIEMPO REAL DE ASIENTOS CONTABLES -->
+        <div class="flex flex-wrap gap-3 items-end mb-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Ejercicio (cierre 30/06)</label>
+                <select id="selectEjercicio" class="border rounded px-3 py-2 text-sm font-semibold bg-white" onchange="cargarAsientosContables()"></select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Límite filas</label>
+                <select id="selectLimitAsientos" class="border rounded px-3 py-2 text-sm bg-white" onchange="cargarAsientosContables()">
+                    <option value="200">200</option>
+                    <option value="500" selected>500</option>
+                    <option value="1500">1500</option>
+                </select>
+            </div>
+            <button onclick="recalcularAsientosBancos()" class="bg-slate-800 text-white text-sm font-semibold px-4 py-2 rounded hover:bg-slate-900">
+                Generar asientos desde bancos (histórico)
+            </button>
+            <p id="msgRecalc" class="text-xs text-slate-500"></p>
+        </div>
+
+        <div class="border rounded-lg p-4 bg-white mb-6 shadow-sm">
+            <h3 class="text-md font-bold text-slate-800 mb-3">📖 Libro Diario - Asientos Generados Automáticamente</h3>
+            <div class="overflow-x-auto border rounded-lg text-xs">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-600 uppercase font-semibold border-b">
+                            <th class="p-3">ID / Ref</th>
+                            <th class="p-3">Fecha</th>
+                            <th class="p-3">Concepto de la Operación</th>
+                            <th class="p-3">Cuenta Contable</th>
+                            <th class="p-3 text-right">Debe ($)</th>
+                            <th class="p-3 text-right">Haber ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaAsientos" class="divide-y divide-slate-200">
+                        <tr><td colspan="6" class="p-6 text-center text-slate-400">Cargando asientos contables...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- PLAN DE CUENTAS OFICIAL SILO CHICO S.A. (Patrimonial + Resultados + Amortizaciones) -->
+        <div class="border rounded-lg p-5 bg-slate-50">
+            <h3 class="text-md font-bold text-slate-800 mb-4">🗂️ Plan de Cuentas Oficial - Demo (Estados Contables Completos)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                
+                <!-- 1. ACTIVO Y PASIVO -->
+                <div class="bg-white p-4 rounded-lg border shadow-sm space-y-3">
+                    <h4 class="font-bold text-blue-900 border-b pb-1 text-sm">1 & 2. PATRIMONIO</h4>
+                    <div>
+                        <strong class="text-slate-800">1. Activo Corriente y No Corriente</strong>
+                        <ul class="space-y-1 text-slate-600 font-mono mt-1 pl-2">
+                            <li>1.1.01 Caja y Bancos (Comafi, Galicia, Provincia, etc.)</li>
+                            <li>1.1.02 Cuentas a Cobrar / Créditos Fiscales[cite: 27]</li>
+                            <li>1.1.03 Inversiones Temporarias (FCI)[cite: 27]</li>
+                            <li>1.1.04 Bienes de Cambio (Granos, Hacienda, Sementera)[cite: 27]</li>
+                            <li>1.2.01 Bienes de Uso (Campos, Maquinaria, Rodados)[cite: 27]</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong class="text-slate-800">2. Pasivo y Patrimonio Neto</strong>
+                        <ul class="space-y-1 text-slate-600 font-mono mt-1 pl-2">
+                            <li>2.1.01 Deudas Comerciales (Andreoli, Beraza, etc.)[cite: 27]</li>
+                            <li>2.1.02 Deudas Financieras (Préstamos, ON, E-cheqs)[cite: 27]</li>
+                            <li>2.1.03 Cargas Fiscales y Sociales[cite: 27]</li>
+                            <li>3.1.01 Capital Social y Reservas[cite: 27]</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- 4. RESULTADOS (INGRESOS Y COSTOS) -->
+                <div class="bg-white p-4 rounded-lg border shadow-sm space-y-3">
+                    <h4 class="font-bold text-emerald-900 border-b pb-1 text-sm">4. RESULTADOS (GESTIÓN)</h4>
+                    <div>
+                        <strong class="text-slate-800">4.1 Producción y Ventas</strong>
+                        <ul class="space-y-1 text-slate-600 font-mono mt-1 pl-2">
+                            <li>4.1.01 Producción Agricultura y Ganadería[cite: 27]</li>
+                            <li>4.1.02 Ventas de Agricultura y Ganadería[cite: 27]</li>
+                            <li>4.1.03 Resultado por Tenencia (Granos y Hacienda)[cite: 27]</li>
+                            <li>4.1.04 Servicios Prestados y Fletes[cite: 27]</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong class="text-slate-800">4.2 Costos y Egresos Operativos</strong>
+                        <ul class="space-y-1 text-slate-600 font-mono mt-1 pl-2">
+                            <li>4.2.01 Costo Producción Agricultura / Ganadería (Anexo V)[cite: 27]</li>
+                            <li>4.2.02 Gastos de Administración[cite: 27]</li>
+                            <li>4.2.03 Gastos de Comercialización[cite: 27]</li>
+                            <li>4.2.04 Gastos de Financiación y RECPAM[cite: 27]</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- AMORTIZACIONES Y GASTOS (ANEXO II y VII) -->
+                <div class="bg-white p-4 rounded-lg border shadow-sm space-y-3">
+                    <h4 class="font-bold text-purple-900 border-b pb-1 text-sm">5. AMORTIZACIONES & ANEXO VII</h4>
+                    <div>
+                        <strong class="text-slate-800">5.1 Amortizaciones (Bienes de Uso)</strong>
+                        <ul class="space-y-1 text-slate-600 font-mono mt-1 pl-2">
+                            <li>5.1.01 Amortización Máquinas y Herramientas (10%)[cite: 27]</li>
+                            <li>5.1.02 Amortización Muebles y Útiles (10%)[cite: 27]</li>
+                            <li>5.1.03 Amortización Rodados y Automóviles (20%)[cite: 27]</li>
+                            <li>5.1.04 Amortización Instalaciones (5%)[cite: 27]</li>
+                            <li>5.1.05 Amortización Reproductores (10%)[cite: 27]</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong class="text-slate-800">5.2 Gastos Específicos (Ley 19.550)</strong>
+                        <ul class="space-y-1 text-slate-600 font-mono mt-1 pl-2">
+                            <li>5.2.01 Arrendamientos y Alquileres[cite: 27]</li>
+                            <li>5.2.02 Combustibles y Lubricantes[cite: 27]</li>
+                            <li>5.2.03 Mantenimiento Rodados y Maquinaria[cite: 27]</li>
+                            <li>5.2.04 Sueldos y Cargas Sociales[cite: 27]</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function cargarEjercicios() {
+            const sel = document.getElementById('selectEjercicio');
+            if (!sel) return;
+            try {
+                const res = await fetch('/api/asientos/ejercicios');
+                const data = await res.json();
+                const lista = data.ejercicios || [];
+                const actual = data.ejercicio_actual || '';
+                sel.innerHTML = '<option value="">Todos</option>' + lista.map(e =>
+                    `<option value="${e}" ${e === actual ? 'selected' : ''}>${e}</option>`
+                ).join('');
+                if (!lista.length && actual) {
+                    sel.innerHTML = `<option value="">Todos</option><option value="${actual}" selected>${actual}</option>`;
+                }
+            } catch (e) {
+                sel.innerHTML = '<option value="">Todos</option>';
+            }
+        }
+
+        async function recalcularAsientosBancos() {
+            const msg = document.getElementById('msgRecalc');
+            const ej = document.getElementById('selectEjercicio')?.value || '';
+            if (!confirm('Se generarán asientos para movimientos bancarios sin asiento' + (ej ? ' del ejercicio ' + ej : '') + '.
+Cierre EECC: 30/06. ¿Continuar?')) return;
+            if (msg) msg.innerText = 'Procesando histórico (puede demorar)...';
+            try {
+                let url = '/api/asientos/recalcular_bancos?solo_sin_asiento=true';
+                if (ej) url += '&ejercicio=' + encodeURIComponent(ej);
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) {
+                    if (msg) msg.innerText = data.detail || 'Error en recálculo';
+                    return;
+                }
+                if (msg) msg.innerText = `OK: ${data.procesados} asientos · omitidos ${data.omitidos} · errores ${data.errores}`;
+                await cargarEjercicios();
+                await cargarAsientosContables();
+            } catch (e) {
+                console.error(e);
+                if (msg) msg.innerText = 'Error de conexión al recalcular';
+            }
+        }
+
+        async function cargarAsientosContables() {
+            const tbody = document.getElementById('tablaAsientos');
+            const estado = document.getElementById('estado-db');
+            try {
+                const ej = document.getElementById('selectEjercicio')?.value || '';
+                const limit = document.getElementById('selectLimitAsientos')?.value || '500';
+                let url = '/api/asientos?limit=' + encodeURIComponent(limit);
+                if (ej) url += '&ejercicio=' + encodeURIComponent(ej);
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('No se pudo leer /api/asientos');
+                const rows = await res.json();
+                estado.innerText = 'Conectado. Cierre EECC 30/06. Libro diario (' + rows.length + ' líneas)' + (ej ? ' · ejercicio ' + ej : '') + '.';
+                estado.className = 'text-xs text-emerald-600 mt-1 font-medium';
+                if (!rows.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">Sin asientos para este filtro.</td></tr>';
+                    return;
+                }
+                const fmt = (n) => '$ ' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                tbody.innerHTML = rows.map(r => {
+                    const fecha = (r.fecha || '').toString().slice(0,10).split('-').reverse().join('/');
+                    const cuenta = ((r.codigo_cuenta || '') + ' ' + (r.nombre_cuenta || '')).trim();
+                    return `<tr class="hover:bg-slate-50">
+                        <td class="p-3 font-mono">ASI-${r.asiento_id}${r.ejercicio ? ' · ' + r.ejercicio : ''}</td>
+                        <td class="p-3">${fecha || '-'}</td>
+                        <td class="p-3 font-semibold">${r.concepto || r.concepto_linea || ''}</td>
+                        <td class="p-3 text-slate-600 font-mono">${cuenta}</td>
+                        <td class="p-3 text-right font-mono">${fmt(r.debe)}</td>
+                        <td class="p-3 text-right font-mono">${fmt(r.haber)}</td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                console.error(e);
+                estado.innerText = 'Error al cargar asientos contables.';
+                estado.className = 'text-xs text-rose-600 mt-1 font-medium';
+                tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-rose-400">No se pudieron cargar los asientos.</td></tr>';
+            }
+        }
+
+        window.onload = async function() {
+            await cargarEjercicios();
+            await cargarAsientosContables();
+        };
+    </script>
+</body>
+</html>

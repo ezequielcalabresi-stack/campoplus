@@ -1,0 +1,696 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Órdenes de Pago, Cuenta Corriente y Retenciones</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 20px; }
+        .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; padding: 12px; }
+        .table tbody td { padding: 12px; vertical-align: middle; }
+        .certificado-container { background: #ffffff; border: 2px solid #0f172a; padding: 30px; font-family: 'Courier New', Courier, monospace; color: #000; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .cert-header { border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 20px; }
+        .cert-section-title { background: #f1f5f9; border-top: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 4px 8px; font-weight: bold; font-size: 11px; margin-top: 15px; margin-bottom: 10px; text-transform: uppercase; }
+        .cert-field { margin-bottom: 8px; font-size: 12px; }
+        .cert-field span { font-weight: bold; }
+    </style>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body>
+    <div class="container my-4" style="max-width: 1300px;">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Órdenes de Pago, Cuenta Corriente y Retenciones</small></h4>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="cuentacorriente.html" id="btnVolverCtaCte" class="btn btn-outline-secondary btn-sm fw-bold">← Volver a Cta Cte Proveedor</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">← Volver al Dashboard</a>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold text-slate-700">Seleccionar Proveedor*</label>
+                    <select class="form-select" id="selectProveedor" onchange="seleccionarProveedorCambio(this.value)">
+                        <option value="">Seleccione un proveedor...</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold text-slate-700">CUIT / Datos Fiscales</label>
+                    <input type="text" id="inputCuit" class="form-control font-monospace bg-light" readonly placeholder="CUIT automático">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold text-slate-700">Régimen SICORE / Ganancias</label>
+                    <select class="form-select" id="selectRegimen" onchange="recalcularTotales()">
+                        <option value="078">078 - Enajenación de bienes muebles y de cambio (2%)</option>
+                        <option value="094">094 - Locaciones de obra y/o servicios (2%)</option>
+                        <option value="032">032 - Bienes Inmuebles Rurales (incluye leasing) · RG 830 · 6%</option>
+                        <option value="119">119 - Profesiones liberales / oficios (escala)</option>
+                        <option value="116">116 - Honorarios director / síndico / fiduciario (escala)</option>
+                        <option value="025">025 - Comisiones y auxiliares de comercio (escala)</option>
+                        <option value="095">095 - Transporte de carga (0,25%)</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold text-slate-700">Fecha de Emisión</label>
+                    <input type="date" id="inputFecha" class="form-control" onchange="actualizarFechasCertificados()">
+                </div>
+            </div>
+
+            <!-- SELECCIÓN DE MEDIOS DE PAGO Y BANCO AUTOMÁTICO -->
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="fw-bold mb-0 text-dark">💳 Selección de Medios de Pago (Valores / Bancos)</h5>
+                <button class="btn btn-outline-dark btn-sm fw-bold" onclick="agregarMedioPago()">+ Agregar Medio de Pago</button>
+            </div>
+            <div class="table-responsive mb-4">
+                <table class="table table-bordered align-middle">
+                    <thead>
+                        <tr>
+                            <th>Forma de Pago</th>
+                            <th>Cuenta Cte / Banco Asociado</th>
+                            <th>Nº de Cheque / Ref.</th>
+                            <th class="text-end" style="width: 160px;">Importe ($)</th>
+                            <th class="text-center" style="width: 80px;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaMediosPago">
+                        <tr>
+                            <td>
+                                <select class="form-select form-select-sm">
+                                    <option value="Transferencia Bancaria">Transferencia Bancaria</option>
+                                    <option value="Cheque Propio">Cheque Propio</option>
+                                    <option value="Efectivo">Efectivo</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select form-select-sm select-cta-banco" onchange="autoSeleccionarBanco(this)">
+                                    <option value="">Seleccione Cuenta Cte...</option>
+                                </select>
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm font-monospace" placeholder="S/N o Nro Cheque"></td>
+                            <td><input type="number" step="0.01" class="form-control form-control-sm font-monospace text-end input-monto-pago" value="0.00" oninput="recalcularTotales()"></td>
+                            <td class="text-center"><button class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove(); recalcularTotales();">X</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- COMPROBANTES PENDIENTES -->
+            <h5 class="fw-bold mb-3 text-dark">📄 Comprobantes Pendientes en Cuenta Corriente</h5>
+            <div class="table-responsive mb-4">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;" class="text-center">Sel</th>
+                            <th>Fecha</th>
+                            <th>Tipo y Nro Comprobante</th>
+                            <th class="text-end">Neto ($)</th>
+                            <th class="text-end">IVA ($)</th>
+                            <th class="text-end">Total Comprobante ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaComprobantes">
+                        <tr><td colspan="6" class="text-center py-3 text-muted">Seleccione un proveedor para ver sus facturas pendientes.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- RESUMEN Y CONSULTA DE PADRÓN ARBA / SICORE -->
+            <div id="bannerPerfilFiscal" class="alert alert-info py-2 px-3 mb-3 small mb-0 d-none"></div>
+            <div id="bannerProveedorSP" class="alert alert-warning py-2 px-3 mb-3 small d-none">
+                <strong>Proveedor Centro S/P:</strong> exento de retenciones SICORE e IIBB. Se emite OP sin certificados de retención.
+            </div>
+            <div class="row g-3 align-items-center bg-light p-3 rounded border mb-4" id="boxRetenciones">
+                <div class="col-md-7">
+                    <div class="small fw-bold text-muted mb-1 d-flex justify-content-between align-items-center">
+                        <span>CÁLCULO AUTOMÁTICO DE RETENCIONES (CONSULTA PADRÓN ARBA)</span>
+                        <button class="btn btn-outline-primary btn-sm py-0 px-2 fw-bold" id="btnConsultarArba" onclick="consultarPadronArba()">🔍 Consultar Padrón ARBA</button>
+                    </div>
+                    <div class="d-flex justify-content-between py-1 border-bottom">
+                        <span>Retención Ganancias (SICORE - RG 830):</span>
+                        <span id="lblRetGanancias" class="fw-bold text-danger font-monospace">$ 0,00</span>
+                    </div>
+                    <div class="d-flex justify-content-between py-1 align-items-center">
+                        <span>Retención IIBB (Padrón ARBA):</span>
+                        <div>
+                            <span id="lblAlicuotaArba" class="badge bg-success me-2">Alícuota Ret: 0.0%</span>
+                            <span id="lblRetIibb" class="fw-bold text-danger font-monospace">$ 0,00</span>
+                        </div>
+                    </div>
+                    <p class="small text-muted mb-0 mt-2">Las percepciones IIBB se aplican en ventas / facturas emitidas, no en órdenes de pago.</p>
+                </div>
+                <div class="col-md-5 text-end">
+                    <span class="text-muted small fw-bold d-block">TOTAL NETO A PAGAR (OP)</span>
+                    <span id="lblTotalNeto" class="fs-3 fw-bold text-success font-monospace">$ 0,00</span>
+                </div>
+            </div>
+
+            <div class="text-center">
+                <button class="btn btn-success fw-bold px-5 py-2 fs-5" onclick="emitirOrdenPago()">✓ Emitir Orden de Pago y Generar Certificados PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CERTIFICADOS OFICIALES PDF -->
+    <div class="modal fade" id="modalCertificadoRetencion" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-dark text-white py-2">
+                    <h5 class="modal-title fs-6 fw-bold">Certificados Oficiales de Retención (SICORE / ARBA)</h5>
+                    <div class="d-flex gap-2">
+                        <button type="button" onclick="window.print()" class="btn btn-light btn-sm fw-bold">🖨️ Imprimir / Descargar Certificados PDF</button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="irACtaCte()"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-4 bg-secondary bg-opacity-10">
+                    <div class="certificado-container mb-4">
+                        <div class="cert-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h3 class="fw-bold mb-1">SI.CO.RE. - Sistema de Control de Retenciones</h3>
+                                <p class="text-muted mb-0 small">Normativa AFIP / RG 830 - Régimen de Ganancias</p>
+                            </div>
+                            <div class="text-end">
+                                <span class="d-block fw-bold fs-6">Certificado Nº: <span id="certNroSicore">--</span></span>
+                                <span class="text-muted small">Fecha: <span class="certFechaVal">--</span></span>
+                            </div>
+                        </div>
+                        <div class="cert-section-title">A. - Datos del Agente de Retención</div>
+                        <div class="row cert-field">
+                            <div class="col-md-8">Denominación: <span>SILO CHICO S.A.</span></div>
+                            <div class="col-md-4">C.U.I.T. N°: <span>30-717802868</span></div>
+                        </div>
+                        <div class="cert-section-title">B. - Datos del Sujeto Retenido</div>
+                        <div class="row cert-field">
+                            <div class="col-md-8">Denominación: <span id="certProvNombre">--</span></div>
+                            <div class="col-md-4">C.U.I.T. N°: <span id="certProvCuit">--</span></div>
+                        </div>
+                        <div class="cert-section-title">C. - Determinación de la Retención de Ganancias (SICORE)</div>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-bordered text-center font-monospace mb-0" style="font-size: 12px;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Monto Base Cálculo (S/ Mínimo No Imponible)</th>
+                                        <th>Alícuota Aplicada</th>
+                                        <th>Importe Retenido</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td id="certBaseGanancias" class="fw-bold">$ 0,00</td>
+                                        <td class="fw-bold">Régimen SICORE Seleccionado</td>
+                                        <td id="certImporteGanancias" class="fw-bold text-danger fs-6">$ 0,00</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- CERTIFICADO ARBA IIBB -->
+                    <div class="certificado-container">
+                        <div class="cert-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h3 class="fw-bold mb-1">ARBA - AGENCIA DE RECAUDACIÓN PROV. BS. AS.</h3>
+                                <p class="text-muted mb-0 small">Régimen General de Retención de IIBB (Disp. Normativa B 43/96)</p>
+                            </div>
+                            <div class="text-end">
+                                <span class="d-block fw-bold fs-6">Certificado IIBB Nº: <span id="certNroIibb">--</span></span>
+                                <span class="text-muted small">Fecha: <span class="certFechaVal">--</span></span>
+                            </div>
+                        </div>
+                        <div class="cert-section-title">Determinación de la Retención de Ingresos Brutos</div>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-bordered text-center font-monospace mb-0" style="font-size: 12px;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Base Imponible Total</th>
+                                        <th>Alícuota Padrón ARBA</th>
+                                        <th>Importe Retenido IIBB</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td id="certBaseArba" class="fw-bold">$ 0,00</td>
+                                        <td id="certAlicuotaArbaPdf" class="fw-bold">0.00%</td>
+                                        <td id="certImporteArba" class="fw-bold text-danger fs-6">$ 0,00</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let entidadesCache = [];
+        let comprobantesCache = [];
+        let ctasBancariasCache = [];
+        let cuitActual = null;
+        let alicuotaArbaActual = 0.0;
+        let proveedorEsSP = false;
+        let perfilEmpresa = {
+            agente_retencion_iibb: 1,
+            agente_retencion_ganancias: 1,
+            agente_percepcion_iibb: 1
+        };
+
+        function entidadEsSP(ent) {
+            if (!ent) return false;
+            const cc = String(ent.centro_costo || '1').toUpperCase();
+            const nom = `${ent.razon_social || ''} ${ent.nombre_fantasia || ''}`.toUpperCase();
+            return cc === 'SP' || nom.includes('(S/P)') || nom.includes(' S/P');
+        }
+
+        function actualizarUIPerfilYProveedor() {
+            const banSP = document.getElementById('bannerProveedorSP');
+            const banEmp = document.getElementById('bannerPerfilFiscal');
+            const selReg = document.getElementById('selectRegimen');
+            const btnArba = document.getElementById('btnConsultarArba');
+
+            if (proveedorEsSP) {
+                banSP.classList.remove('d-none');
+                selReg.disabled = true;
+                btnArba.disabled = true;
+            } else {
+                banSP.classList.add('d-none');
+                selReg.disabled = !perfilEmpresa.agente_retencion_ganancias;
+                btnArba.disabled = !perfilEmpresa.agente_retencion_iibb;
+            }
+
+            const bits = [];
+            if (perfilEmpresa.agente_retencion_iibb) bits.push('Ret. IIBB');
+            if (perfilEmpresa.agente_retencion_ganancias) bits.push('SICORE');
+            if (bits.length) {
+                banEmp.classList.remove('d-none');
+                banEmp.innerHTML = `<strong>Perfil empresa:</strong> agente de ${bits.join(' · ')} en pagos. Las percepciones IIBB aplican en ventas, no en OP. Proveedores S/P quedan exentos.`;
+            } else {
+                banEmp.classList.add('d-none');
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById('inputFecha').value = new Date().toISOString().split('T')[0];
+            actualizarFechasCertificados();
+            inicializar();
+        });
+
+        function obtenerAnioEmision() {
+            const fechaInput = document.getElementById('inputFecha').value;
+            return fechaInput ? fechaInput.split('-')[0] : new Date().getFullYear().toString();
+        }
+
+        function actualizarFechasCertificados() {
+            const fechaInput = document.getElementById('inputFecha').value;
+            if (fechaInput) {
+                const partes = fechaInput.split('-');
+                document.querySelectorAll('.certFechaVal').forEach(el => el.innerText = `${partes[2]}/${partes[1]}/${partes[0]}`);
+            }
+        }
+
+        async function obtenerSiguienteNumeroCertificado(tipo, numeroBaseDefecto) {
+            const anio = obtenerAnioEmision();
+            try {
+                const res = await fetch(`/api/retenciones/ultimo_numero?tipo=${tipo}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.ultimo_numero) {
+                        const numSecuencia = parseInt(data.ultimo_numero, 10) + 1;
+                        return `${anio}-${numSecuencia}`;
+                    }
+                }
+            } catch (e) {
+                console.warn(`Error al consultar último número de ${tipo}:`, e);
+            }
+            return `${anio}-${numeroBaseDefecto}`;
+        }
+
+        async function inicializar() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const rawCuit = urlParams.get('cuit');
+            
+            if (rawCuit) cuitActual = String(rawCuit).replace(/\D/g, '');
+
+            actualizarBotonVolver();
+
+            try {
+                const [resEnt, resCtas, resSaldos, resCfg] = await Promise.all([
+                    fetch('/api/entidades').catch(() => null),
+                    fetch('/api/ctas_ctes_bancarias').catch(() => null),
+                    fetch('/api/saldos_proveedores').catch(() => null),
+                    fetch('/api/configuracion').catch(() => null)
+                ]);
+
+                if (resEnt && resEnt.ok) entidadesCache = await resEnt.json();
+                if (resCtas && resCtas.ok) ctasBancariasCache = await resCtas.json();
+                if (resCfg && resCfg.ok) {
+                    const cfg = await resCfg.json();
+                    perfilEmpresa = {
+                        agente_retencion_iibb: cfg.agente_retencion_iibb !== 0 && cfg.agente_retencion_iibb !== false ? 1 : 0,
+                        agente_retencion_ganancias: cfg.agente_retencion_ganancias !== 0 && cfg.agente_retencion_ganancias !== false ? 1 : 0,
+                        agente_percepcion_iibb: cfg.agente_percepcion_iibb !== 0 && cfg.agente_percepcion_iibb !== false ? 1 : 0
+                    };
+                }
+                actualizarUIPerfilYProveedor();
+
+                let saldosPagar = [];
+                if (resSaldos && resSaldos.ok) saldosPagar = await resSaldos.json();
+                let cuitsAPagar = new Set(saldosPagar.map(s => String(s.cuit || '').replace(/\D/g, '')));
+
+                let sel = document.getElementById('selectProveedor');
+                let html = '<option value="">Seleccione un proveedor...</option>';
+
+                // Primero los que tienen saldo a pagar; si viene CUIT por URL y no está, se agrega igual
+                let lista = entidadesCache.filter(e => {
+                    let c = String(e.cuit || '').replace(/\D/g, '');
+                    if (cuitActual && c === cuitActual) return true;
+                    if (cuitsAPagar.size === 0) return !e.es_cuenta_ajuste;
+                    return cuitsAPagar.has(c);
+                });
+                if (lista.length === 0) lista = entidadesCache.filter(e => !e.es_cuenta_ajuste);
+
+                lista.sort((a, b) => {
+                    const na = String(a.nombre_fantasia || a.razon_social || '').trim();
+                    const nb = String(b.nombre_fantasia || b.razon_social || '').trim();
+                    return na.localeCompare(nb, 'es', { sensitivity: 'base', numeric: true });
+                });
+
+                lista.forEach(e => {
+                    let nombre = e.nombre_fantasia || e.razon_social;
+                    let cuitLimpio = String(e.cuit).replace(/\D/g, '');
+                    let saldoInfo = saldosPagar.find(s => String(s.cuit || '').replace(/\D/g, '') === cuitLimpio);
+                    let extra = saldoInfo ? ` · a pagar $ ${Number(saldoInfo.saldo_a_pagar || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}` : '';
+                    let tagSP = entidadEsSP(e) ? ' [S/P]' : '';
+                    html += `<option value="${cuitLimpio}">${nombre}${tagSP} (CUIT: ${e.cuit})${extra}</option>`;
+                });
+                sel.innerHTML = html;
+
+                popularSelectsCtasBancarias();
+
+                if (cuitActual) {
+                    sel.value = cuitActual;
+                    await seleccionarProveedorCambio(cuitActual);
+                }
+            } catch (e) {
+                console.error("Error al inicializar:", e);
+            }
+        }
+
+        function actualizarBotonVolver() {
+            const btn = document.getElementById('btnVolverCtaCte');
+            btn.href = cuitActual ? `detallegestioncc.html?cuit=${cuitActual}` : `cuentacorriente.html`;
+        }
+
+        function popularSelectsCtasBancarias() {
+            let optionsHtml = '<option value="">Seleccione Cuenta Cte...</option>';
+            ctasBancariasCache.forEach(c => {
+                optionsHtml += `<option value="${c.nro_cta_cte}" data-banco="${c.banco}">Cta Cte Nº ${c.nro_cta_cte} - ${c.banco}</option>`;
+            });
+            document.querySelectorAll('.select-cta-banco').forEach(sel => sel.innerHTML = optionsHtml);
+        }
+
+        function autoSeleccionarBanco(selectEl) {
+            let opt = selectEl.options[selectEl.selectedIndex];
+            let banco = opt.getAttribute('data-banco') || '';
+            let tr = selectEl.closest('tr');
+            let inputRef = tr.querySelector('input[placeholder*="S/N"]');
+            if (inputRef && banco && !inputRef.value) inputRef.value = banco;
+        }
+
+        function agregarMedioPago() {
+            const tbody = document.getElementById('tablaMediosPago');
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <select class="form-select form-select-sm">
+                        <option value="Transferencia Bancaria">Transferencia Bancaria</option>
+                        <option value="Cheque Propio">Cheque Propio</option>
+                        <option value="Efectivo">Efectivo</option>
+                    </select>
+                </td>
+                <td>
+                    <select class="form-select form-select-sm select-cta-banco" onchange="autoSeleccionarBanco(this)">
+                        <option value="">Seleccione Cuenta Cte...</option>
+                    </select>
+                </td>
+                <td><input type="text" class="form-control form-control-sm font-monospace" placeholder="S/N o Nro Cheque"></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm font-monospace text-end input-monto-pago" value="0.00" oninput="recalcularTotales()"></td>
+                <td class="text-center"><button class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove(); recalcularTotales();">X</button></td>
+            `;
+            tbody.appendChild(tr);
+            popularSelectsCtasBancarias();
+        }
+
+        async function seleccionarProveedorCambio(cuit) {
+            cuitActual = cuit ? String(cuit).replace(/\D/g, '') : null;
+            actualizarBotonVolver();
+
+            if (!cuitActual) {
+                document.getElementById('inputCuit').value = '';
+                document.getElementById('lblAlicuotaArba').innerText = 'Alícuota Ret: 0.0%';
+                alicuotaArbaActual = 0.0;
+                proveedorEsSP = false;
+                actualizarUIPerfilYProveedor();
+                document.getElementById('tablaComprobantes').innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">Seleccione un proveedor para ver sus facturas pendientes.</td></tr>`;
+                recalcularTotales();
+                return;
+            }
+
+            let ent = entidadesCache.find(x => String(x.cuit).replace(/\D/g, '') === cuitActual);
+            document.getElementById('inputCuit').value = ent ? ent.cuit : cuitActual;
+            proveedorEsSP = entidadEsSP(ent);
+            // Arrendador / propietario de inmueble → SICORE 032 de antemano (RG 830)
+            const selReg = document.getElementById('selectRegimen');
+            if (ent && (ent.regimen_sicore || ent.es_propietario_inmueble)) {
+                const reg = String(ent.regimen_sicore || '032').padStart(3, '0');
+                if ([...selReg.options].some(o => o.value === reg)) {
+                    selReg.value = reg;
+                } else if (ent.es_propietario_inmueble) {
+                    selReg.value = '032';
+                }
+            }
+            actualizarUIPerfilYProveedor();
+
+            if (proveedorEsSP) {
+                alicuotaArbaActual = 0.0;
+                document.getElementById('lblAlicuotaArba').innerText = 'Alícuota Ret: 0% (S/P)';
+            } else {
+                await consultarPadronArba(true);
+            }
+            await cargarComprobantes(cuitActual);
+            recalcularTotales();
+        }
+
+        async function consultarPadronArba(silencioso = false) {
+            if (!cuitActual) {
+                if (!silencioso) alert("⚠️ Seleccione un proveedor primero.");
+                return;
+            }
+            if (proveedorEsSP) {
+                alicuotaArbaActual = 0.0;
+                recalcularTotales();
+                if (!silencioso) alert("Proveedor S/P: no aplica padrón de retenciones.");
+                return;
+            }
+            try {
+                const res = await fetch(`/api/arba/consultar/${cuitActual}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    alicuotaArbaActual = perfilEmpresa.agente_retencion_iibb
+                        ? (data.alicuota_retencion || 0.0) / 100
+                        : 0.0;
+                    document.getElementById('lblAlicuotaArba').innerText = `Alícuota Ret: ${(alicuotaArbaActual * 100).toFixed(2)}%`;
+                    if (!silencioso) {
+                        alert(`✅ Padrón ARBA — Retención IIBB: ${(alicuotaArbaActual * 100).toFixed(2)}%\n(Las percepciones aplican en ventas, no en OP.)`);
+                    }
+                }
+                recalcularTotales();
+            } catch (e) {
+                console.error("Error consultando padrón ARBA:", e);
+            }
+        }
+
+        async function cargarComprobantes(cuit) {
+            try {
+                const res = await fetch(`/api/comprobantes_pendientes/${cuit}`);
+                if (!res.ok) throw new Error("Error en respuesta API");
+                comprobantesCache = await res.json();
+                
+                let html = '';
+                if (comprobantesCache.length === 0) {
+                    html = `<tr><td colspan="6" class="text-center py-3 text-muted">Sin comprobantes pendientes para este proveedor.</td></tr>`;
+                } else {
+                    comprobantesCache.forEach((c, idx) => {
+                        html += `
+                            <tr>
+                                <td class="text-center"><input type="checkbox" class="form-check-input chk-comprobante" data-idx="${idx}" onchange="recalcularTotales()" checked></td>
+                                <td class="font-monospace">${c.fecha || '--'}</td>
+                                <td class="fw-bold">${c.tipo_comprobante || 'Factura'} ${c.nro_comprobante ? '- ' + c.nro_comprobante : ''}</td>
+                                <td class="text-end font-monospace">$ ${parseFloat(c.neto || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                                <td class="text-end font-monospace">$ ${parseFloat(c.iva || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                                <td class="text-end font-monospace fw-bold text-primary">$ ${parseFloat(c.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                            </tr>
+                        `;
+                    });
+                }
+                document.getElementById('tablaComprobantes').innerHTML = html;
+                recalcularTotales();
+            } catch (e) {
+                console.error("Error al cargar comprobantes:", e);
+                document.getElementById('tablaComprobantes').innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">No se pudieron cargar los comprobantes.</td></tr>`;
+            }
+        }
+
+        function recalcularTotales() {
+            let totalNetoBase = 0;
+            let totalFacturas = 0;
+
+            document.querySelectorAll('.chk-comprobante:checked').forEach(chk => {
+                let idx = chk.getAttribute('data-idx');
+                let comp = comprobantesCache[idx];
+                if (comp) {
+                    let neto = parseFloat(comp.neto || 0);
+                    let total = parseFloat(comp.total || 0);
+                    // Legado Access: a veces no viene neto discriminado
+                    if (neto < 0.01 && total > 0.01) neto = total;
+                    totalNetoBase += neto;
+                    totalFacturas += total > 0.01 ? total : neto;
+                }
+            });
+
+            let retGanancias = 0;
+            let retIibb = 0;
+
+            if (!proveedorEsSP) {
+                if (perfilEmpresa.agente_retencion_ganancias) {
+                    let regimen = document.getElementById('selectRegimen').value;
+                    // Mínimos / alícuotas simplificados (RG 830) — se refinan con tabla de regímenes
+                    let minNoImponible = (regimen === '094') ? 67170
+                        : (regimen === '032' || regimen === '031' || regimen === '030') ? 11200
+                        : (regimen === '116' || regimen === '119' || regimen === '025') ? 0
+                        : 224000;
+                    let baseCalculoGanancias = Math.max(0, totalNetoBase - minNoImponible);
+                    // 032 alquileres inmuebles rurales: 6% insc. (anexo RG 830)
+                    let alicuotaGanancias = (regimen === '095') ? 0.0025
+                        : (regimen === '025' || regimen === '116' || regimen === '119' || regimen === '032' || regimen === '031' || regimen === '030') ? 0.06
+                        : 0.02;
+                    retGanancias = baseCalculoGanancias * alicuotaGanancias;
+                }
+                if (perfilEmpresa.agente_retencion_iibb) {
+                    retIibb = totalNetoBase * alicuotaArbaActual;
+                }
+            }
+
+            let netoPagar = totalFacturas - retGanancias - retIibb;
+            if (netoPagar < 0) netoPagar = 0;
+
+            document.getElementById('lblRetGanancias').innerText = `$ ${retGanancias.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            document.getElementById('lblRetIibb').innerText = `$ ${retIibb.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            document.getElementById('lblTotalNeto').innerText = `$ ${netoPagar.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+            // Autocompletar primer medio de pago con el neto si está en 0
+            const primerMonto = document.querySelector('.input-monto-pago');
+            if (primerMonto && (parseFloat(primerMonto.value) || 0) < 0.01 && netoPagar > 0.01) {
+                primerMonto.value = netoPagar.toFixed(2);
+            }
+        }
+
+        function parseMontoLabel(txt) {
+            return parseFloat(String(txt || '0').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+        }
+
+        async function emitirOrdenPago() {
+            if (!cuitActual) return alert("⚠️ Debe seleccionar un proveedor.");
+            
+            let totalPago = 0;
+            document.querySelectorAll('.input-monto-pago').forEach(inp => {
+                totalPago += parseFloat(inp.value || 0);
+            });
+            if (totalPago < 0.01) {
+                // Si no cargaron medios, usar el neto calculado
+                totalPago = parseMontoLabel(document.getElementById('lblTotalNeto').innerText);
+            }
+            if (totalPago < 0.01) return alert("⚠️ Indique el importe a pagar.");
+
+            let ent = entidadesCache.find(x => String(x.cuit).replace(/\D/g, '') === cuitActual);
+            let nombreProv = ent ? (ent.nombre_fantasia || ent.razon_social) : cuitActual;
+
+            let valRetGan = proveedorEsSP ? 0 : parseMontoLabel(document.getElementById('lblRetGanancias').innerText);
+            let valRetArba = proveedorEsSP ? 0 : parseMontoLabel(document.getElementById('lblRetIibb').innerText);
+
+            let payload = {
+                cuit: cuitActual,
+                fecha: document.getElementById('inputFecha').value,
+                total_pagado: totalPago + valRetGan + valRetArba,
+                retencion_iibb: valRetArba,
+                retencion_sicore: valRetGan,
+                regimen_sicore: document.getElementById('selectRegimen').value || '078',
+                forma_pago: "Transferencia",
+                observaciones: proveedorEsSP ? "OP proveedor S/P (sin retenciones)" : "Emisión de OP con certificados"
+            };
+
+            try {
+                let res = await fetch('/api/ordenes_pago', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                let data = await res.json();
+                
+                if (data.status === "success") {
+                    if (data.es_sp || proveedorEsSP || (!data.cert_sicore && !data.cert_iibb && valRetGan < 0.01 && valRetArba < 0.01)) {
+                        alert(`✅ ${data.message || 'OP emitida'}\nNº ${data.nro_orden || ''}`);
+                        irACtaCte();
+                        return;
+                    }
+
+                    document.getElementById('certProvNombre').innerText = nombreProv;
+                    document.getElementById('certProvCuit').innerText = ent ? ent.cuit : cuitActual;
+                    actualizarFechasCertificados();
+
+                    const nroSicore = data.cert_sicore || await obtenerSiguienteNumeroCertificado('sicore', '2074');
+                    const nroIibb = data.cert_iibb || await obtenerSiguienteNumeroCertificado('iibb', '2962');
+
+                    document.getElementById('certNroSicore').innerText = nroSicore;
+                    document.getElementById('certNroIibb').innerText = nroIibb;
+
+                    document.getElementById('certBaseGanancias').innerText = document.getElementById('lblRetGanancias').innerText;
+                    document.getElementById('certImporteGanancias').innerText = document.getElementById('lblRetGanancias').innerText;
+
+                    let totalNetoBase = 0;
+                    document.querySelectorAll('.chk-comprobante:checked').forEach(chk => {
+                        let idx = chk.getAttribute('data-idx');
+                        let comp = comprobantesCache[idx];
+                        if (comp) {
+                            let neto = parseFloat(comp.neto || 0);
+                            let total = parseFloat(comp.total || 0);
+                            totalNetoBase += neto > 0.01 ? neto : total;
+                        }
+                    });
+
+                    document.getElementById('certBaseArba').innerText = "$ " + totalNetoBase.toLocaleString('es-AR', {minimumFractionDigits: 2});
+                    document.getElementById('certAlicuotaArbaPdf').innerText = `${(alicuotaArbaActual * 100).toFixed(2)}%`;
+                    document.getElementById('certImporteArba').innerText = document.getElementById('lblRetIibb').innerText;
+
+                    const modal = new bootstrap.Modal(document.getElementById('modalCertificadoRetencion'));
+                    modal.show();
+                } else {
+                    alert("Error al emitir la orden de pago.");
+                }
+            } catch (e) {
+                console.error("Error al emitir OP:", e);
+                alert("Error al comunicarse con el servidor.");
+            }
+        }
+
+        function irACtaCte() {
+            window.location.href = document.getElementById('btnVolverCtaCte').href;
+        }
+    </script>
+</body>
+</html>

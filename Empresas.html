@@ -1,0 +1,417 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Empresas, planes y módulos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f1f5f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 20px; }
+        .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 10px; }
+        .logo-thumb { width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #f8fafc; border: 1px solid #e2e8f0; }
+        .mod-grid label { font-size: 0.8rem; user-select: none; }
+        .badge-plan { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .03em; }
+    </style>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body>
+    <div class="container my-4" style="max-width: 1280px;">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Clientes, planes y módulos</small></h4>
+                <p class="text-muted small mb-0 mt-1">Control comercial: paquetes, bloqueo por falta de pago, logo y módulos por empresa.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="Index.html" class="btn btn-secondary btn-sm fw-bold" style="background-color: #e2e8f0; color: #334155; border: none;">← Dashboard</a>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <h5 class="fw-bold mb-3" id="formTitulo">Registrar / configurar empresa cliente</h5>
+            <form id="formEmpresa" onsubmit="guardarEmpresa(event)">
+                <input type="hidden" id="editId" value="">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Razón Social*</label>
+                        <input type="text" id="razonSocial" class="form-control" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">CUIT*</label>
+                        <input type="text" id="cuitEmpresa" class="form-control font-monospace" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Tenant ID*</label>
+                        <input type="text" id="tenantId" class="form-control font-monospace" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold">Localidad</label>
+                        <input type="text" id="localidadEmpresa" class="form-control">
+                    </div>
+                </div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Plan comercial</label>
+                        <select id="plan" class="form-select" onchange="onPlanChange()">
+                            <option value="full">Full (todos)</option>
+                            <option value="agro">Agro</option>
+                            <option value="ganadero">Ganadero</option>
+                            <option value="admin">Admin / fiscal</option>
+                            <option value="trial">Trial</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold">Acceso</label>
+                        <select id="acceso" class="form-select">
+                            <option value="1">Habilitado</option>
+                            <option value="0">Suspendido</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Vencimiento licencia</label>
+                        <input type="date" id="vencimiento" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Notas comerciales</label>
+                        <input type="text" id="notas" class="form-control" placeholder="Ej: paquete agro, facturación mensual…">
+                    </div>
+                </div>
+
+                <div class="mt-3 p-3 bg-light border rounded">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-bold small text-uppercase text-secondary">Módulos habilitados</span>
+                        <label class="small mb-0">
+                            <input type="checkbox" id="aplicarPlan" checked> Aplicar preset del plan al guardar
+                        </label>
+                    </div>
+                    <div class="row g-2 mod-grid" id="modChecks"></div>
+                </div>
+
+                <div class="row g-3 mt-2 align-items-end" id="logoRow" style="display:none;">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Logo de la empresa</label>
+                        <input type="file" id="logoFile" class="form-control" accept="image/png,image/jpeg,image/webp,image/gif">
+                        <div class="form-text">Aparece en listados y formularios. Máx 2.5 MB.</div>
+                    </div>
+                    <div class="col-md-2">
+                        <img id="logoPreview" class="logo-thumb" style="width:56px;height:56px;display:none;" alt="logo">
+                    </div>
+                    <div class="col-md-4">
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold" onclick="subirLogo()">Subir logo</button>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button type="button" id="btnCancelarEdicion" class="btn btn-outline-secondary btn-sm fw-bold px-3" style="display:none;" onclick="cancelarEdicion()">Cancelar</button>
+                    <button type="submit" id="btnSubmitEmpresa" class="btn btn-success btn-sm fw-bold px-4" style="background-color: #059669; border: none;">+ Crear Empresa</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="main-card">
+            <h5 class="fw-bold mb-3">Empresas cliente</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Empresa</th>
+                            <th>CUIT / Tenant</th>
+                            <th>Plan</th>
+                            <th>Módulos</th>
+                            <th class="text-center">Acceso</th>
+                            <th class="text-center" style="width: 280px;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaEmpresas">
+                        <tr><td colspan="7" class="text-center text-muted">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const MOD_LABELS = {
+            mod_bancos: 'Bancos',
+            mod_agro: 'Agro',
+            mod_almacen: 'Almacén',
+            mod_ganaderia: 'Ganadería',
+            mod_tambo: 'Tambo',
+            mod_sicore: 'SICORE',
+            mod_arba: 'ARBA',
+            mod_contabilidad: 'Contabilidad',
+            mod_liquidaciones: 'Liquidaciones',
+            es_agente_retencion: 'Agente retención',
+        };
+        let empresasDB = [];
+        let empresaActivaId = null;
+        let planPresets = {};
+
+        function limpiarCuit(s) { return (s || '').replace(/[^0-9]/g, ''); }
+
+        function buildModChecks(values) {
+            const box = document.getElementById('modChecks');
+            box.innerHTML = Object.keys(MOD_LABELS).map(k => {
+                const checked = values && values[k] != null ? Number(values[k]) === 1 : true;
+                return `<div class="col-6 col-md-3">
+                    <label class="d-flex align-items-center gap-2 border rounded px-2 py-1 bg-white">
+                        <input type="checkbox" class="form-check-input mt-0" data-mod="${k}" ${checked ? 'checked' : ''}>
+                        ${MOD_LABELS[k]}
+                    </label>
+                </div>`;
+            }).join('');
+        }
+
+        function leerMods() {
+            const out = {};
+            document.querySelectorAll('#modChecks [data-mod]').forEach(el => {
+                out[el.getAttribute('data-mod')] = el.checked ? 1 : 0;
+            });
+            return out;
+        }
+
+        function onPlanChange() {
+            const plan = document.getElementById('plan').value;
+            if (!document.getElementById('aplicarPlan').checked) return;
+            const preset = planPresets[plan];
+            if (preset) buildModChecks(preset);
+        }
+
+        async function cargarPlanes() {
+            try {
+                const res = await fetch('/api/auth/planes');
+                if (!res.ok) return;
+                const data = await res.json();
+                // presets vienen del backend en PLANES — usamos defaults locales si no hay detalle
+                planPresets = {
+                    full: Object.fromEntries(Object.keys(MOD_LABELS).map(k => [k, 1])),
+                    agro: { mod_bancos:1, mod_agro:1, mod_almacen:1, mod_ganaderia:0, mod_tambo:0, mod_sicore:1, mod_arba:1, mod_contabilidad:1, mod_liquidaciones:1, es_agente_retencion:1 },
+                    ganadero: { mod_bancos:1, mod_agro:0, mod_almacen:0, mod_ganaderia:1, mod_tambo:1, mod_sicore:0, mod_arba:0, mod_contabilidad:1, mod_liquidaciones:1, es_agente_retencion:0 },
+                    admin: { mod_bancos:1, mod_agro:0, mod_almacen:0, mod_ganaderia:0, mod_tambo:0, mod_sicore:1, mod_arba:1, mod_contabilidad:1, mod_liquidaciones:0, es_agente_retencion:1 },
+                    trial: Object.fromEntries(Object.keys(MOD_LABELS).map(k => [k, 1])),
+                };
+            } catch (_) {}
+        }
+
+        function payloadSaas() {
+            const mods = leerMods();
+            return Object.assign({
+                razon_social: document.getElementById('razonSocial').value.trim(),
+                cuit: limpiarCuit(document.getElementById('cuitEmpresa').value),
+                tenant_id: document.getElementById('tenantId').value.toLowerCase().trim(),
+                localidad: document.getElementById('localidadEmpresa').value.trim(),
+                plan: document.getElementById('plan').value,
+                acceso_habilitado: Number(document.getElementById('acceso').value),
+                vencimiento_licencia: document.getElementById('vencimiento').value || '',
+                notas_comerciales: document.getElementById('notas').value.trim(),
+                aplicar_plan_modulos: document.getElementById('aplicarPlan').checked,
+            }, mods);
+        }
+
+        async function cargarEmpresas() {
+            const tbody = document.getElementById('tablaEmpresas');
+            try {
+                const [resEmp, resActiva] = await Promise.all([
+                    fetch('/api/saas/empresas').catch(() => fetch('/api/empresas')),
+                    fetch('/api/empresa_activa')
+                ]);
+                const res = resEmp.ok ? resEmp : await fetch('/api/empresas');
+                if (!res.ok) throw new Error('fail');
+                empresasDB = await res.json();
+                if (resActiva.ok) {
+                    const a = await resActiva.json();
+                    empresaActivaId = a.id;
+                }
+                renderizarEmpresas();
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error al cargar empresas</td></tr>';
+            }
+        }
+
+        function chipsMods(e) {
+            return Object.keys(MOD_LABELS)
+                .filter(k => Number(e[k]) === 1)
+                .map(k => `<span class="badge bg-light text-dark border me-1 mb-1">${MOD_LABELS[k]}</span>`)
+                .join('') || '<span class="text-muted small">Ninguno</span>';
+        }
+
+        function renderizarEmpresas() {
+            const tbody = document.getElementById('tablaEmpresas');
+            if (!empresasDB.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Sin empresas</td></tr>';
+                return;
+            }
+            tbody.innerHTML = empresasDB.map(e => {
+                const logo = e.logo_url
+                    ? `<img src="${e.logo_url}" class="logo-thumb" alt="">`
+                    : `<div class="logo-thumb d-flex align-items-center justify-content-center text-muted small">—</div>`;
+                const acceso = Number(e.acceso_habilitado) === 1
+                    ? '<span class="badge bg-success">OK</span>'
+                    : '<span class="badge bg-danger">Suspendida</span>';
+                const activa = e.id === empresaActivaId ? ' <span class="badge bg-primary">Activa</span>' : '';
+                return `<tr>
+                    <td>${logo}</td>
+                    <td><div class="fw-bold">${esc(e.razon_social)}</div><div class="small text-muted">${esc(e.localidad||'')}${activa}</div></td>
+                    <td class="font-monospace small">${limpiarCuit(e.cuit)}<br><span class="text-muted">${esc(e.tenant_id)}</span></td>
+                    <td><span class="badge bg-slate badge-plan bg-secondary">${esc(e.plan||'full')}</span></td>
+                    <td style="max-width:280px">${chipsMods(e)}</td>
+                    <td class="text-center">${acceso}</td>
+                    <td class="text-center">
+                        <button class="btn btn-primary btn-sm fw-bold py-0 px-2" onclick="activarEmpresa(${e.id})">Usar</button>
+                        <button class="btn btn-warning btn-sm fw-bold py-0 px-2 text-dark" onclick="editarEmpresa(${e.id})">Editar</button>
+                        <button class="btn btn-outline-${Number(e.acceso_habilitado)? 'danger':'success'} btn-sm py-0 px-2" onclick="toggleAcceso(${e.id}, ${Number(e.acceso_habilitado)?0:1})">
+                            ${Number(e.acceso_habilitado) ? 'Suspender' : 'Reactivar'}
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function guardarEmpresa(e) {
+            e.preventDefault();
+            const editId = document.getElementById('editId').value;
+            const body = payloadSaas();
+            if (!body.razon_social || !body.cuit || !body.tenant_id) {
+                alert('Complete razón social, CUIT y tenant.');
+                return;
+            }
+            try {
+                let res;
+                if (editId) {
+                    res = await fetch(`/api/empresas/${editId}/saas`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                } else {
+                    res = await fetch('/api/empresas', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            razon_social: body.razon_social,
+                            cuit: body.cuit,
+                            tenant_id: body.tenant_id,
+                            localidad: body.localidad,
+                        }),
+                    });
+                    if (res.ok) {
+                        const created = await res.json();
+                        const id = created.id;
+                        res = await fetch(`/api/empresas/${id}/saas`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        });
+                    }
+                }
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    alert(data.detail || 'No se pudo guardar');
+                    return;
+                }
+                alert(editId ? 'Empresa actualizada.' : 'Empresa registrada.');
+                cancelarEdicion();
+                await cargarEmpresas();
+            } catch (err) {
+                alert('Error de conexión');
+            }
+        }
+
+        function editarEmpresa(id) {
+            const e = empresasDB.find(x => x.id === id);
+            if (!e) return;
+            document.getElementById('editId').value = String(e.id);
+            document.getElementById('razonSocial').value = e.razon_social;
+            document.getElementById('cuitEmpresa').value = limpiarCuit(e.cuit);
+            document.getElementById('tenantId').value = e.tenant_id;
+            document.getElementById('localidadEmpresa').value = e.localidad || '';
+            document.getElementById('plan').value = e.plan || 'full';
+            document.getElementById('acceso').value = String(Number(e.acceso_habilitado) ? 1 : 0);
+            document.getElementById('vencimiento').value = (e.vencimiento_licencia || '').slice(0, 10);
+            document.getElementById('notas').value = e.notas_comerciales || '';
+            document.getElementById('aplicarPlan').checked = false;
+            buildModChecks(e);
+            document.getElementById('logoRow').style.display = '';
+            const prev = document.getElementById('logoPreview');
+            if (e.logo_url) {
+                prev.src = e.logo_url;
+                prev.style.display = '';
+            } else {
+                prev.style.display = 'none';
+            }
+            document.getElementById('formTitulo').innerText = 'Configurar: ' + e.razon_social;
+            document.getElementById('btnSubmitEmpresa').innerText = 'Guardar configuración';
+            document.getElementById('btnCancelarEdicion').style.display = 'inline-block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function cancelarEdicion() {
+            document.getElementById('editId').value = '';
+            document.getElementById('formEmpresa').reset();
+            document.getElementById('aplicarPlan').checked = true;
+            buildModChecks(planPresets.full || null);
+            document.getElementById('logoRow').style.display = 'none';
+            document.getElementById('formTitulo').innerText = 'Registrar / configurar empresa cliente';
+            document.getElementById('btnSubmitEmpresa').innerText = '+ Crear Empresa';
+            document.getElementById('btnCancelarEdicion').style.display = 'none';
+        }
+
+        async function subirLogo() {
+            const id = document.getElementById('editId').value;
+            const file = document.getElementById('logoFile').files[0];
+            if (!id) { alert('Guardá o editá una empresa primero.'); return; }
+            if (!file) { alert('Elegí un archivo de imagen.'); return; }
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await fetch(`/api/empresas/${id}/logo`, { method: 'POST', body: fd });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'Error al subir logo'); return; }
+            const prev = document.getElementById('logoPreview');
+            prev.src = data.logo_url + '?t=' + Date.now();
+            prev.style.display = '';
+            await cargarEmpresas();
+            alert('Logo actualizado.');
+        }
+
+        async function toggleAcceso(id, habilitar) {
+            const res = await fetch(`/api/empresas/${id}/acceso?habilitar=${habilitar}`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.detail || 'Solo superadmin puede suspender/reactivar');
+                return;
+            }
+            await cargarEmpresas();
+        }
+
+        async function activarEmpresa(id) {
+            const res = await fetch('/api/empresa_activa', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ empresa_activa_id: id }),
+            });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                alert(d.detail || 'No se pudo activar');
+                return;
+            }
+            localStorage.setItem('campoplus_tenant_activo', String(id));
+            location.href = 'Index.html';
+        }
+
+        window.onload = async function () {
+            await CampoAuth.requireAuth({ redirect: 'Empresas.html' });
+            await cargarPlanes();
+            buildModChecks(planPresets.full || null);
+            await cargarEmpresas();
+        };
+    </script>
+</body>
+</html>

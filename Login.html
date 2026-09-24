@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Ingreso</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <style>
+        body {
+            min-height: 100vh;
+            background:
+                radial-gradient(ellipse 80% 60% at 20% 10%, rgba(16, 185, 129, 0.18), transparent),
+                radial-gradient(ellipse 70% 50% at 90% 80%, rgba(14, 116, 144, 0.14), transparent),
+                linear-gradient(160deg, #0f172a 0%, #1e293b 45%, #0f766e 140%);
+        }
+    </style>
+</head>
+<body class="font-sans text-slate-100 flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 mb-4">
+                <span class="text-3xl font-black text-emerald-300 tracking-tight">C+</span>
+            </div>
+            <h1 class="text-3xl font-extrabold tracking-tight">CAmpo<span class="text-emerald-400">+</span></h1>
+            <p class="text-sm text-slate-400 mt-1">Gestión agropecuaria multi-empresa</p>
+        </div>
+
+        <div class="bg-white/95 text-slate-800 rounded-2xl shadow-2xl p-8 border border-white/20">
+            <h2 class="text-lg font-bold mb-1">Ingreso al sistema</h2>
+            <p class="text-xs text-slate-500 mb-5">Usuario y contraseña asignados a tu empresa cliente.</p>
+
+            <div id="msgBlocked" class="hidden mb-4 text-sm bg-rose-50 text-rose-800 border border-rose-200 rounded-lg px-3 py-2">
+                Acceso suspendido (falta de pago o licencia). Contactá a CAmpo+.
+            </div>
+            <div id="msgError" class="hidden mb-4 text-sm bg-amber-50 text-amber-900 border border-amber-200 rounded-lg px-3 py-2"></div>
+
+            <form id="formLogin" class="space-y-4" onsubmit="return doLogin(event)">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Usuario</label>
+                    <input id="usuario" type="text" autocomplete="username" required
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                           placeholder="email o nombre de login">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Contraseña</label>
+                    <input id="password" type="password" autocomplete="current-password" required
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                           placeholder="••••••••">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Empresa <span class="font-normal text-slate-400">(opcional)</span></label>
+                    <select id="empresaId" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+                        <option value="">— Usar empresa del usuario / activa —</option>
+                    </select>
+                </div>
+                <button type="submit" id="btnLogin"
+                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-sm transition">
+                    Ingresar
+                </button>
+            </form>
+            <p class="text-[11px] text-slate-400 mt-5 text-center">
+                Primera vez: password por defecto <code class="bg-slate-100 px-1 rounded text-slate-600">campo+</code> (cambiar en Usuarios).
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(location.search);
+        if (params.get('blocked') === '1') {
+            document.getElementById('msgBlocked').classList.remove('hidden');
+        }
+
+        async function precargarEmpresas() {
+            try {
+                const res = await fetch('/api/empresas');
+                if (!res.ok) return;
+                const rows = await res.json();
+                const sel = document.getElementById('empresaId');
+                rows.forEach(e => {
+                    const opt = document.createElement('option');
+                    opt.value = e.id;
+                    opt.textContent = e.razon_social + (Number(e.acceso_habilitado) === 0 ? ' (suspendida)' : '');
+                    sel.appendChild(opt);
+                });
+            } catch (_) {}
+        }
+
+        async function doLogin(ev) {
+            ev.preventDefault();
+            const err = document.getElementById('msgError');
+            err.classList.add('hidden');
+            const btn = document.getElementById('btnLogin');
+            btn.disabled = true;
+            btn.textContent = 'Validando…';
+            try {
+                const usuario = document.getElementById('usuario').value.trim();
+                const password = document.getElementById('password').value;
+                const emp = document.getElementById('empresaId').value;
+                await CampoAuth.login(usuario, password, emp || null);
+                const next = params.get('next') || 'Index.html';
+                location.href = next;
+            } catch (e) {
+                err.textContent = e.message || 'No se pudo ingresar';
+                err.classList.remove('hidden');
+                btn.disabled = false;
+                btn.textContent = 'Ingresar';
+            }
+            return false;
+        }
+
+        // Si ya hay sesión válida, ir al dashboard
+        (async () => {
+            await precargarEmpresas();
+            const me = await CampoAuth.me();
+            if (me) {
+                location.href = params.get('next') || 'Index.html';
+            }
+        })();
+    </script>
+</body>
+</html>

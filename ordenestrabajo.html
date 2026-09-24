@@ -1,0 +1,338 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Órdenes de Trabajo</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background:#f1f5f9; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; font-size:14px; color:#1e293b; }
+        .main-card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:20px; margin-bottom:16px; }
+        .hint { font-size:12px; color:#64748b; }
+        .font-mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+        .cons-tipo { font-weight:600; }
+        .cons-tipo option[value="producto"] { color:#1e40af; }
+        .cons-tipo option[value="laboreo"] { color:#92400e; }
+    </style>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body>
+<div class="container my-4" style="max-width:1100px;">
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Órdenes de Trabajo</small></h4>
+            <p class="hint mb-0">Asigná productos y laboreos del almacén (costo neto) al lote / campaña.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
+            <a href="Margenesbrutos.html" class="btn btn-sm btn-outline-dark fw-bold">Campaña</a>
+            <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">← Dashboard</a>
+        </div>
+    </div>
+
+    <div class="main-card">
+        <div class="row g-2">
+            <div class="col-md-2">
+                <label class="small fw-bold">Nº OT</label>
+                <input id="nroOT" class="form-control form-control-sm font-mono fw-bold" readonly>
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Fecha</label>
+                <input type="date" id="fechaOT" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Tipo de labor</label>
+                <select id="tipoLabor" class="form-select form-select-sm">
+                    <option>Pulverización Terrestre</option>
+                    <option>Siembra Directa</option>
+                    <option>Fertilización</option>
+                    <option>Cosecha</option>
+                    <option>Laboreo general</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Contratista</label>
+                <input id="contratista" class="form-control form-control-sm" placeholder="Opcional si el laboreo ya está en almacén">
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Campaña</label>
+                <select id="selCampania" class="form-select form-select-sm"></select>
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Campo</label>
+                <select id="selCampo" class="form-select form-select-sm" onchange="onCampoChange()"></select>
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Lote</label>
+                <select id="selLote" class="form-select form-select-sm" onchange="onLoteChange()"></select>
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Has afectadas</label>
+                <input type="number" step="0.01" id="superficie" class="form-control form-control-sm font-mono" value="0" oninput="recalcularLineas()">
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Cultivo</label>
+                <input id="cultivo" class="form-control form-control-sm" readonly>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-card">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <div>
+                <h5 class="fw-bold mb-0">Consumos desde almacén</h5>
+                <span class="hint">Elegí <strong>Producto</strong> o <strong>Labor</strong> en cada línea; el listado se filtra según el tipo.</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="agregarLinea('producto')">+ Producto</button>
+                <button type="button" class="btn btn-sm btn-outline-warning fw-bold" onclick="agregarLinea('laboreo')">+ Labor</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:120px;">Tipo</th>
+                        <th>Ítem almacén</th>
+                        <th class="text-center">Dosis / ha</th>
+                        <th class="text-end">Cantidad</th>
+                        <th>Un.</th>
+                        <th class="text-end">Costo u. neto</th>
+                        <th class="text-end">Costo total</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="tablaConsumos"></tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="6" class="text-end fw-bold">Total OT (neto)</td>
+                        <td class="text-end font-mono fw-bold" id="lblTotalOT">$ 0,00</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <div class="text-end mt-3">
+            <button class="btn btn-success fw-bold px-4" onclick="emitirOT()">💾 Emitir Orden de Trabajo</button>
+        </div>
+    </div>
+
+    <div class="main-card">
+        <h5 class="fw-bold">Últimas OT</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>Nº</th><th>Fecha</th><th>Labor</th><th>Has</th><th class="text-end">Insumos</th><th class="text-end">Laboreos</th><th class="text-end">Total neto</th></tr></thead>
+                <tbody id="tablaOTHist"><tr><td colspan="7" class="text-muted text-center py-2">—</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+let camposCache = [];
+let lotesCache = [];
+let itemsCache = [];
+let planCache = [];
+
+async function init() {
+    document.getElementById('fechaOT').value = new Date().toISOString().split('T')[0];
+    const [nro, camps, campos, items, ots] = await Promise.all([
+        fetch('/api/agro/ot/siguiente_nro').then(r => r.json()),
+        fetch('/api/agro/campanias').then(r => r.json()),
+        fetch('/api/agro/campos').then(r => r.json()),
+        fetch('/api/agro/almacen/items?solo_con_stock=true&orden=nombre&solo_aplica_ot=true').then(r => r.json()),
+        fetch('/api/agro/ot?limit=20').then(r => r.json()),
+    ]);
+    document.getElementById('nroOT').value = nro.nro_ot || '';
+    camposCache = campos || [];
+    itemsCache = (items || []).slice().sort((a, b) =>
+        String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' })
+    );
+    const selC = document.getElementById('selCampania');
+    selC.innerHTML = (camps || []).map(c => `<option value="${c.id}">Campaña ${c.codigo}</option>`).join('')
+        || '<option value="">Sin campaña</option>';
+    const selCampo = document.getElementById('selCampo');
+    selCampo.innerHTML = '<option value="">Seleccione…</option>' +
+        camposCache.map(c => `<option value="${c.id}">${c.nombre} (${c.tipo})</option>`).join('');
+    renderHist(ots || []);
+    agregarLinea('producto');
+    if (selC.value) await cargarPlanCampania();
+    selC.addEventListener('change', cargarPlanCampania);
+}
+
+async function cargarPlanCampania() {
+    const id = document.getElementById('selCampania').value;
+    planCache = [];
+    if (!id) return;
+    const res = await fetch(`/api/agro/campanias/${id}/plan`);
+    planCache = await res.json();
+}
+
+async function onCampoChange() {
+    const id = document.getElementById('selCampo').value;
+    const selLote = document.getElementById('selLote');
+    lotesCache = [];
+    if (!id) {
+        selLote.innerHTML = '';
+        return;
+    }
+    const res = await fetch(`/api/agro/campos/${id}`);
+    const d = await res.json();
+    lotesCache = d.lotes || [];
+    selLote.innerHTML = lotesCache.map(l =>
+        `<option value="${l.id}" data-has="${l.superficie_campania || l.superficie_base || 0}">${l.nombre} (${Number(l.superficie_campania||l.superficie_base||0).toFixed(1)} has)</option>`
+    ).join('');
+    onLoteChange();
+}
+
+function onLoteChange() {
+    const opt = document.getElementById('selLote').selectedOptions[0];
+    if (opt) {
+        document.getElementById('superficie').value = opt.dataset.has || 0;
+        const loteId = parseInt(opt.value, 10);
+        const pl = planCache.find(p => p.lote_id === loteId);
+        document.getElementById('cultivo').value = pl ? (pl.cultivo_planificado || pl.cultivo_sugerido || '') : '';
+    }
+    recalcularLineas();
+}
+
+function optsItems(tipo) {
+    const t = (tipo || 'producto').toLowerCase();
+    const list = itemsCache.filter(i => (i.tipo || 'producto') === t);
+    if (!list.length) {
+        return `<option value="">— Sin ${t === 'laboreo' ? 'labores' : 'productos'} con stock —</option>`;
+    }
+    return list.map(i => {
+        const etiqueta = t === 'laboreo' ? 'labor' : 'producto';
+        return `<option value="${i.id}" data-unidad="${i.unidad||''}" data-costo="${i.costo_promedio_neto||0}" data-tipo="${i.tipo}">
+            [${etiqueta}] ${i.nombre} — stock ${Number(i.stock_cantidad||0).toFixed(2)} ${i.unidad||''} · $ ${Number(i.costo_promedio_neto||0).toFixed(2)}
+        </option>`;
+    }).join('');
+}
+
+function onTipoLineaChange(selTipo) {
+    const tr = selTipo.closest('tr');
+    const tipo = selTipo.value;
+    const selItem = tr.querySelector('.cons-item');
+    selItem.innerHTML = optsItems(tipo);
+    selTipo.classList.toggle('border-warning', tipo === 'laboreo');
+    selTipo.classList.toggle('border-primary', tipo === 'producto');
+    // labor: dosis típica 1 Has/ha
+    if (tipo === 'laboreo') {
+        const dosis = tr.querySelector('.cons-dosis');
+        if (parseFloat(dosis.value || 0) <= 0) dosis.value = '1';
+    }
+    onItemChange(selItem);
+}
+
+function agregarLinea(tipoInicial) {
+    const tipo = tipoInicial === 'laboreo' ? 'laboreo' : 'producto';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>
+            <select class="form-select form-select-sm cons-tipo" onchange="onTipoLineaChange(this)" title="Producto o Labor">
+                <option value="producto"${tipo==='producto'?' selected':''}>Producto</option>
+                <option value="laboreo"${tipo==='laboreo'?' selected':''}>Labor</option>
+            </select>
+        </td>
+        <td><select class="form-select form-select-sm cons-item" onchange="onItemChange(this)">${optsItems(tipo)}</select></td>
+        <td class="text-center"><input type="number" step="0.01" class="form-control form-control-sm font-mono cons-dosis" value="${tipo==='laboreo'?'1':'0'}" oninput="recalcularLineas()"></td>
+        <td class="text-end"><input type="number" step="0.01" class="form-control form-control-sm font-mono cons-cant" value="0" oninput="recalcularLineas()"></td>
+        <td class="cons-un small">—</td>
+        <td class="text-end font-mono cons-cu">$ 0,00</td>
+        <td class="text-end font-mono fw-bold cons-ct">$ 0,00</td>
+        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove(); recalcularLineas();">×</button></td>`;
+    document.getElementById('tablaConsumos').appendChild(tr);
+    onTipoLineaChange(tr.querySelector('.cons-tipo'));
+}
+
+function onItemChange(sel) {
+    const opt = sel.selectedOptions[0];
+    const tr = sel.closest('tr');
+    if (!opt) return;
+    tr.querySelector('.cons-un').innerText = opt.dataset.unidad || '—';
+    const cu = Number(opt.dataset.costo || 0);
+    tr.querySelector('.cons-cu').innerText = '$ ' + cu.toLocaleString('es-AR', {minimumFractionDigits:2});
+    recalcularLineas();
+}
+
+function recalcularLineas() {
+    const has = parseFloat(document.getElementById('superficie').value || 0);
+    let total = 0;
+    document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
+        const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
+        let cantInp = tr.querySelector('.cons-cant');
+        let cant = parseFloat(cantInp.value || 0);
+        if (dosis > 0 && has > 0 && (!cantInp.dataset.manual || cant < 0.0001)) {
+            cant = Math.round(dosis * has * 1000) / 1000;
+            cantInp.value = cant;
+        }
+        const opt = tr.querySelector('.cons-item').selectedOptions[0];
+        const cu = opt ? Number(opt.dataset.costo || 0) : 0;
+        const ct = cant * cu;
+        tr.querySelector('.cons-ct').innerText = '$ ' + ct.toLocaleString('es-AR', {minimumFractionDigits:2});
+        total += ct;
+    });
+    document.getElementById('lblTotalOT').innerText = '$ ' + total.toLocaleString('es-AR', {minimumFractionDigits:2});
+}
+
+document.addEventListener('input', e => {
+    if (e.target.classList.contains('cons-cant')) e.target.dataset.manual = '1';
+});
+
+async function emitirOT() {
+    const lote_id = parseInt(document.getElementById('selLote').value || 0, 10);
+    const campo_id = parseInt(document.getElementById('selCampo').value || 0, 10);
+    const campania_id = parseInt(document.getElementById('selCampania').value || 0, 10) || null;
+    if (!campo_id || !lote_id) return alert('Seleccioná campo y lote.');
+    const consumos = [];
+    document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
+        const item_id = parseInt(tr.querySelector('.cons-item').value || 0, 10);
+        const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
+        const cantidad = parseFloat(tr.querySelector('.cons-cant').value || 0);
+        if (item_id && cantidad > 0) consumos.push({ item_id, dosis_por_ha: dosis, cantidad });
+    });
+    if (!consumos.length) return alert('Agregá al menos un consumo del almacén.');
+    const payload = {
+        nro_ot: document.getElementById('nroOT').value,
+        fecha: document.getElementById('fechaOT').value,
+        tipo_labor: document.getElementById('tipoLabor').value,
+        contratista_nombre: document.getElementById('contratista').value.trim(),
+        campania_id,
+        campo_id,
+        lote_id,
+        superficie_has: parseFloat(document.getElementById('superficie').value || 0),
+        cultivo: document.getElementById('cultivo').value,
+        consumos
+    };
+    const res = await fetch('/api/agro/ot', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const d = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(d.detail || 'Error al emitir OT');
+    alert(`✅ ${d.message}\nInsumos: $ ${Number(d.costo_insumos_neto||0).toLocaleString('es-AR')}\nLaboreos: $ ${Number(d.costo_laboreos_neto||0).toLocaleString('es-AR')}\nTotal neto: $ ${Number(d.costo_total_neto||0).toLocaleString('es-AR')}`);
+    location.reload();
+}
+
+function renderHist(rows) {
+    const tb = document.getElementById('tablaOTHist');
+    if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-2">Sin OT aún.</td></tr>`;
+        return;
+    }
+    tb.innerHTML = rows.map(o => `
+        <tr>
+            <td class="font-mono fw-bold">${o.nro_ot}</td>
+            <td>${(o.fecha||'').split('-').reverse().join('/')}</td>
+            <td>${o.tipo_labor||''}</td>
+            <td class="font-mono">${Number(o.superficie_has||0).toFixed(1)}</td>
+            <td class="text-end font-mono">$ ${Number(o.costo_insumos_neto||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+            <td class="text-end font-mono">$ ${Number(o.costo_laboreos_neto||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+            <td class="text-end font-mono fw-bold">$ ${Number(o.costo_total_neto||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+        </tr>`).join('');
+}
+
+init();
+</script>
+</body>
+</html>

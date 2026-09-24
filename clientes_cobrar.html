@@ -1,0 +1,210 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Clientes a Cobrar (Cuentas Corrientes)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 20px; }
+        .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; padding: 12px; }
+        .table tbody td { padding: 12px; vertical-align: middle; }
+    </style>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body>
+    <div class="container my-4" style="max-width: 1300px;">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Clientes a Cobrar (Cuentas Corrientes con Saldo)</small></h4>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="cuentacorriente.html" class="btn btn-outline-dark btn-sm fw-bold">📊 Ir a Proveedores a Pagar</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">← Volver al Dashboard</a>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-dark">📋 Listado Exclusivo de Clientes con Saldo a Cobrar</h5>
+                <div class="input-group" style="width: 320px;">
+                    <input type="text" id="buscadorCliente" class="form-control form-control-sm" placeholder="Buscar cliente o CUIT..." onkeyup="filtrarClientes()">
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Cliente / Comprador</th>
+                            <th>CUIT</th>
+                            <th>Última Operación</th>
+                            <th class="text-end">Saldo a Cobrar ($)</th>
+                            <th class="text-center" style="width: 180px;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyClientes">
+                        <tr><td colspan="5" class="text-center py-4 text-muted">Cargando clientes con saldo pendiente...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL REGISTRAR COBRO -->
+    <div class="modal fade" id="modalCobro" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white py-2">
+                    <h5 class="modal-title fs-6 fw-bold">Registrar Cobro de Cliente</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formCobro">
+                        <input type="hidden" id="cobroCuit">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small mb-0">Cliente</label>
+                            <input type="text" id="cobroClienteNombre" class="form-control font-semibold bg-light" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Fecha de Cobro</label>
+                            <input type="date" id="cobroFecha" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Forma de Cobro</label>
+                            <select id="cobroForma" class="form-select">
+                                <option value="Transferencia">Transferencia Bancaria</option>
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Cheque Terceros">Cheque de Terceros / E-Cheq</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Monto Cobrado ($)</label>
+                            <input type="number" step="0.01" id="cobroMonto" class="form-control fw-bold font-monospace text-success fs-5" placeholder="0.00" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Observaciones / Referencia</label>
+                            <input type="text" id="cobroObs" class="form-control" placeholder="Ej: Recibo N° 0001-00004512">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" onclick="confirmarCobroAPI()" class="btn btn-success btn-sm fw-bold px-4">Confirmar y Guardar Cobro</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let clientesGlobales = [];
+
+        async function cargarClientes() {
+            try {
+                // Seteamos fecha actual en el modal
+                document.getElementById('cobroFecha').value = new Date().toISOString().split('T')[0];
+
+                const res = await fetch('/api/saldos_proveedores');
+                clientesGlobales = await res.json();
+                
+                let tbody = document.getElementById('tbodyClientes');
+                if (!clientesGlobales || clientesGlobales.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-muted">No se registran clientes con saldo pendiente de cobro.</td></tr>`;
+                    return;
+                }
+
+                let html = "";
+                clientesGlobales.forEach(c => {
+                    let saldo = c.saldo_a_pagar || 0;
+                    html += `
+                        <tr>
+                            <td class="fw-bold text-slate-800">${c.proveedor}</td>
+                            <td class="font-monospace text-muted">${c.cuit}</td>
+                            <td>${c.ultima_factura || '-'}</td>
+                            <td class="text-end font-monospace fw-bold text-success">$ ${Math.abs(saldo).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                            <td class="text-center">
+                                <button class="btn btn-success btn-sm fw-bold px-3 py-1" style="background-color:#059669; border:none;" onclick="abrirModalCobro('${c.cuit}', '${c.proveedor}', ${Math.abs(saldo)})">Registrar Cobro →</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            } catch (e) {
+                console.error("Error al cargar clientes:", e);
+                document.getElementById('tbodyClientes').innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error al conectar con la base de datos de saldos.</td></tr>`;
+            }
+        }
+
+        function filtrarClientes() {
+            let input = document.getElementById('buscadorCliente').value.toLowerCase();
+            let rows = document.querySelectorAll('#tbodyClientes tr');
+            rows.forEach(row => {
+                let text = row.innerText.toLowerCase();
+                row.style.display = text.includes(input) ? '' : 'none';
+            });
+        }
+
+        function abrirModalCobro(cuit, proveedor, saldoSugerido) {
+            document.getElementById('cobroCuit').value = cuit;
+            document.getElementById('cobroClienteNombre').value = proveedor;
+            document.getElementById('cobroMonto').value = saldoSugerido;
+            
+            var modal = new bootstrap.Modal(document.getElementById('modalCobro'));
+            modal.show();
+        }
+
+        async function confirmarCobroAPI() {
+            let cuit = document.getElementById('cobroCuit').value;
+            let cliente = document.getElementById('cobroClienteNombre').value;
+            let fecha = document.getElementById('cobroFecha').value;
+            let forma = document.getElementById('cobroForma').value;
+            let monto = parseFloat(document.getElementById('cobroMonto').value);
+            let obs = document.getElementById('cobroObs').value.trim();
+
+            if (isNaN(monto) || monto <= 0) {
+                alert("Por favor, ingrese un monto válido de cobro.");
+                return;
+            }
+
+            let payload = {
+                cuit: cuit,
+                fecha: fecha,
+                total_pagado: monto,
+                retencion_iibb: 0,
+                retencion_sicore: 0,
+                forma_pago: forma,
+                observaciones: obs || `Recibo de cobro registrado para ${cliente}`,
+                usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar'
+            };
+
+            try {
+                const response = await fetch('/api/ordenes_pago', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.detail || "Error al procesar el cobro.");
+
+                alert(`✅ Cobro de $ ${monto.toLocaleString('es-AR', {minimumFractionDigits: 2})} registrado con éxito para ${cliente}.`);
+
+                // Cerrar modal
+                var myModalEl = document.getElementById('modalCobro');
+                var modal = bootstrap.Modal.getInstance(myModalEl);
+                modal.hide();
+
+                // Recargar tabla de saldos
+                cargarClientes();
+
+            } catch (err) {
+                alert("🚨 Error al guardar el cobro: " + err.message);
+            }
+        }
+
+        window.onload = cargarClientes;
+    </script>
+</body>
+</html>

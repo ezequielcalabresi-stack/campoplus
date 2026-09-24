@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Actividades y Cuentas de Imputación</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-6xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Actividades y Cuentas</h1>
+            <p class="text-xs text-slate-500 mt-1">ABM de actividades y cuentas a imputar (gastos / ingresos) para facturas.</p>
+        </div>
+            <div class="flex gap-2">
+                <button onclick="resyncMaestro()" class="bg-amber-600 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-amber-700">↻ Sync Excel maestro</button>
+                <a href="ingresofacturas.html" class="bg-emerald-600 text-white px-3 py-2 rounded-md text-sm font-bold">Ingreso facturas</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">← Dashboard</a>
+            </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Actividades -->
+        <div class="border rounded-xl p-4">
+            <h2 class="font-bold text-slate-800 mb-3">Actividades</h2>
+            <form class="flex gap-2 mb-3" onsubmit="return altaActividad(event)">
+                <input id="actNombre" class="flex-1 border rounded p-2 text-sm" placeholder="Nueva actividad…" required>
+                <button class="bg-slate-800 text-white px-3 py-2 rounded text-sm font-bold">+ Alta</button>
+            </form>
+            <div class="overflow-y-auto max-h-[60vh] border rounded">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-100 text-xs uppercase sticky top-0">
+                        <tr><th class="p-2 text-left">Nombre</th><th class="p-2 text-center">Ctas</th><th class="p-2 text-center">Acciones</th></tr>
+                    </thead>
+                    <tbody id="tbodyAct"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Cuentas de la actividad seleccionada -->
+        <div class="border rounded-xl p-4">
+            <h2 class="font-bold text-slate-800 mb-1">Cuentas a imputar</h2>
+            <p id="lblActSel" class="text-xs text-slate-500 mb-3">Seleccioná una actividad a la izquierda.</p>
+            <form class="grid grid-cols-3 gap-2 mb-3" onsubmit="return altaCuenta(event)">
+                <input id="ctaNombre" class="col-span-2 border rounded p-2 text-sm" placeholder="Cuenta a imputar…" required disabled>
+                <select id="ctaTipo" class="border rounded p-2 text-sm" disabled>
+                    <option value="EGRESO">EGRESO</option>
+                    <option value="INGRESO">INGRESO</option>
+                </select>
+                <button id="btnAltaCta" class="col-span-3 bg-emerald-700 text-white py-2 rounded text-sm font-bold disabled:opacity-40" disabled>+ Agregar cuenta</button>
+            </form>
+            <div class="overflow-y-auto max-h-[55vh] border rounded">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-100 text-xs uppercase sticky top-0">
+                        <tr><th class="p-2 text-left">Cuenta</th><th class="p-2">Tipo</th><th class="p-2 text-center">Acciones</th></tr>
+                    </thead>
+                    <tbody id="tbodyCta"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let actSel = null;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function cargarActividades() {
+    const rows = await fetch('/api/actividades').then(r => r.json());
+    document.getElementById('tbodyAct').innerHTML = rows.map(a => `
+        <tr class="border-t hover:bg-slate-50 ${actSel===a.id?'bg-emerald-50':''}">
+            <td class="p-2 font-medium cursor-pointer" onclick="seleccionarAct(${a.id}, '${esc(a.nombre).replace(/'/g,"\\'")}')">${esc(a.nombre)}</td>
+            <td class="p-2 text-center font-mono text-xs">${a.n_cuentas||0}</td>
+            <td class="p-2 text-center space-x-2">
+                <button onclick="editarAct(${a.id}, '${esc(a.nombre).replace(/'/g,"\\'")}')" class="text-blue-600 text-xs font-bold">Editar</button>
+                <button onclick="borrarAct(${a.id})" class="text-red-600 text-xs font-bold">Borrar</button>
+            </td>
+        </tr>`).join('') || '<tr><td colspan="3" class="p-4 text-center text-slate-400">Sin actividades</td></tr>';
+}
+
+async function resyncMaestro() {
+    if (!confirm('¿Resincronizar actividades/cuentas desde el Excel maestro de Access?')) return;
+    const res = await fetch('/api/actividades/reseed?forzar=1', { method: 'POST' });
+    const data = await res.json();
+    alert(JSON.stringify(data, null, 2));
+    actSel = null;
+    document.getElementById('tbodyCta').innerHTML = '';
+    await cargarActividades();
+}
+
+async function seleccionarAct(id, nombre) {
+    actSel = id;
+    document.getElementById('lblActSel').textContent = 'Actividad: ' + nombre;
+    ['ctaNombre','ctaTipo','btnAltaCta'].forEach(id => document.getElementById(id).disabled = false);
+    await cargarCuentas();
+    await cargarActividades();
+}
+
+async function cargarCuentas() {
+    if (!actSel) return;
+    const rows = await fetch('/api/actividades/' + actSel + '/cuentas?todas=0').then(r => r.json());
+    document.getElementById('tbodyCta').innerHTML = rows.map(c => `
+        <tr class="border-t hover:bg-slate-50">
+            <td class="p-2">${esc(c.nombre)}</td>
+            <td class="p-2 text-center"><span class="text-xs font-bold px-1.5 py-0.5 rounded ${c.tipo_cta==='INGRESO'?'bg-sky-100 text-sky-800':'bg-rose-100 text-rose-800'}">${esc(c.tipo_cta)}</span></td>
+            <td class="p-2 text-center space-x-2">
+                <button onclick="editarCta(${c.id}, '${esc(c.nombre).replace(/'/g,"\\'")}', '${esc(c.tipo_cta)}')" class="text-blue-600 text-xs font-bold">Editar</button>
+                <button onclick="borrarCta(${c.id})" class="text-red-600 text-xs font-bold">Borrar</button>
+            </td>
+        </tr>`).join('') || '<tr><td colspan="3" class="p-4 text-center text-slate-400">Sin cuentas</td></tr>';
+}
+
+async function altaActividad(ev) {
+    ev.preventDefault();
+    const nombre = document.getElementById('actNombre').value.trim();
+    const res = await fetch('/api/actividades', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ nombre })
+    });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    document.getElementById('actNombre').value = '';
+    await cargarActividades();
+    return false;
+}
+
+async function editarAct(id, nombre) {
+    const n = prompt('Nombre de actividad:', nombre);
+    if (!n || !n.trim()) return;
+    await fetch('/api/actividades/' + id, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ nombre: n.trim() })
+    });
+    await cargarActividades();
+}
+
+async function borrarAct(id) {
+    if (!confirm('¿Desactivar esta actividad?')) return;
+    await fetch('/api/actividades/' + id, { method:'DELETE' });
+    if (actSel === id) {
+        actSel = null;
+        document.getElementById('tbodyCta').innerHTML = '';
+        document.getElementById('lblActSel').textContent = 'Seleccioná una actividad a la izquierda.';
+        ['ctaNombre','ctaTipo','btnAltaCta'].forEach(i => document.getElementById(i).disabled = true);
+    }
+    await cargarActividades();
+}
+
+async function altaCuenta(ev) {
+    ev.preventDefault();
+    if (!actSel) return false;
+    const body = {
+        nombre: document.getElementById('ctaNombre').value.trim(),
+        tipo_cta: document.getElementById('ctaTipo').value
+    };
+    const res = await fetch('/api/actividades/' + actSel + '/cuentas', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    document.getElementById('ctaNombre').value = '';
+    await Promise.all([cargarCuentas(), cargarActividades()]);
+    return false;
+}
+
+async function editarCta(id, nombre, tipo) {
+    const n = prompt('Nombre de cuenta:', nombre);
+    if (!n || !n.trim()) return;
+    const t = prompt('Tipo (EGRESO / INGRESO):', tipo || 'EGRESO');
+    await fetch('/api/actividad-cuentas/' + id, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ nombre: n.trim(), tipo_cta: (t||'EGRESO').toUpperCase() })
+    });
+    await cargarCuentas();
+}
+
+async function borrarCta(id) {
+    if (!confirm('¿Desactivar esta cuenta?')) return;
+    await fetch('/api/actividad-cuentas/' + id, { method:'DELETE' });
+    await Promise.all([cargarCuentas(), cargarActividades()]);
+}
+
+window.onload = cargarActividades;
+</script>
+</body>
+</html>

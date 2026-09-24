@@ -1,0 +1,352 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Liquidaciones de Hacienda</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Liquidación de Hacienda</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Formulario limpio · tropas · imputación de ingresos a Gestión</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="Gestion.html" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 rounded-md text-sm font-medium">Gestión</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+            </div>
+        </div>
+
+        <form id="formHacienda" class="space-y-6" onsubmit="return guardar(event)">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Consignatario / Feria</label>
+                    <select id="entidad" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                        <option value="">— Seleccionar —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-rose-800 font-bold">Nro. de Liquidación</label>
+                    <input id="nroLiq" type="text" placeholder="Ej. 0003-00002936" class="mt-1 block w-full rounded-md border-rose-300 p-2 border bg-white font-bold">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Plazo (días)</label>
+                    <input id="plazo" type="number" min="0" placeholder="35" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-right">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-emerald-700 font-bold">Fecha liquidación</label>
+                    <input id="fecha" type="date" class="mt-1 block w-full rounded-md border-emerald-300 p-2 border bg-white">
+                </div>
+            </div>
+
+            <div class="border rounded-lg p-4 bg-white">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-semibold text-slate-700">Tropas / categorías</h3>
+                    <button type="button" onclick="addTropa()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded font-medium">+ Agregar tropa</button>
+                </div>
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold border-b">
+                                <th class="p-2">Nro. Tropa</th>
+                                <th class="p-2">Comprador</th>
+                                <th class="p-2 text-center">Cabezas</th>
+                                <th class="p-2">Categoría</th>
+                                <th class="p-2 text-right">Kilos</th>
+                                <th class="p-2 text-right">$/Kg</th>
+                                <th class="p-2 text-right">Subtotal</th>
+                                <th class="p-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbTropas" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="border rounded-lg p-4 bg-white space-y-3">
+                    <h3 class="text-md font-semibold text-slate-700">Comisiones y gastos</h3>
+                    <div>
+                        <label class="block text-xs text-slate-600">Comisión ($)</label>
+                        <input id="comision" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">Fondo de garantía ($)</label>
+                        <input id="fondo" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">IVA ($)</label>
+                        <input id="iva" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-emerald-700">
+                    </div>
+                </div>
+                <div class="border rounded-lg p-4 bg-white space-y-3">
+                    <h3 class="text-md font-semibold text-slate-700">Retenciones</h3>
+                    <div>
+                        <label class="block text-xs text-slate-600">Retención IIBB ($)</label>
+                        <input id="retIibb" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">Retención Ganancias ($)</label>
+                        <input id="retGan" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">Guía / DT-E</label>
+                        <input id="guia" type="text" placeholder="" class="mt-1 w-full border rounded p-2 text-xs">
+                    </div>
+                </div>
+            </div>
+
+            <!-- GESTIÓN / INGRESOS (estilo Access) -->
+            <div class="border-2 border-emerald-200 rounded-lg p-4 bg-emerald-50/40">
+                <div class="flex justify-between items-center mb-3">
+                    <div>
+                        <h3 class="text-md font-bold text-emerald-900">Imputación de cuentas — Ingresos (Gestión)</h3>
+                        <p class="text-xs text-emerald-800/80">Actividad + cuenta de venta + neto. Alimenta el panorama de Gestión.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="Actividades.html" class="text-xs text-emerald-800 underline">ABM actividades</a>
+                        <button type="button" onclick="addImp()" class="bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-bold">+ Renglón</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto border rounded-lg bg-white">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-emerald-100 text-xs uppercase text-emerald-900">
+                                <th class="p-2 text-left">Actividad</th>
+                                <th class="p-2 text-left">Cta a imputar (ingreso)</th>
+                                <th class="p-2 text-right w-40">Neto $</th>
+                                <th class="p-2 w-16"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbImp"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-rose-50 border border-rose-200 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-3">
+                <div class="text-xs text-rose-900">
+                    Cabezas: <strong id="sumCabezas">0</strong> · Kilos: <strong id="sumKilos">0</strong> · Bruto tropas: <strong id="sumBruto">$ 0</strong>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs font-bold text-emerald-800 uppercase block">Neto estimado</span>
+                    <span id="netoEst" class="text-2xl font-extrabold text-emerald-900">$ 0</span>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="limpiarForm()" class="px-4 py-2 text-sm text-slate-600 border rounded-lg">Limpiar</button>
+                <button type="submit" class="bg-rose-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-rose-700">Guardar liquidación</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        let actividades = [];
+        let entidades = [];
+
+        function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
+        function fmt(n) { return '$ ' + num(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+        function tropaRow() {
+            return `<tr class="tropa">
+                <td class="p-1"><input class="t-nro border rounded p-1 w-20 text-xs" /></td>
+                <td class="p-1"><input class="t-comp border rounded p-1 w-full text-xs" /></td>
+                <td class="p-1 text-center"><input type="number" class="t-cab border rounded p-1 w-16 text-xs text-center" oninput="recalc()" /></td>
+                <td class="p-1"><input class="t-cat border rounded p-1 w-full text-xs" /></td>
+                <td class="p-1"><input type="number" step="0.01" class="t-kg border rounded p-1 w-24 text-xs text-right" oninput="recalc()" /></td>
+                <td class="p-1"><input type="number" step="0.01" class="t-px border rounded p-1 w-24 text-xs text-right" oninput="recalc()" /></td>
+                <td class="p-1 text-right"><span class="t-sub font-bold text-xs">$ 0</span></td>
+                <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove();recalc()">×</button></td>
+            </tr>`;
+        }
+
+        function addTropa() {
+            document.getElementById('tbTropas').insertAdjacentHTML('beforeend', tropaRow());
+        }
+
+        function impRow() {
+            const optsAct = '<option value="">— Actividad —</option>' +
+                actividades.map(a => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('');
+            return `<tr class="imp">
+                <td class="p-1"><select class="i-act border rounded p-1.5 w-full text-sm" onchange="onActChange(this)">${optsAct}</select></td>
+                <td class="p-1"><select class="i-cta border rounded p-1.5 w-full text-sm"><option value="">— Cuenta ingreso —</option></select></td>
+                <td class="p-1"><input type="number" step="0.01" class="i-neto border rounded p-1.5 w-full text-right" placeholder="0" oninput="recalc()" /></td>
+                <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove()">×</button></td>
+            </tr>`;
+        }
+
+        function addImp() {
+            document.getElementById('tbImp').insertAdjacentHTML('beforeend', impRow());
+        }
+
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function onActChange(sel) {
+            const tr = sel.closest('tr');
+            const ctaSel = tr.querySelector('.i-cta');
+            const actId = sel.value;
+            ctaSel.innerHTML = '<option value="">— Cuenta ingreso —</option>';
+            if (!actId) return;
+            let ctas = await fetch('/api/actividades/' + actId + '/cuentas?tipo=INGRESO').then(r => r.json());
+            if (!ctas.length) {
+                const act = actividades.find(a => String(a.id) === String(actId));
+                ctas = (act && act.cuentas || []).filter(c => String(c.tipo_cta || '').toUpperCase() === 'INGRESO');
+            }
+            ctas.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+            ctas.forEach(c => {
+                const o = document.createElement('option');
+                o.value = c.id;
+                o.textContent = c.nombre;
+                ctaSel.appendChild(o);
+            });
+        }
+
+        function recalc() {
+            let cab = 0, kg = 0, bruto = 0;
+            document.querySelectorAll('#tbTropas tr.tropa').forEach(tr => {
+                const c = num(tr.querySelector('.t-cab').value);
+                const k = num(tr.querySelector('.t-kg').value);
+                const p = num(tr.querySelector('.t-px').value);
+                let sub = num(tr.querySelector('.t-sub').dataset?.force);
+                sub = k * p;
+                tr.querySelector('.t-sub').textContent = fmt(sub);
+                cab += c; kg += k; bruto += sub;
+            });
+            document.getElementById('sumCabezas').textContent = cab;
+            document.getElementById('sumKilos').textContent = kg.toLocaleString('es-AR');
+            document.getElementById('sumBruto').textContent = fmt(bruto);
+            const neto = bruto
+                - num(document.getElementById('comision').value)
+                - num(document.getElementById('fondo').value)
+                + num(document.getElementById('iva').value)
+                - num(document.getElementById('retIibb').value)
+                - num(document.getElementById('retGan').value);
+            document.getElementById('netoEst').textContent = fmt(neto);
+            // Si hay un solo renglón de imputación vacío de neto, sugerir bruto de tropas
+            const nets = document.querySelectorAll('#tbImp .i-neto');
+            if (nets.length === 1 && !nets[0].value && bruto > 0) {
+                // no auto-fill to keep form clean unless user wants
+            }
+            return { cab, kg, bruto, neto };
+        }
+
+        ['comision','fondo','iva','retIibb','retGan'].forEach(id => {
+            document.getElementById(id).addEventListener('input', recalc);
+        });
+
+        async function cargarEntidades() {
+            const rows = await fetch('/api/entidades').then(r => r.ok ? r.json() : []);
+            entidades = rows || [];
+            const sel = document.getElementById('entidad');
+            entidades
+                .slice()
+                .sort((a,b) => String(a.razon_social||a.nombre_fantasia||'').localeCompare(String(b.razon_social||b.nombre_fantasia||''), 'es'))
+                .forEach(e => {
+                    const o = document.createElement('option');
+                    o.value = (e.cuit || '').replace(/\D/g, '');
+                    o.textContent = e.nombre_fantasia || e.razon_social || e.cuit;
+                    o.dataset.nombre = e.razon_social || e.nombre_fantasia || '';
+                    sel.appendChild(o);
+                });
+        }
+
+        async function cargarActividades() {
+            actividades = await fetch('/api/actividades?con_cuentas=1').then(r => r.ok ? r.json() : []);
+            actividades.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+        }
+
+        function limpiarForm() {
+            document.getElementById('formHacienda').reset();
+            document.getElementById('tbTropas').innerHTML = '';
+            document.getElementById('tbImp').innerHTML = '';
+            addTropa();
+            addImp();
+            // Preferir Ganaderia si existe
+            const prefer = actividades.find(a => /ganader/i.test(a.nombre));
+            if (prefer) {
+                const sel = document.querySelector('#tbImp .i-act');
+                if (sel) { sel.value = prefer.id; onActChange(sel); }
+            }
+            recalc();
+        }
+
+        async function guardar(ev) {
+            ev.preventDefault();
+            const tot = recalc();
+            const entSel = document.getElementById('entidad');
+            const opt = entSel.options[entSel.selectedIndex];
+            const tropas = [...document.querySelectorAll('#tbTropas tr.tropa')].map(tr => ({
+                nro_tropa: tr.querySelector('.t-nro').value.trim(),
+                comprador: tr.querySelector('.t-comp').value.trim(),
+                cabezas: num(tr.querySelector('.t-cab').value),
+                categoria: tr.querySelector('.t-cat').value.trim(),
+                kilos: num(tr.querySelector('.t-kg').value),
+                precio_kg: num(tr.querySelector('.t-px').value),
+                subtotal: num(tr.querySelector('.t-kg').value) * num(tr.querySelector('.t-px').value),
+            }));
+            const imputaciones = [...document.querySelectorAll('#tbImp tr.imp')].map(tr => {
+                const act = tr.querySelector('.i-act');
+                const cta = tr.querySelector('.i-cta');
+                return {
+                    actividad_id: act.value ? Number(act.value) : null,
+                    cuenta_imputacion_id: cta.value ? Number(cta.value) : null,
+                    actividad_nombre: act.options[act.selectedIndex]?.text || '',
+                    cuenta_nombre: cta.options[cta.selectedIndex]?.text || '',
+                    neto: num(tr.querySelector('.i-neto').value),
+                };
+            }).filter(r => r.actividad_id || r.cuenta_imputacion_id || r.neto);
+
+            if (!imputaciones.length) {
+                if (!confirm('No hay imputación de ingreso a Gestión. ¿Guardar igual?')) return false;
+            }
+
+            const body = {
+                entidad_cuit: entSel.value,
+                entidad_nombre: opt?.dataset?.nombre || opt?.textContent || '',
+                nro_liquidacion: document.getElementById('nroLiq').value.trim(),
+                fecha: document.getElementById('fecha').value,
+                plazo_dias: parseInt(document.getElementById('plazo').value || '0', 10),
+                comision: num(document.getElementById('comision').value),
+                fondo_garantia: num(document.getElementById('fondo').value),
+                iva: num(document.getElementById('iva').value),
+                ret_iibb: num(document.getElementById('retIibb').value),
+                ret_ganancias: num(document.getElementById('retGan').value),
+                guia_ref: document.getElementById('guia').value.trim(),
+                bruto: tot.bruto,
+                neto_final: tot.neto,
+                cabezas: tot.cab,
+                kilos: tot.kg,
+                tropas,
+                imputaciones,
+            };
+            const res = await fetch('/api/liquidaciones/hacienda', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.detail || 'No se pudo guardar');
+                return false;
+            }
+            alert('Liquidación #' + data.id + ' guardada.');
+            limpiarForm();
+            return false;
+        }
+
+        window.onload = async function () {
+            if (window.CampoAuth) await CampoAuth.requireAuth({ redirect: 'liquidacioneshacienda.html' });
+            await cargarActividades();
+            await cargarEntidades();
+            limpiarForm();
+        };
+    </script>
+</body>
+</html>

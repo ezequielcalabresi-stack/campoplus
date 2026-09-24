@@ -1,0 +1,158 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Baúl de Credenciales y Contraseñas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+        <!-- Cabecera -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Baúl de Credenciales y Accesos</span></h2>
+                <p class="text-xs text-slate-500 mt-1">Gestión centralizada y segura de contraseñas para los portales y cuentas del equipo.</p>
+            </div>
+            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
+                ← Volver al Dashboard
+            </a>
+        </div>
+
+        <!-- Formulario para Agregar Nueva Credencial -->
+        <div class="bg-slate-50 border p-6 rounded-xl mb-8">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Guardar Nueva Credencial</h3>
+            <form id="formBaul" class="grid grid-cols-1 md:grid-cols-5 gap-4 text-xs">
+                <div>
+                    <label class="block font-medium text-slate-700 mb-1">Sitio / Plataforma</label>
+                    <input type="text" id="sitioBaul" placeholder="Ej. Banco Galicia / AFIP" class="w-full rounded border p-2 bg-white" required>
+                </div>
+                <div>
+                    <label class="block font-medium text-slate-700 mb-1">Categoría</label>
+                    <select id="catBaul" class="w-full rounded border p-2 bg-white font-medium text-amber-800">
+                        <option value="Bancos y Finanzas">Bancos y Finanzas</option>
+                        <option value="Acopios e Insumeras">Acopios e Insumeras</option>
+                        <option value="Organismos">Organismos (AFIP / ARBA / Muni)</option>
+                        <option value="Sistemas y Nube">Sistemas / Hosting / Nube</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-medium text-slate-700 mb-1">Usuario / CUIT / Email</label>
+                    <input type="text" id="userBaul" placeholder="usuario@empresa.com" class="w-full rounded border p-2 bg-white" required>
+                </div>
+                <div>
+                    <label class="block font-medium text-slate-700 mb-1">Contraseña / Clave</label>
+                    <input type="password" id="passBaul" placeholder="••••••••" class="w-full rounded border p-2 bg-white font-mono" required>
+                </div>
+                <div class="flex items-end">
+                    <button type="button" onclick="guardarCredencial()" class="w-full bg-amber-600 text-white p-2.5 rounded text-xs font-bold hover:bg-amber-700 transition-all shadow">
+                        + Guardar Clave
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Listado de Credenciales Almacenadas -->
+        <div class="border rounded-lg p-4 bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-slate-700">Accesos Registrados en el Baúl</h3>
+                <input type="text" id="buscadorBaul" oninput="filtrarCredenciales()" placeholder="Buscar plataforma..." class="rounded-md border-slate-300 p-2 border text-xs w-64 bg-slate-50">
+            </div>
+
+            <div class="overflow-x-auto border rounded-lg">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-700 uppercase font-semibold border-b">
+                            <th class="p-3">Plataforma / Sitio</th>
+                            <th class="p-3">Categoría</th>
+                            <th class="p-3">Usuario / Identificador</th>
+                            <th class="p-3">Contraseña</th>
+                            <th class="p-3 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaCredenciales" class="divide-y divide-slate-200">
+                        <!-- Se llena dinámicamente -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let credenciales = JSON.parse(localStorage.getItem('campoplus_baul') || '[]');
+
+        function guardarCredencial() {
+            let sitio = document.getElementById('sitioBaul').value.trim();
+            let cat = document.getElementById('catBaul').value;
+            let usuario = document.getElementById('userBaul').value.trim();
+            let pass = document.getElementById('passBaul').value.trim();
+
+            if (!sitio || !usuario || !pass) {
+                alert("Por favor, complete todos los campos obligatorios.");
+                return;
+            }
+
+            credenciales.push({ id: Date.now(), sitio, cat, usuario, pass });
+            localStorage.setItem('campoplus_baul', JSON.stringify(credenciales));
+
+            document.getElementById('formBaul').reset();
+            renderCredenciales();
+            alert("✅ ¡Credencial guardada de forma segura en el baúl!");
+        }
+
+        function togglePasswordView(id) {
+            const inputEl = document.getElementById(`pass-input-${id}`);
+            const btnEl = document.getElementById(`btn-toggle-${id}`);
+            if (inputEl.type === 'password') {
+                inputEl.type = 'text';
+                btnEl.innerText = '🙈';
+            } else {
+                inputEl.type = 'password';
+                btnEl.innerText = '👁';
+            }
+        }
+
+        function renderCredenciales(filtro = '') {
+            let html = "";
+            credenciales.forEach(c => {
+                if (filtro && !c.sitio.toLowerCase().includes(filtro.toLowerCase()) && !c.cat.toLowerCase().includes(filtro.toLowerCase())) {
+                    return;
+                }
+                html += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-medium text-slate-800">${c.sitio}</td>
+                        <td class="p-3"><span class="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-semibold">${c.cat}</span></td>
+                        <td class="p-3 text-slate-600 font-mono">${c.usuario}</td>
+                        <td class="p-3 font-mono text-slate-500 flex items-center gap-2">
+                            <input type="password" id="pass-input-${c.id}" value="${c.pass}" readonly class="bg-transparent border-0 font-mono w-28 text-slate-700 outline-none">
+                            <button id="btn-toggle-${c.id}" onclick="togglePasswordView(${c.id})" class="text-slate-400 hover:text-slate-700 text-xs px-1" title="Mostrar/Ocultar">👁</button>
+                        </td>
+                        <td class="p-3 text-center">
+                            <button class="text-emerald-600 hover:underline font-bold mr-2" onclick="navigator.clipboard.writeText('${c.pass}'); alert('Contraseña copiada al portapapeles.');">Copiar</button>
+                            <button class="text-red-600 hover:underline font-bold" onclick="eliminarCredencial(${c.id})">Eliminar</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            document.getElementById('tablaCredenciales').innerHTML = html !== "" ? html : `<tr><td colspan="5" class="p-4 text-center text-slate-400">No hay credenciales registradas.</td></tr>`;
+        }
+
+        function eliminarCredencial(id) {
+            if (confirm("¿Está seguro de eliminar esta credencial?")) {
+                credenciales = credenciales.filter(c => c.id !== id);
+                localStorage.setItem('campoplus_baul', JSON.stringify(credenciales));
+                renderCredenciales();
+            }
+        }
+
+        function filtrarCredenciales() {
+            let val = document.getElementById('buscadorBaul').value;
+            renderCredenciales(val);
+        }
+
+        window.onload = () => renderCredenciales();
+    </script>
+</body>
+</html>

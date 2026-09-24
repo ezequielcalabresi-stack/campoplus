@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Información Productiva 2 (Gruesa)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+
+<div class="max-w-7xl mx-auto p-4 md:p-6 my-6 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-wrap justify-between items-start gap-3 mb-4 border-b pb-4">
+        <div>
+            <h2 class="text-2xl font-bold">CAmpo+ <span class="text-sm font-normal text-slate-500">| Información productiva 2 (Gruesa)</span></h2>
+            <p id="estado" class="text-xs text-slate-500 mt-1">ARCA / AFIP — declaración de cultivos de gruesa (soja, maíz, etc.).</p>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+            <a href="InformacionProductiva1.html" class="bg-violet-50 text-violet-900 border border-violet-200 px-3 py-2 rounded-md text-sm font-medium">← IP1 Fina</a>
+            <a href="Margenesbrutos.html" class="bg-amber-50 text-amber-900 border border-amber-200 px-3 py-2 rounded-md text-sm font-medium">Márgenes / Campos</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium">← Dashboard</a>
+        </div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-4 items-end text-sm">
+        <div class="flex-1 min-w-[180px]">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Buscar</label>
+            <input id="q" type="search" class="w-full border rounded-md p-2" placeholder="Campo, lote, cultivo, titular, localidad…"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();filtrar();}">
+        </div>
+        <button type="button" onclick="filtrar()" class="bg-purple-800 text-white px-4 py-2 rounded-lg text-sm font-bold">Filtrar</button>
+        <div class="bg-purple-50 border border-purple-100 rounded-lg px-3 py-2 text-xs">
+            <span class="font-bold text-purple-900" id="lblResumen">—</span>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto border rounded-lg">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-purple-900 text-white text-[11px] uppercase">
+                    <th class="p-2 text-left">Titular</th>
+                    <th class="p-2 text-left">Titularidad</th>
+                    <th class="p-2 text-left">Campo</th>
+                    <th class="p-2 text-left">Lote</th>
+                    <th class="p-2 text-left">Localidad</th>
+                    <th class="p-2 text-left">Cultivo</th>
+                    <th class="p-2 text-left">Híbrido / Variedad</th>
+                    <th class="p-2 text-right">Has</th>
+                    <th class="p-2 text-left">GPS Lat</th>
+                    <th class="p-2 text-left">GPS Lng</th>
+                </tr>
+            </thead>
+            <tbody id="tb" class="divide-y divide-slate-100">
+                <tr><td colspan="10" class="p-6 text-center text-slate-400">Cargando…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+let rowsAll = [];
+function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(n,d=2){ return Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+
+function filtrar(){
+    const q = (document.getElementById('q').value||'').trim().toLowerCase();
+    const rows = !q ? rowsAll : rowsAll.filter(r => {
+        const blob = [r.titular,r.titularidad,r.campo,r.lote,r.cultivo,r.hibrido_variedad,r.localidad].join(' ').toLowerCase();
+        return blob.includes(q);
+    });
+    render(rows);
+}
+
+function render(rows){
+    const tb = document.getElementById('tb');
+    if(!rows.length){
+        tb.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-slate-400">Sin registros IP2. Importá desde tablas.xlsx (Campos Lotes Titularidades IP2).</td></tr>`;
+        document.getElementById('lblResumen').textContent = '0 lotes';
+        return;
+    }
+    const has = rows.reduce((a,r)=>a+Number(r.has||0),0);
+    document.getElementById('lblResumen').textContent = `${rows.length} lotes · ${fmt(has)} ha`;
+    tb.innerHTML = rows.map(r => `
+        <tr class="hover:bg-purple-50/40">
+            <td class="p-2 text-xs">${esc(r.titular||'')}</td>
+            <td class="p-2 text-xs">${esc(r.titularidad||'')}</td>
+            <td class="p-2 font-medium">${esc(r.campo||'')}</td>
+            <td class="p-2 font-mono">${esc(r.lote||'')}</td>
+            <td class="p-2">${esc(r.localidad||'')}</td>
+            <td class="p-2 font-semibold text-purple-900">${esc(r.cultivo||'')}</td>
+            <td class="p-2 text-xs">${esc(r.hibrido_variedad||'')}</td>
+            <td class="p-2 text-right font-mono font-bold">${fmt(r.has)}</td>
+            <td class="p-2 text-[11px] font-mono text-slate-600 whitespace-nowrap">${esc(r.gps_lat_texto|| (r.lat!=null?Number(r.lat).toFixed(6):''))}</td>
+            <td class="p-2 text-[11px] font-mono text-slate-600 whitespace-nowrap">${esc(r.gps_lng_texto|| (r.lng!=null?Number(r.lng).toFixed(6):''))}</td>
+        </tr>`).join('');
+}
+
+window.onload = async function(){
+    if(window.CampoAuth) await CampoAuth.requireAuth({ redirect:'InformacionProductiva2.html' });
+    try{
+        const res = await fetch('/api/agro/arca/ip2');
+        rowsAll = res.ok ? await res.json() : [];
+        document.getElementById('estado').textContent =
+            `ARCA IP2 (Gruesa) · ${rowsAll.length} registros importados.`;
+        document.getElementById('estado').className = 'text-xs text-emerald-700 mt-1';
+        filtrar();
+    }catch(e){
+        document.getElementById('estado').textContent = 'Error al cargar. ¿Servidor activo?';
+        document.getElementById('estado').className = 'text-xs text-rose-600 mt-1';
+    }
+};
+</script>
+</body>
+</html>

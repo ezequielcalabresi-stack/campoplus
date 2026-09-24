@@ -1,0 +1,587 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Liquidación Primaria de Granos (LPG)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js"></script>
+    <style>
+        .lbl { display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:2px; }
+        .inp { width:100%; border:1px solid #cbd5e1; border-radius:6px; padding:6px 8px; font-size:14px; background:#fff; }
+        .inp-money { width:100%; border:1px solid #cbd5e1; border-radius:6px; padding:6px 8px; font-size:14px; background:#fff; text-align:right; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+        .inp-pct { width:4rem; border:1px solid #fcd34d; border-radius:6px; padding:4px; font-size:14px; background:#fffbeb; text-align:center; font-family:ui-monospace,monospace; font-weight:700; color:#78350f; }
+        .inp-ro { background:#f1f5f9; color:#1e293b; }
+        .sec { border:1px solid #e2e8f0; border-radius:8px; padding:12px; background:#fff; }
+        .sec-h { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#64748b; margin-bottom:8px; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-6xl mx-auto p-4 md:p-6 my-6 bg-white rounded-xl shadow-lg">
+        <div class="flex justify-between items-start mb-4 border-b pb-3 gap-3 flex-wrap">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Ingreso liquidaciones cereales (LPG)</span></h2>
+                <p id="estado-db" class="text-xs text-slate-500 mt-1">% automáticos como Access · comprador = entidades cliente</p>
+            </div>
+            <div class="flex gap-2">
+                <button type="button" onclick="limpiarForm()" class="bg-slate-100 text-slate-700 px-3 py-2 rounded-md text-sm font-medium border">Limpiar</button>
+                <a href="Gestion.html" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 rounded-md text-sm font-medium">Gestión</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+            </div>
+        </div>
+
+        <form id="formLpg" class="space-y-4" onsubmit="return guardar(event)">
+            <!-- Cabecera -->
+            <div class="sec grid grid-cols-2 md:grid-cols-6 gap-3 bg-slate-50">
+                <div class="md:col-span-2">
+                    <label class="lbl">Comprador (cliente) *</label>
+                    <select id="entidad" class="inp" required>
+                        <option value="">— Solo entidades marcadas como cliente —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="lbl">Fecha</label>
+                    <input id="fecha" type="date" class="inp" onchange="onFechaChange()">
+                </div>
+                <div>
+                    <label class="lbl">Mes de IVA</label>
+                    <input id="mesIva" type="text" class="inp font-mono text-center" placeholder="MM/AAAA" maxlength="7">
+                </div>
+                <div>
+                    <label class="lbl">Nº liquidación *</label>
+                    <input id="nroLpg" type="text" class="inp font-bold font-mono border-amber-300" required>
+                </div>
+                <div>
+                    <label class="lbl">Fecha de pago</label>
+                    <input id="fechaPago" type="date" class="inp border-emerald-300">
+                </div>
+            </div>
+
+            <!-- Grano / refs -->
+            <div class="sec grid grid-cols-2 md:grid-cols-6 gap-3">
+                <div>
+                    <label class="lbl">Grano</label>
+                    <select id="selectGrano" class="inp text-amber-900 font-semibold" onchange="sugerirCtaGrano()">
+                        <option value="">— Seleccionar —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="lbl">Cosecha</label>
+                    <input id="campania" type="text" class="inp font-mono text-center" placeholder="25/26">
+                </div>
+                <div>
+                    <label class="lbl">Grado</label>
+                    <input id="grado" type="text" class="inp text-center font-mono">
+                </div>
+                <div>
+                    <label class="lbl">Factor</label>
+                    <input id="factor" type="number" step="0.0001" value="1" class="inp-money" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="lbl">Precio referencia ($/tn)</label>
+                    <input id="precioRef" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="lbl">Cert. Dep. referencia</label>
+                    <input id="certDep" type="text" class="inp font-mono">
+                </div>
+            </div>
+
+            <!-- OPERACIÓN -->
+            <div class="sec border-amber-200 bg-amber-50/40">
+                <div class="sec-h text-amber-800">Operación</div>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div>
+                        <label class="lbl">Kilos netos</label>
+                        <input id="kilosNetos" type="number" step="0.01" value="0" class="inp-money font-bold" oninput="recalc()">
+                    </div>
+                    <div>
+                        <label class="lbl">Precio operación ($/tn)</label>
+                        <input id="precioTn" type="number" step="0.01" value="0" class="inp-money font-bold text-amber-900" oninput="recalc()">
+                    </div>
+                    <div>
+                        <label class="lbl">Subtotal</label>
+                        <input id="subtotal" type="text" class="inp-money inp-ro font-bold" readonly>
+                    </div>
+                    <div>
+                        <label class="lbl">IVA 10,5%</label>
+                        <input id="ivaOp" type="text" class="inp-money inp-ro" readonly>
+                    </div>
+                    <div>
+                        <label class="lbl">Operación c/IVA</label>
+                        <input id="opCiva" type="text" class="inp-money inp-ro font-bold" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DEDUCCIONES -->
+            <div class="sec border-rose-100">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="sec-h text-rose-700 mb-0">Deducciones</div>
+                    <div class="text-sm font-bold text-rose-800">Total <span id="totDedLbl">$ 0,00</span></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                        <label class="lbl">Gtos Adm / Comisión</label>
+                        <div class="flex gap-1 items-center">
+                            <input id="pctComision" type="number" step="0.01" value="2.5" class="inp-pct" oninput="recalc()" title="%">
+                            <span class="text-xs text-slate-500">%</span>
+                            <input id="gtosAdm" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('gtosAdm');recalc()">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="lbl">Fletes</label>
+                        <input id="fletes" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                    </div>
+                    <div>
+                        <label class="lbl">Gtos almacenamiento</label>
+                        <input id="gtosAlmacen" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                    </div>
+                    <div>
+                        <label class="lbl">IVA (fletes y comisiones)</label>
+                        <div class="flex gap-1 items-center">
+                            <input id="pctIvaServ" type="number" step="0.01" value="10.5" class="inp-pct" oninput="recalc()">
+                            <span class="text-xs text-slate-500">%</span>
+                            <input id="ivaServ" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('ivaServ');recalc()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RETENCIONES -->
+            <div class="sec border-indigo-100">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="sec-h text-indigo-700 mb-0">Retenciones</div>
+                    <div class="text-sm font-bold text-indigo-800">Total <span id="totRetLbl">$ 0,00</span></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div>
+                        <label class="lbl">Ret IIBB</label>
+                        <div class="flex gap-1 items-center">
+                            <input id="pctIibb" type="number" step="0.01" value="0.8" class="inp-pct" oninput="recalc()">
+                            <span class="text-xs">%</span>
+                            <input id="retIibb" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('retIibb');recalc()">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="lbl">Sellados</label>
+                        <div class="flex gap-1 items-center">
+                            <input id="pctSellados" type="number" step="0.01" value="0.9" class="inp-pct" oninput="recalc()">
+                            <span class="text-xs">%</span>
+                            <input id="sellados" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('sellados');recalc()">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="lbl">Ret Ganancias</label>
+                        <div class="flex gap-1 items-center">
+                            <input id="pctGan" type="number" step="0.01" value="0" class="inp-pct" oninput="recalc()">
+                            <span class="text-xs">%</span>
+                            <input id="retGan" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('retGan');recalc()">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="lbl">Ret IVA</label>
+                        <div class="flex gap-1 items-center">
+                            <input id="pctRetIva" type="number" step="0.01" value="5" class="inp-pct" oninput="recalc()">
+                            <span class="text-xs">%</span>
+                            <input id="retIva" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('retIva');recalc()">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="lbl">Otros</label>
+                        <input id="otrosRet" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Totales -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="sec border-2 border-emerald-300 bg-emerald-50">
+                    <label class="lbl text-emerald-800">Importe neto a pagar</label>
+                    <div id="netoPagar" class="text-2xl font-extrabold text-emerald-900 font-mono">$ 0,00</div>
+                </div>
+                <div class="sec">
+                    <label class="lbl">IVA RG 2300/2007</label>
+                    <input id="ivaRg2300" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                </div>
+                <div class="sec">
+                    <label class="lbl">Pago según condiciones</label>
+                    <input id="pagoCond" type="number" step="0.01" value="0" class="inp-money font-bold" oninput="markManual('pagoCond')">
+                </div>
+            </div>
+
+            <div class="sec">
+                <label class="lbl">Nota</label>
+                <textarea id="nota" rows="2" class="inp" placeholder="Observaciones de la liquidación…"></textarea>
+            </div>
+
+            <!-- Certificados (detalle) -->
+            <details class="sec">
+                <summary class="cursor-pointer text-sm font-semibold text-slate-700">Certificados / Cartas de porte (opcional)</summary>
+                <div class="mt-3">
+                    <div class="flex justify-end mb-2">
+                        <button type="button" onclick="addCert()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded font-medium">+ Certificado</button>
+                    </div>
+                    <table class="w-full text-sm border rounded overflow-hidden">
+                        <thead>
+                            <tr class="bg-slate-100 text-xs uppercase text-slate-600">
+                                <th class="p-2 text-left">Nro. certificado / C. porte</th>
+                                <th class="p-2 text-left">Procedencia</th>
+                                <th class="p-2 text-right w-40">Kilos netos</th>
+                                <th class="p-2 w-12"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbCerts"></tbody>
+                    </table>
+                    <p class="text-xs text-slate-500 mt-1">Si cargás kilos en certificados, se suman a «Kilos netos».</p>
+                </div>
+            </details>
+
+            <!-- Imputación -->
+            <div class="border-2 border-emerald-200 rounded-lg p-4 bg-emerald-50/40">
+                <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <div>
+                        <h3 class="text-md font-bold text-emerald-900">Imputación de cuentas — Ingresos (Gestión)</h3>
+                        <p class="text-xs text-emerald-800/80">Por defecto se sugiere el <strong>subtotal</strong> de la operación (venta bruta sin IVA).</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="Actividades.html" class="text-xs text-emerald-800 underline">ABM actividades</a>
+                        <button type="button" onclick="addImp()" class="bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-bold">+ Renglón</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto border rounded-lg bg-white">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-emerald-100 text-xs uppercase text-emerald-900">
+                                <th class="p-2 text-left">Actividad</th>
+                                <th class="p-2 text-left">Cta a imputar (ingreso)</th>
+                                <th class="p-2 text-right w-40">Neto $</th>
+                                <th class="p-2 w-16"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbImp"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button type="button" onclick="limpiarForm()" class="px-4 py-2 text-sm text-slate-600 border rounded-lg">Limpiar</button>
+                <button type="submit" class="bg-amber-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-amber-700">Guardar LPG</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        let actividades = [];
+        const GRANOS = ['Soja', 'Maíz', 'Trigo', 'Girasol', 'Cebada', 'Sorgo', 'Poroto', 'Pisingallo'];
+        const manual = { gtosAdm: false, ivaServ: false, retIibb: false, sellados: false, retGan: false, retIva: false, pagoCond: false };
+        let lastCalc = {};
+
+        function num(v) { const n = parseFloat(String(v).replace(',', '.')); return Number.isFinite(n) ? n : 0; }
+        function fmt(n) { return '$ ' + num(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+        function markManual(k) { manual[k] = true; }
+        function setVal(id, v) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = (Math.round(v * 100) / 100).toFixed(2);
+        }
+        function setRo(id, v) {
+            const el = document.getElementById(id);
+            if (el) el.value = fmt(v);
+        }
+
+        function onFechaChange() {
+            const f = document.getElementById('fecha').value;
+            if (!f) return;
+            const [y, m] = f.split('-');
+            document.getElementById('mesIva').value = `${m}/${y}`;
+        }
+
+        function certRow() {
+            return `<tr class="cert">
+                <td class="p-1"><input class="c-nro border rounded p-1.5 w-full font-mono text-xs" /></td>
+                <td class="p-1"><input class="c-proc border rounded p-1.5 w-full text-xs" /></td>
+                <td class="p-1"><input type="number" step="0.01" class="c-kg border rounded p-1.5 w-full text-right text-xs font-bold" oninput="syncKgFromCerts()" /></td>
+                <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove();syncKgFromCerts()">×</button></td>
+            </tr>`;
+        }
+        function addCert() { document.getElementById('tbCerts').insertAdjacentHTML('beforeend', certRow()); }
+
+        function syncKgFromCerts() {
+            let kg = 0;
+            let any = false;
+            document.querySelectorAll('#tbCerts .c-kg').forEach(el => {
+                if (String(el.value).trim() !== '') { any = true; kg += num(el.value); }
+            });
+            if (any) document.getElementById('kilosNetos').value = kg.toFixed(2);
+            recalc();
+        }
+
+        function impRow() {
+            const optsAct = '<option value="">— Actividad —</option>' +
+                actividades.map(a => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('');
+            return `<tr class="imp">
+                <td class="p-1"><select class="i-act border rounded p-1.5 w-full text-sm" onchange="onActChange(this)">${optsAct}</select></td>
+                <td class="p-1"><select class="i-cta border rounded p-1.5 w-full text-sm"><option value="">— Cuenta ingreso —</option></select></td>
+                <td class="p-1"><input type="number" step="0.01" class="i-neto border rounded p-1.5 w-full text-right" placeholder="0" /></td>
+                <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove()">×</button></td>
+            </tr>`;
+        }
+        function addImp() { document.getElementById('tbImp').insertAdjacentHTML('beforeend', impRow()); }
+
+        async function onActChange(sel) {
+            const tr = sel.closest('tr');
+            const ctaSel = tr.querySelector('.i-cta');
+            const actId = sel.value;
+            ctaSel.innerHTML = '<option value="">— Cuenta ingreso —</option>';
+            if (!actId) return;
+            let ctas = await fetch('/api/actividades/' + actId + '/cuentas?tipo=INGRESO').then(r => r.json());
+            ctas.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+            ctas.forEach(c => {
+                const o = document.createElement('option');
+                o.value = c.id; o.textContent = c.nombre;
+                ctaSel.appendChild(o);
+            });
+        }
+
+        /** Cálculo Access: subtotal = kg/1000 × precio × factor */
+        function recalc() {
+            const kg = num(document.getElementById('kilosNetos').value);
+            const px = num(document.getElementById('precioTn').value);
+            const factor = num(document.getElementById('factor').value) || 1;
+            const subtotal = (kg / 1000) * px * factor;
+            const ivaOp = subtotal * 0.105;
+            const opCiva = subtotal + ivaOp;
+
+            const pctCom = num(document.getElementById('pctComision').value);
+            const pctIvaS = num(document.getElementById('pctIvaServ').value);
+            let gtosAdm = manual.gtosAdm ? num(document.getElementById('gtosAdm').value) : subtotal * (pctCom / 100);
+            if (!manual.gtosAdm) setVal('gtosAdm', gtosAdm);
+            else gtosAdm = num(document.getElementById('gtosAdm').value);
+
+            const fletes = num(document.getElementById('fletes').value);
+            const almacen = num(document.getElementById('gtosAlmacen').value);
+            // Access: IVA 10,5% sobre fletes y comisiones
+            let ivaServ = manual.ivaServ
+                ? num(document.getElementById('ivaServ').value)
+                : (gtosAdm + fletes) * (pctIvaS / 100);
+            if (!manual.ivaServ) setVal('ivaServ', ivaServ);
+            else ivaServ = num(document.getElementById('ivaServ').value);
+
+            const totDed = gtosAdm + fletes + almacen + ivaServ;
+
+            const pctIibb = num(document.getElementById('pctIibb').value);
+            const pctSell = num(document.getElementById('pctSellados').value);
+            const pctGan = num(document.getElementById('pctGan').value);
+            const pctRetIva = num(document.getElementById('pctRetIva').value);
+
+            let retIibb = manual.retIibb ? num(document.getElementById('retIibb').value) : subtotal * (pctIibb / 100);
+            let sellados = manual.sellados ? num(document.getElementById('sellados').value) : subtotal * (pctSell / 100);
+            let retGan = manual.retGan ? num(document.getElementById('retGan').value) : subtotal * (pctGan / 100);
+            // Ret IVA = % sobre el IVA de la operación (como en Access 5%)
+            let retIva = manual.retIva ? num(document.getElementById('retIva').value) : ivaOp * (pctRetIva / 100);
+            if (!manual.retIibb) setVal('retIibb', retIibb); else retIibb = num(document.getElementById('retIibb').value);
+            if (!manual.sellados) setVal('sellados', sellados); else sellados = num(document.getElementById('sellados').value);
+            if (!manual.retGan) setVal('retGan', retGan); else retGan = num(document.getElementById('retGan').value);
+            if (!manual.retIva) setVal('retIva', retIva); else retIva = num(document.getElementById('retIva').value);
+
+            const otros = num(document.getElementById('otrosRet').value);
+            const totRet = retIibb + sellados + retGan + retIva + otros;
+            const ivaRg = num(document.getElementById('ivaRg2300').value);
+            const neto = opCiva - totDed - totRet - ivaRg;
+
+            setRo('subtotal', subtotal);
+            setRo('ivaOp', ivaOp);
+            setRo('opCiva', opCiva);
+            document.getElementById('totDedLbl').textContent = fmt(totDed);
+            document.getElementById('totRetLbl').textContent = fmt(totRet);
+            document.getElementById('netoPagar').textContent = fmt(neto);
+            if (!manual.pagoCond) setVal('pagoCond', neto);
+
+            // Sugerir neto en renglón de imputación si está vacío o igual al subtotal anterior
+            const netoInp = document.querySelector('#tbImp .i-neto');
+            if (netoInp && (!netoInp.value || Math.abs(num(netoInp.value) - (lastCalc.subtotal || 0)) < 0.02)) {
+                netoInp.value = subtotal.toFixed(2);
+            }
+
+            lastCalc = { kg, subtotal, ivaOp, opCiva, gtosAdm, fletes, almacen, ivaServ, totDed,
+                retIibb, sellados, retGan, retIva, otros, totRet, ivaRg, neto };
+            return lastCalc;
+        }
+
+        async function sugerirCtaGrano() {
+            const grano = (document.getElementById('selectGrano').value || '').toLowerCase();
+            if (!grano) return;
+            const preferAct = actividades.find(a => /agricult/i.test(a.nombre))
+                || actividades.find(a => /administr/i.test(a.nombre));
+            const tr = document.querySelector('#tbImp tr.imp');
+            if (!preferAct || !tr) return;
+            const actSel = tr.querySelector('.i-act');
+            actSel.value = preferAct.id;
+            await onActChange(actSel);
+            const ctaSel = tr.querySelector('.i-cta');
+            const opts = [...ctaSel.options];
+            const gNorm = grano.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const match = opts.find(o => o.textContent.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(gNorm));
+            if (match) ctaSel.value = match.value;
+            recalc();
+        }
+
+        async function cargarEntidades() {
+            const rows = await fetch('/api/entidades?rol=cliente').then(r => r.ok ? r.json() : []);
+            const sel = document.getElementById('entidad');
+            sel.innerHTML = '<option value="">— Solo entidades marcadas como cliente —</option>';
+            rows.forEach(e => {
+                const o = document.createElement('option');
+                o.value = (e.cuit || '').replace(/\D/g, '');
+                o.textContent = e.nombre_fantasia || e.razon_social || e.cuit;
+                o.dataset.nombre = e.razon_social || e.nombre_fantasia || '';
+                sel.appendChild(o);
+            });
+            document.getElementById('estado-db').textContent =
+                `${rows.length} compradores (es_cliente) · % Access: comisión 2,5% · IIBB 0,8% · sellados 0,9% · ret IVA 5%`;
+            document.getElementById('estado-db').className = 'text-xs text-emerald-600 mt-1';
+        }
+
+        async function cargarGranos() {
+            try {
+                const res = await fetch('/api/agro/catalogos/granos');
+                let granos = res.ok ? await res.json() : [];
+                if (!granos.length) {
+                    const r2 = await fetch('/api/granos');
+                    granos = r2.ok ? await r2.json() : GRANOS.map((n,i)=>({id:i,nombre:n}));
+                }
+                const sel = document.getElementById('selectGrano');
+                granos.forEach(g => {
+                    const o = document.createElement('option');
+                    o.value = g.nombre; o.textContent = g.nombre;
+                    sel.appendChild(o);
+                });
+            } catch (e) {
+                const sel = document.getElementById('selectGrano');
+                GRANOS.forEach(n => { const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+            }
+        }
+
+        function limpiarForm() {
+            document.getElementById('formLpg').reset();
+            Object.keys(manual).forEach(k => { manual[k] = false; });
+            document.getElementById('pctComision').value = '2.5';
+            document.getElementById('pctIvaServ').value = '10.5';
+            document.getElementById('pctIibb').value = '0.8';
+            document.getElementById('pctSellados').value = '0.9';
+            document.getElementById('pctGan').value = '0';
+            document.getElementById('pctRetIva').value = '5';
+            document.getElementById('factor').value = '1';
+            const hoy = new Date().toISOString().slice(0, 10);
+            document.getElementById('fecha').value = hoy;
+            onFechaChange();
+            document.getElementById('fechaPago').value = '';
+            document.getElementById('tbCerts').innerHTML = '';
+            document.getElementById('tbImp').innerHTML = '';
+            addCert();
+            addImp();
+            const prefer = actividades.find(a => /agricult/i.test(a.nombre));
+            if (prefer) {
+                const sel = document.querySelector('#tbImp .i-act');
+                if (sel) { sel.value = prefer.id; onActChange(sel); }
+            }
+            lastCalc = {};
+            recalc();
+        }
+
+        async function guardar(ev) {
+            ev.preventDefault();
+            const tot = recalc();
+            const entSel = document.getElementById('entidad');
+            if (!entSel.value) { alert('Seleccioná el comprador (cliente).'); return false; }
+            const opt = entSel.options[entSel.selectedIndex];
+            const certificados = [...document.querySelectorAll('#tbCerts tr.cert')].map(tr => ({
+                nro_certificado: tr.querySelector('.c-nro').value.trim(),
+                procedencia: tr.querySelector('.c-proc').value.trim(),
+                kilos: num(tr.querySelector('.c-kg').value),
+            })).filter(c => c.nro_certificado || c.procedencia || c.kilos);
+            const imputaciones = [...document.querySelectorAll('#tbImp tr.imp')].map(tr => {
+                const act = tr.querySelector('.i-act');
+                const cta = tr.querySelector('.i-cta');
+                return {
+                    actividad_id: act.value ? Number(act.value) : null,
+                    cuenta_imputacion_id: cta.value ? Number(cta.value) : null,
+                    actividad_nombre: act.options[act.selectedIndex]?.text || '',
+                    cuenta_nombre: cta.options[cta.selectedIndex]?.text || '',
+                    neto: num(tr.querySelector('.i-neto').value) || tot.subtotal,
+                };
+            }).filter(r => r.actividad_id || r.cuenta_imputacion_id || r.neto);
+
+            const body = {
+                entidad_cuit: entSel.value,
+                entidad_nombre: opt?.dataset?.nombre || opt?.textContent || '',
+                grano: document.getElementById('selectGrano').value,
+                campania: document.getElementById('campania').value.trim(),
+                nro_lpg: document.getElementById('nroLpg').value.trim(),
+                grado: document.getElementById('grado').value.trim(),
+                factor: num(document.getElementById('factor').value) || 1,
+                precio_tn: num(document.getElementById('precioTn').value),
+                precio_referencia: num(document.getElementById('precioRef').value),
+                cert_dep_ref: document.getElementById('certDep').value.trim(),
+                fecha: document.getElementById('fecha').value,
+                mes_iva: document.getElementById('mesIva').value.trim(),
+                fecha_pago: document.getElementById('fechaPago').value,
+                kilos_netos: tot.kg,
+                bruto: tot.subtotal,
+                neto: tot.neto,
+                subtotal: tot.subtotal,
+                iva_operacion: tot.ivaOp,
+                operacion_c_iva: tot.opCiva,
+                pct_comision: num(document.getElementById('pctComision').value),
+                gtos_adm: tot.gtosAdm,
+                fletes: tot.fletes,
+                gtos_almacenamiento: tot.almacen,
+                pct_iva_servicios: num(document.getElementById('pctIvaServ').value),
+                iva_servicios: tot.ivaServ,
+                total_deducciones: tot.totDed,
+                pct_iibb: num(document.getElementById('pctIibb').value),
+                ret_iibb: tot.retIibb,
+                pct_sellados: num(document.getElementById('pctSellados').value),
+                sellados: tot.sellados,
+                pct_ganancias: num(document.getElementById('pctGan').value),
+                ret_ganancias: tot.retGan,
+                pct_ret_iva: num(document.getElementById('pctRetIva').value),
+                ret_iva: tot.retIva,
+                otros_ret: tot.otros,
+                total_retenciones: tot.totRet,
+                iva_rg2300: tot.ivaRg,
+                neto_a_pagar: tot.neto,
+                pago_condiciones: num(document.getElementById('pagoCond').value) || tot.neto,
+                nota: document.getElementById('nota').value.trim(),
+                certificados,
+                imputaciones,
+            };
+            const res = await fetch('/api/liquidaciones/granos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'No se pudo guardar'); return false; }
+            alert('LPG #' + data.id + ' guardada. Neto a pagar: ' + fmt(data.neto_a_pagar || tot.neto));
+            limpiarForm();
+            return false;
+        }
+
+        window.onload = async function () {
+            if (window.CampoAuth) await CampoAuth.requireAuth({ redirect: 'liquidacionesgranos.html' });
+            actividades = await fetch('/api/actividades?con_cuentas=1').then(r => r.ok ? r.json() : []);
+            actividades.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+            await cargarEntidades();
+            await cargarGranos();
+            limpiarForm();
+        };
+    </script>
+</body>
+</html>

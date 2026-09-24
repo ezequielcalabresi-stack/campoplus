@@ -1,0 +1,699 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Márgenes Brutos y Campaña</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        body { background: #f1f5f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.05); padding: 20px; margin-bottom: 16px; }
+        .nav-pills .nav-link { font-weight: 600; color: #475569; }
+        .nav-pills .nav-link.active { background: #0f766e; }
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        #mapCampo { height: 360px; border-radius: 8px; border: 1px solid #cbd5e1; }
+        .leaflet-control-layers { font-size: 12px; }
+        .leaflet-control-layers-expanded { padding: 8px 10px; }
+        .hint { font-size: 12px; color: #64748b; }
+        .badge-propio { background: #dbeafe; color: #1e40af; }
+        .badge-arrendado { background: #fef3c7; color: #92400e; }
+        .rotacion-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #065f46; font-size: 12px; font-weight: 600; margin-right: 4px; }
+        table.table td, table.table th { vertical-align: middle; }
+    </style>
+<script src="/campoplus-firma.js"></script>
+</head>
+<body>
+<div class="container my-4" style="max-width: 1180px;">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Márgenes brutos · Campaña</small></h4>
+            <p class="hint mb-0">1) Cargar campos y lotes → 2) Contratos de arrendamiento → 3) Planificar con antecesor y rotación.</p>
+        </div>
+        <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">← Dashboard</a>
+    </div>
+
+    <ul class="nav nav-pills gap-1 mb-3" id="tabsAgro">
+        <li class="nav-item"><button class="nav-link active" data-tab="tabCampos" onclick="verTabAgro(this)">1. Campos y lotes</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="tabPlan" onclick="verTabAgro(this)">2. Planificación campaña</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="tabRotacion" onclick="verTabAgro(this)">Rotación ideal</button></li>
+    </ul>
+
+    <!-- TAB CAMPOS -->
+    <div id="tabCampos" class="tab-agro">
+        <div class="main-card">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <div>
+                    <h5 class="fw-bold mb-0">Campos disponibles</h5>
+                    <span class="hint">Propios + arrendados. Georreferencia útil para ARCA (Información Productiva).</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <select id="filtroTipoCampo" class="form-select form-select-sm" style="width:150px;" onchange="cargarCampos()">
+                        <option value="">Todos</option>
+                        <option value="propio">Propios</option>
+                        <option value="arrendado">Arrendados</option>
+                    </select>
+                    <button class="btn btn-sm btn-dark fw-bold" onclick="abrirModalCampo('propio')">+ Campo propio</button>
+                    <button class="btn btn-sm btn-warning fw-bold" onclick="abrirModalCampo('arrendado')">+ Campo arrendado</button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Nombre</th>
+                            <th class="text-end">Has</th>
+                            <th class="text-center">Lotes</th>
+                            <th>Arrendador</th>
+                            <th class="text-center">Geo</th>
+                            <th class="text-center">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaCamposBody">
+                        <tr><td colspan="7" class="text-center text-muted py-4">Cargando…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB PLAN -->
+    <div id="tabPlan" class="tab-agro" style="display:none;">
+        <div class="main-card">
+            <div class="row g-3 align-items-end mb-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small">Campaña</label>
+                    <select id="selectCampania" class="form-select" onchange="cargarPlan()"></select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-dark btn-sm fw-bold w-100" onclick="abrirModalCampania()">+ Nueva campaña</button>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-teal btn-sm fw-bold w-100" style="background:#0f766e;color:#fff;" onclick="generarPlan()">Generar plan (antecesor → rotación)</button>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-dark btn-sm fw-bold w-100" onclick="guardarPlan()">Guardar cambios manuales</button>
+                </div>
+            </div>
+            <p class="hint mb-3">El <strong>cultivo antecesor</strong> se completa solo con la campaña anterior (o el cultivo actual del lote). Luego el sistema sugiere la rotación; podés modificarlo.</p>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Campo</th>
+                            <th>Lote</th>
+                            <th class="text-end">Has</th>
+                            <th>Antecesor</th>
+                            <th>Sugerido</th>
+                            <th>Planificado</th>
+                            <th>Notas</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaPlanBody">
+                        <tr><td colspan="7" class="text-center text-muted py-4">Seleccioná o generá una campaña.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB ROTACION -->
+    <div id="tabRotacion" class="tab-agro" style="display:none;">
+        <div class="main-card">
+            <h5 class="fw-bold">Rotación ideal (orientación)</h5>
+            <p class="hint">Ciclo de 4 años. Ejemplo: si el lote tuvo <strong>Maíz</strong>, este año sugiere <strong>Soja 1ª</strong>.</p>
+            <div class="mb-3" id="chipsRotacion"></div>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">Antecesor</label>
+                    <select id="demoAntecesor" class="form-select" onchange="demoRotacion()"></select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">Sugerido próxima campaña</label>
+                    <input id="demoSugerido" class="form-control fw-bold text-success" readonly>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CAMPO -->
+<div class="modal fade" id="modalCampo" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold" id="modalCampoTitulo">Campo</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="campoId">
+                <input type="hidden" id="campoTipo">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold">Nombre del campo *</label>
+                        <input id="campoNombre" class="form-control" placeholder="Ej: Las Angélicas">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold">Sup. total (has)</label>
+                        <input type="number" step="0.01" id="campoHas" class="form-control font-mono" value="0">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Referencia / dirección</label>
+                        <input id="campoDir" class="form-control" placeholder="Paraje, partido…">
+                    </div>
+                </div>
+
+                <div id="boxArrendador" class="border rounded p-3 mt-3 bg-warning-subtle" style="display:none;">
+                    <h6 class="fw-bold">Arrendador (pasa a proveedor · propietario de inmueble → SICORE 032)</h6>
+                    <p class="hint mb-2">Al guardarlo queda como proveedor con régimen <strong>032</strong> (RG 830 / anexo) para alquileres de inmuebles.</p>
+                    <div class="row g-2">
+                        <div class="col-md-3"><label class="small fw-bold">CUIT *</label><input id="arrCuit" class="form-control font-mono" maxlength="13"></div>
+                        <div class="col-md-4"><label class="small fw-bold">Razón social *</label><input id="arrRazon" class="form-control"></div>
+                        <div class="col-md-3"><label class="small fw-bold">Localidad</label><input id="arrLoc" class="form-control"></div>
+                        <div class="col-md-2"><label class="small fw-bold">Teléfono</label><input id="arrTel" class="form-control"></div>
+                        <div class="col-md-4"><label class="small fw-bold">Domicilio</label><input id="arrDom" class="form-control"></div>
+                        <div class="col-md-4"><label class="small fw-bold">Email</label><input id="arrEmail" class="form-control"></div>
+                    </div>
+                    <hr>
+                    <h6 class="fw-bold">Tipo de alquiler</h6>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="small fw-bold">Modalidad</label>
+                            <select id="arrModalidad" class="form-select" onchange="toggleEscalas()">
+                                <option value="kilos_fijos">Kilos fijos / ha</option>
+                                <option value="aparceria">Aparcería (%)</option>
+                                <option value="monto_fijo">Monto fijo $</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2"><label class="small fw-bold">Grano</label>
+                            <select id="arrGrano" class="form-select"><option>Soja</option><option>Maíz</option><option>Trigo</option></select>
+                        </div>
+                        <div class="col-md-2" id="divKilosHa"><label class="small fw-bold">Kg / ha</label><input type="number" step="0.01" id="arrKgHa" class="form-control font-mono" value="0"></div>
+                        <div class="col-md-2" id="divPctBase"><label class="small fw-bold">% base titular</label><input type="number" step="0.01" id="arrPct" class="form-control font-mono" value="25"></div>
+                        <div class="col-md-2" id="divMonto" style="display:none;"><label class="small fw-bold">Monto $</label><input type="number" step="0.01" id="arrMonto" class="form-control font-mono" value="0"></div>
+                    </div>
+                    <div id="boxEscalas" class="mt-3" style="display:none;">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small fw-bold">Escalas por rendimiento (tn/ha → % titular) — personalizable</span>
+                            <button type="button" class="btn btn-outline-dark btn-sm py-0" onclick="agregarEscala()">+ Escala</button>
+                        </div>
+                        <table class="table table-sm mb-0"><thead><tr><th>tn/ha</th><th>%</th><th></th></tr></thead>
+                            <tbody id="tbodyEscalas"></tbody>
+                        </table>
+                        <p class="hint mb-0 mt-1">Ej: 2,5 tn → 25% · 3,0 tn → 28% · 4,0 tn → 30%</p>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <label class="form-label small fw-bold">Ubicación (clic en el mapa)</label>
+                    <p class="hint mb-1">
+                        Un solo mapa: clic = georreferencia del <strong>campo</strong>; si una fila de lote tiene el foco, el clic va al <strong>lote</strong>.
+                        Capas: Satélite / Híbrido / Mapa (arriba a la derecha).
+                    </p>
+                    <div id="mapCampo"></div>
+                    <div class="row g-2 mt-2">
+                        <div class="col-md-3"><input type="number" step="0.000001" id="campoLat" class="form-control form-control-sm font-mono" placeholder="Lat campo"></div>
+                        <div class="col-md-3"><input type="number" step="0.000001" id="campoLng" class="form-control form-control-sm font-mono" placeholder="Lng campo"></div>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0">Lotes</h6>
+                        <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="agregarFilaLote()">+ Lote</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead><tr><th>Código</th><th>Nombre</th><th>Has</th><th>Lat</th><th>Lng</th><th></th></tr></thead>
+                            <tbody id="tbodyLotesNuevos"></tbody>
+                        </table>
+                    </div>
+                    <p class="hint mb-0">Las has de lote pueden ajustarse por campaña después. Seleccioná una fila y hacé clic en el mapa de arriba para Lat/Lng.</p>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button class="btn btn-success btn-sm fw-bold" onclick="guardarCampo()">Guardar campo</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CAMPAÑA -->
+<div class="modal fade" id="modalCampania" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2"><h6 class="modal-title fw-bold">Nueva campaña</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="form-label small fw-bold">Código (ej. 26-27)</label>
+                <input id="campCodigo" class="form-control mb-2 font-mono" placeholder="26-27">
+                <p class="hint mb-2">Últimos 2 dígitos de cada año: junio 2026 → mayo 2027 = <strong>26-27</strong>.</p>
+                <label class="form-label small fw-bold">Nombre</label>
+                <input id="campNombre" class="form-control" placeholder="Campaña 26-27">
+            </div>
+            <div class="modal-footer py-2">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button class="btn btn-dark btn-sm fw-bold" onclick="crearCampania()">Crear</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const CULTIVOS = ['Trigo', 'Soja 2ª', 'Maíz', 'Soja 1ª'];
+let mapCampo = null, markerCampo = null, markerLote = null;
+let loteFilaActiva = null;
+let planCache = [];
+let cultivosOptsHtml = CULTIVOS.map(c => `<option value="${c}">${c}</option>`).join('');
+
+function verTabAgro(btn) {
+    document.querySelectorAll('.tab-agro').forEach(el => el.style.display = 'none');
+    document.getElementById(btn.dataset.tab).style.display = 'block';
+    document.querySelectorAll('#tabsAgro .nav-link').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (btn.dataset.tab === 'tabPlan') { cargarCampanias(); }
+    if (btn.dataset.tab === 'tabRotacion') { initRotacionDemo(); }
+}
+
+async function inicializar() {
+    await cargarCampos();
+    initRotacionDemo();
+}
+
+async function cargarCampos() {
+    const tipo = document.getElementById('filtroTipoCampo').value;
+    const q = tipo ? `?tipo=${tipo}` : '';
+    const res = await fetch('/api/agro/campos' + q);
+    const rows = await res.json();
+    const tb = document.getElementById('tablaCamposBody');
+    if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">Sin campos. Cargá propios y arrendados para planificar.</td></tr>`;
+        return;
+    }
+    tb.innerHTML = rows.map(c => `
+        <tr>
+            <td><span class="badge ${c.tipo==='propio'?'badge-propio':'badge-arrendado'}">${c.tipo}</span></td>
+            <td class="fw-bold">${c.nombre}</td>
+            <td class="text-end font-mono">${Number(c.superficie_total||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+            <td class="text-center">${c.cant_lotes||0}</td>
+            <td class="small">${c.tipo==='arrendado' ? (c.arrendador_razon || c.arrendador_cuit || '—') : '—'}</td>
+            <td class="text-center">${c.lat != null ? '📍' : '—'}</td>
+            <td class="text-center">
+                <button class="btn btn-outline-dark btn-sm py-0" onclick="verCampo(${c.id})">Ver / editar</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function abrirModalCampo(tipo) {
+    document.getElementById('campoId').value = '';
+    document.getElementById('campoTipo').value = tipo;
+    document.getElementById('modalCampoTitulo').innerText = tipo === 'propio' ? 'Campo propio' : 'Campo arrendado';
+    document.getElementById('campoNombre').value = '';
+    document.getElementById('campoHas').value = '0';
+    document.getElementById('campoDir').value = '';
+    document.getElementById('campoLat').value = '';
+    document.getElementById('campoLng').value = '';
+    document.getElementById('tbodyLotesNuevos').innerHTML = '';
+    document.getElementById('boxArrendador').style.display = tipo === 'arrendado' ? 'block' : 'none';
+    if (tipo === 'arrendado') {
+        document.getElementById('arrCuit').value = '';
+        document.getElementById('arrRazon').value = '';
+        document.getElementById('arrLoc').value = '';
+        document.getElementById('arrTel').value = '';
+        document.getElementById('arrDom').value = '';
+        document.getElementById('arrEmail').value = '';
+        document.getElementById('arrModalidad').value = 'kilos_fijos';
+        document.getElementById('arrKgHa').value = '800';
+        document.getElementById('arrPct').value = '25';
+        document.getElementById('tbodyEscalas').innerHTML = '';
+        agregarEscala(2.5, 25);
+        agregarEscala(3.0, 28);
+        agregarEscala(4.0, 30);
+        toggleEscalas();
+    }
+    agregarFilaLote();
+    loteFilaActiva = null; // clic en mapa → campo, hasta que se enfoque una fila de lote
+    const modal = new bootstrap.Modal(document.getElementById('modalCampo'));
+    modal.show();
+    setTimeout(() => initMaps(), 300);
+}
+
+function toggleEscalas() {
+    const m = document.getElementById('arrModalidad').value;
+    document.getElementById('boxEscalas').style.display = m === 'aparceria' ? 'block' : 'none';
+    document.getElementById('divKilosHa').style.display = m === 'kilos_fijos' ? 'block' : 'none';
+    document.getElementById('divPctBase').style.display = m === 'aparceria' ? 'block' : 'none';
+    document.getElementById('divMonto').style.display = m === 'monto_fijo' ? 'block' : 'none';
+}
+
+function agregarEscala(tn, pct) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input type="number" step="0.01" class="form-control form-control-sm font-mono esc-tn" value="${tn != null ? tn : ''}"></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm font-mono esc-pct" value="${pct != null ? pct : ''}"></td>
+        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove()">×</button></td>`;
+    document.getElementById('tbodyEscalas').appendChild(tr);
+}
+
+function agregarFilaLote(data) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input class="form-control form-control-sm lote-cod" value="${data?.codigo||''}" placeholder="L1"></td>
+        <td><input class="form-control form-control-sm lote-nom" value="${data?.nombre||''}" placeholder="Lote 1"></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-has" value="${data?.superficie_base||0}"></td>
+        <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lat" value="${data?.lat??''}"></td>
+        <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lng" value="${data?.lng??''}"></td>
+        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove()">×</button></td>`;
+    tr.addEventListener('focusin', () => { loteFilaActiva = tr; });
+    document.getElementById('tbodyLotesNuevos').appendChild(tr);
+    loteFilaActiva = tr;
+}
+
+function addMapBaseLayers(map, defaultSatelite = true) {
+    // Capas independientes (no reutilizar el mismo tileLayer en dos bases)
+    const mkSat = () => L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {
+            maxZoom: 19,
+            attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics',
+        }
+    );
+    const calles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap',
+    });
+    const satelite = mkSat();
+    const etiquetas = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 19, opacity: 0.9, attribution: '© Esri' }
+    );
+    const hibrido = L.layerGroup([mkSat(), etiquetas]);
+
+    const base = {
+        'Satélite': satelite,
+        'Híbrido (satélite + nombres)': hibrido,
+        'Mapa': calles,
+    };
+    (defaultSatelite ? satelite : calles).addTo(map);
+    L.control.layers(base, null, { position: 'topright', collapsed: true }).addTo(map);
+}
+
+function initMaps() {
+    const center = [-34.9, -60.0];
+    const el = document.getElementById('mapCampo');
+    if (!el) return;
+
+    if (!mapCampo) {
+        mapCampo = L.map(el, { maxZoom: 19 }).setView(center, 7);
+        addMapBaseLayers(mapCampo, true);
+        mapCampo.on('click', e => {
+            const lat = e.latlng.lat.toFixed(6);
+            const lng = e.latlng.lng.toFixed(6);
+            // Si hay fila de lote activa → georreferencia el lote; si no → el campo
+            if (loteFilaActiva && document.body.contains(loteFilaActiva)) {
+                loteFilaActiva.querySelector('.lote-lat').value = lat;
+                loteFilaActiva.querySelector('.lote-lng').value = lng;
+                if (markerLote) markerLote.setLatLng(e.latlng);
+                else markerLote = L.marker(e.latlng, { title: 'Lote' }).addTo(mapCampo);
+            } else {
+                document.getElementById('campoLat').value = lat;
+                document.getElementById('campoLng').value = lng;
+                if (markerCampo) markerCampo.setLatLng(e.latlng);
+                else markerCampo = L.marker(e.latlng, { title: 'Campo' }).addTo(mapCampo);
+            }
+        });
+    }
+    setTimeout(() => { if (mapCampo) mapCampo.invalidateSize(); }, 50);
+}
+
+async function guardarCampo() {
+    const tipo = document.getElementById('campoTipo').value;
+    const nombre = document.getElementById('campoNombre').value.trim();
+    if (!nombre) return alert('Indicá el nombre del campo.');
+    const lotes = [];
+    document.querySelectorAll('#tbodyLotesNuevos tr').forEach((tr, i) => {
+        const nom = tr.querySelector('.lote-nom').value.trim();
+        if (!nom) return;
+        const lat = tr.querySelector('.lote-lat').value;
+        const lng = tr.querySelector('.lote-lng').value;
+        lotes.push({
+            codigo: tr.querySelector('.lote-cod').value.trim(),
+            nombre: nom,
+            superficie_base: parseFloat(tr.querySelector('.lote-has').value || 0),
+            lat: lat !== '' ? parseFloat(lat) : null,
+            lng: lng !== '' ? parseFloat(lng) : null,
+            orden: i
+        });
+    });
+    const lat = document.getElementById('campoLat').value;
+    const lng = document.getElementById('campoLng').value;
+    const payload = {
+        tipo,
+        nombre,
+        superficie_total: parseFloat(document.getElementById('campoHas').value || 0) || lotes.reduce((a,l)=>a+l.superficie_base,0),
+        direccion_ref: document.getElementById('campoDir').value.trim(),
+        lat: lat !== '' ? parseFloat(lat) : null,
+        lng: lng !== '' ? parseFloat(lng) : null,
+        lotes,
+        sync_proveedor: true
+    };
+    if (tipo === 'arrendado') {
+        payload.arrendador_cuit = document.getElementById('arrCuit').value.trim();
+        payload.arrendador_razon = document.getElementById('arrRazon').value.trim();
+        payload.arrendador_localidad = document.getElementById('arrLoc').value.trim();
+        payload.arrendador_telefono = document.getElementById('arrTel').value.trim();
+        payload.arrendador_domicilio = document.getElementById('arrDom').value.trim();
+        payload.arrendador_email = document.getElementById('arrEmail').value.trim();
+        if (!payload.arrendador_cuit || !payload.arrendador_razon) {
+            return alert('En arrendados, CUIT y razón social del arrendador son obligatorios (pasa a proveedor).');
+        }
+        const modalidad = document.getElementById('arrModalidad').value;
+        const escalas = [];
+        document.querySelectorAll('#tbodyEscalas tr').forEach((tr, i) => {
+            const tn = parseFloat(tr.querySelector('.esc-tn').value || 0);
+            const pct = parseFloat(tr.querySelector('.esc-pct').value || 0);
+            if (tn > 0) escalas.push({ rendimiento_tn_ha: tn, porcentaje: pct, orden: i });
+        });
+        payload.contrato = {
+            modalidad,
+            grano: document.getElementById('arrGrano').value,
+            kilos_por_ha: parseFloat(document.getElementById('arrKgHa').value || 0),
+            porcentaje_base: parseFloat(document.getElementById('arrPct').value || 0),
+            monto_fijo: parseFloat(document.getElementById('arrMonto').value || 0),
+            escalas: modalidad === 'aparceria' ? escalas : []
+        };
+    }
+    const campoId = document.getElementById('campoId').value;
+    const url = campoId ? `/api/agro/campos/${campoId}` : '/api/agro/campos';
+    const method = campoId ? 'PUT' : 'POST';
+    // En PUT no reenviamos lotes (se editan aparte); para alta sí
+    if (campoId) delete payload.lotes;
+    const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    const d = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(d.detail || 'Error al guardar');
+    bootstrap.Modal.getInstance(document.getElementById('modalCampo')).hide();
+    await cargarCampos();
+}
+
+async function verCampo(id) {
+    const res = await fetch(`/api/agro/campos/${id}`);
+    const c = await res.json();
+    if (!res.ok) return alert(c.detail || 'Error');
+    abrirModalCampo(c.tipo);
+    document.getElementById('campoId').value = c.id;
+    document.getElementById('campoNombre').value = c.nombre || '';
+    document.getElementById('campoHas').value = c.superficie_total || 0;
+    document.getElementById('campoDir').value = c.direccion_ref || '';
+    document.getElementById('campoLat').value = c.lat ?? '';
+    document.getElementById('campoLng').value = c.lng ?? '';
+    document.getElementById('tbodyLotesNuevos').innerHTML = '';
+    (c.lotes || []).forEach(l => agregarFilaLote(l));
+    if (c.tipo === 'arrendado') {
+        document.getElementById('arrCuit').value = c.arrendador_cuit || '';
+        document.getElementById('arrRazon').value = c.arrendador_razon || '';
+        document.getElementById('arrLoc').value = c.arrendador_localidad || '';
+        document.getElementById('arrTel').value = c.arrendador_telefono || '';
+        document.getElementById('arrDom').value = c.arrendador_domicilio || '';
+        document.getElementById('arrEmail').value = c.arrendador_email || '';
+        const ct = c.contrato;
+        if (ct) {
+            document.getElementById('arrModalidad').value = ct.modalidad || 'kilos_fijos';
+            document.getElementById('arrGrano').value = ct.grano || 'Soja';
+            document.getElementById('arrKgHa').value = ct.kilos_por_ha || 0;
+            document.getElementById('arrPct').value = ct.porcentaje_base || 0;
+            document.getElementById('arrMonto').value = ct.monto_fijo || 0;
+            document.getElementById('tbodyEscalas').innerHTML = '';
+            (ct.escalas || []).forEach(e => agregarEscala(e.rendimiento_tn_ha, e.porcentaje));
+            toggleEscalas();
+        }
+    }
+    setTimeout(() => {
+        initMaps();
+        if (c.lat != null && c.lng != null) {
+            const ll = [c.lat, c.lng];
+            mapCampo.setView(ll, 13);
+            if (markerCampo) markerCampo.setLatLng(ll);
+            else markerCampo = L.marker(ll).addTo(mapCampo);
+        }
+    }, 350);
+}
+
+async function cargarCampanias() {
+    const res = await fetch('/api/agro/campanias');
+    const rows = await res.json();
+    const sel = document.getElementById('selectCampania');
+    if (!rows.length) {
+        sel.innerHTML = '<option value="">Sin campañas — creá una</option>';
+        return;
+    }
+    sel.innerHTML = rows.map(c => `<option value="${c.id}" ${c.activa? 'selected':''}>Campaña ${c.codigo}${c.activa?' ★':''}</option>`).join('');
+    await cargarPlan();
+}
+
+function abrirModalCampania() {
+    // Campaña agrícola: jun/AAAA–may/AAAA+1 → código AA-BB (ej. 26-27)
+    const now = new Date();
+    const anioInicio = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1; // mes 5 = junio
+    const a = String(anioInicio % 100).padStart(2, '0');
+    const b = String((anioInicio + 1) % 100).padStart(2, '0');
+    const codigo = `${a}-${b}`;
+    document.getElementById('campCodigo').value = codigo;
+    document.getElementById('campNombre').value = `Campaña ${codigo}`;
+    new bootstrap.Modal(document.getElementById('modalCampania')).show();
+}
+
+async function crearCampania() {
+    let codigo = document.getElementById('campCodigo').value.trim();
+    const nombre = document.getElementById('campNombre').value.trim();
+    if (!codigo) return alert('Código requerido (ej. 26-27)');
+    // Normaliza 2026/2027 o 26/27 → 26-27
+    const nums = codigo.match(/\d{2,4}/g) || [];
+    if (nums.length >= 2) {
+        codigo = String(parseInt(nums[0], 10) % 100).padStart(2, '0') + '-' +
+                 String(parseInt(nums[1], 10) % 100).padStart(2, '0');
+    }
+    const res = await fetch('/api/agro/campanias', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ codigo, nombre: nombre || `Campaña ${codigo}`, activa: 1 })
+    });
+    const d = await res.json().catch(()=>({}));
+    if (!res.ok) {
+        const msg = typeof d.detail === 'string' ? d.detail : (d.detail ? JSON.stringify(d.detail) : 'Error');
+        return alert(msg);
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modalCampania')).hide();
+    await cargarCampanias();
+    if (d.id) {
+        const sel = document.getElementById('selectCampania');
+        if (sel) sel.value = String(d.id);
+    }
+    if (d.existente) {
+        alert(d.message || `La campaña ${codigo} ya existía; quedó seleccionada y activa.`);
+    }
+    await cargarPlan();
+}
+
+async function generarPlan() {
+    const id = document.getElementById('selectCampania').value;
+    if (!id) return alert('Creá / seleccioná una campaña primero.');
+    if (!confirm('¿Generar / actualizar plan con antecesor de campaña previa y rotación sugerida?')) return;
+    const res = await fetch(`/api/agro/campanias/${id}/generar_plan?usar_antecesor_previo=true`, { method: 'POST' });
+    const d = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(d.detail || 'Error');
+    alert(`Plan listo. Creados: ${d.creados}, actualizados: ${d.actualizados}` +
+        (d.con_antecesor != null ? `\nAntecesores cargados: ${d.con_antecesor}` : '') +
+        (d.campania_previa_codigo ? `\nCampaña previa usada: ${d.campania_previa_codigo}` : ''));
+    await cargarPlan();
+}
+
+async function cargarPlan() {
+    const id = document.getElementById('selectCampania').value;
+    const tb = document.getElementById('tablaPlanBody');
+    if (!id) {
+        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">Sin campaña.</td></tr>`;
+        return;
+    }
+    const res = await fetch(`/api/agro/campanias/${id}/plan`);
+    planCache = await res.json();
+    if (!planCache.length) {
+        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">Sin plan. Usá “Generar plan” (o cargá antecesores a mano abajo tras generar).</td></tr>`;
+        return;
+    }
+    tb.innerHTML = planCache.map((p, idx) => `
+        <tr data-lote="${p.lote_id}">
+            <td>${p.campo_nombre} <span class="badge ${p.campo_tipo==='propio'?'badge-propio':'badge-arrendado'}">${p.campo_tipo}</span></td>
+            <td class="fw-bold">${p.lote_nombre}</td>
+            <td class="text-end"><input type="number" step="0.01" class="form-control form-control-sm font-mono plan-has" value="${p.superficie||0}" style="width:90px;margin-left:auto;"></td>
+            <td><select class="form-select form-select-sm plan-ant" onchange="onAntecesorChange(this)">${cultivosOptsHtml}<option value="">—</option></select></td>
+            <td class="text-success small fw-bold plan-sug">${p.cultivo_sugerido||'—'}</td>
+            <td><select class="form-select form-select-sm plan-plan">${cultivosOptsHtml}<option value="">—</option></select></td>
+            <td><input class="form-control form-control-sm plan-notas" value="${(p.notas||'').replace(/"/g,'&quot;')}"></td>
+        </tr>
+    `).join('');
+    // set values
+    document.querySelectorAll('#tablaPlanBody tr').forEach((tr, i) => {
+        const p = planCache[i];
+        tr.querySelector('.plan-ant').value = p.cultivo_antecesor || '';
+        tr.querySelector('.plan-plan').value = p.cultivo_planificado || p.cultivo_sugerido || '';
+    });
+}
+
+async function onAntecesorChange(sel) {
+    const ant = sel.value;
+    const res = await fetch('/api/agro/rotacion?antecesor=' + encodeURIComponent(ant));
+    const d = await res.json();
+    const tr = sel.closest('tr');
+    tr.querySelector('.plan-sug').innerText = d.sugerido || '—';
+    if (!tr.querySelector('.plan-plan').dataset.manual) {
+        tr.querySelector('.plan-plan').value = d.sugerido || '';
+    }
+}
+
+async function guardarPlan() {
+    const id = document.getElementById('selectCampania').value;
+    if (!id) return;
+    const items = [];
+    document.querySelectorAll('#tablaPlanBody tr').forEach(tr => {
+        const lote_id = parseInt(tr.dataset.lote, 10);
+        if (!lote_id) return;
+        items.push({
+            lote_id,
+            cultivo_antecesor: tr.querySelector('.plan-ant').value,
+            cultivo_planificado: tr.querySelector('.plan-plan').value,
+            superficie: parseFloat(tr.querySelector('.plan-has').value || 0),
+            notas: tr.querySelector('.plan-notas').value,
+            modificado_manual: 1
+        });
+    });
+    const res = await fetch(`/api/agro/campanias/${id}/plan`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ items })
+    });
+    const d = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(d.detail || 'Error');
+    alert('Plan guardado.');
+    await cargarPlan();
+}
+
+function initRotacionDemo() {
+    document.getElementById('chipsRotacion').innerHTML = CULTIVOS.map(c => `<span class="rotacion-chip">${c}</span>`).join(' → ');
+    const sel = document.getElementById('demoAntecesor');
+    sel.innerHTML = CULTIVOS.map(c => `<option value="${c}">${c}</option>`).join('');
+    demoRotacion();
+}
+
+async function demoRotacion() {
+    const ant = document.getElementById('demoAntecesor').value;
+    const res = await fetch('/api/agro/rotacion?antecesor=' + encodeURIComponent(ant));
+    const d = await res.json();
+    document.getElementById('demoSugerido').value = d.sugerido || '';
+}
+
+document.addEventListener('DOMContentLoaded', inicializar);
+</script>
+</body>
+</html>

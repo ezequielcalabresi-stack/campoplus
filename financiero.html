@@ -1,0 +1,368 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Consulta de Estado Financiero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js"></script>
+    <style>
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .cell-disp { background: #90EE90 !important; }
+        table.fin-table tbody tr:nth-child(even) { background: #f7f8fa; }
+        table.fin-table tbody tr:hover { background: #eef2ff; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: #fff; }
+            .fin-wrap { box-shadow: none !important; max-width: 100% !important; margin: 0 !important; padding: 8px !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+
+<div class="fin-wrap max-w-[1600px] mx-auto p-4 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 mb-4 border-b pb-3">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-sm">SC</div>
+            <div>
+                <h2 class="text-xl font-bold text-blue-800 leading-tight">SILO CHICO S.A.</h2>
+                <p id="estado-db" class="text-[11px] text-slate-500 mt-0.5">Consulta de Estado Financiero</p>
+            </div>
+        </div>
+        <div class="border-2 border-blue-700 px-4 py-1.5 rounded">
+            <h1 class="text-base font-bold text-blue-900 tracking-wide uppercase">Consulta de Estado Financiero</h1>
+        </div>
+        <div class="text-right text-xs text-slate-600" id="lblAhora"></div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 items-end mb-4 no-print text-xs">
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">Rango</label>
+            <select id="selRango" class="rounded-md border border-slate-300 p-2 font-semibold bg-white" onchange="aplicarRango()">
+                <option value="30">30 días</option>
+                <option value="90">90 días</option>
+                <option value="180" selected>180 días</option>
+                <option value="360">360 días</option>
+                <option value="mes">Mes en curso</option>
+                <option value="custom">Personalizado</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">Desde</label>
+            <input type="date" id="fechaDesde" class="rounded-md border border-slate-300 p-2 font-semibold" onchange="onFechaManual()">
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">Hasta</label>
+            <input type="date" id="fechaHasta" class="rounded-md border border-slate-300 p-2 font-semibold" onchange="onFechaManual()">
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">T/C USD</label>
+            <input type="text" id="paramDolar" inputmode="decimal"
+                   class="w-28 rounded-md border border-slate-300 p-2 font-bold text-right font-mono"
+                   onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this)" value="1.550,00">
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">Pizarra soja $/tn</label>
+            <input type="text" id="paramSoja" inputmode="decimal"
+                   class="w-32 rounded-md border border-slate-300 p-2 font-bold text-right font-mono"
+                   onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this)" value="560.000,00">
+        </div>
+        <label class="flex items-center gap-2 px-2 py-2 border rounded-md bg-slate-50 cursor-pointer select-none">
+            <input type="checkbox" id="chkDisp" checked class="rounded border-slate-400">
+            <span class="font-semibold text-slate-700">Disponibilidades a hoy<br><span class="font-normal text-[10px] text-slate-500">(saldos, caja, FCI, plazos fijos)</span></span>
+        </label>
+        <button onclick="cargarProyeccion()" class="bg-blue-700 text-white px-4 py-2 rounded-md font-bold hover:bg-blue-800 shadow">
+            Recalcular
+        </button>
+        <button onclick="reimportarAccess()" class="bg-amber-600 text-white px-3 py-2 rounded-md font-bold hover:bg-amber-700" title="Reimporta solo pendientes (sin Debitados)">
+            Reimportar Access
+        </button>
+        <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md font-bold hover:bg-slate-300">← Dashboard</a>
+        <button onclick="window.print()" class="bg-slate-800 text-white px-3 py-2 rounded-md font-bold hover:bg-slate-700">PDF</button>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 text-xs">
+        <div class="bg-rose-50 border border-rose-200 p-3 rounded-lg">
+            <span class="font-bold text-rose-800 uppercase block text-[10px]">Total a pagar</span>
+            <h3 id="lblTotalPagar" class="text-lg font-extrabold text-rose-900 mt-1 font-mono">$ 0,00</h3>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
+            <span class="font-bold text-emerald-800 uppercase block text-[10px]">Disponibilidades</span>
+            <h3 id="lblTotalDisp" class="text-lg font-extrabold text-emerald-900 mt-1 font-mono">$ 0,00</h3>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg">
+            <span class="font-bold text-slate-700 uppercase block text-[10px]">Neto período</span>
+            <h3 id="lblTotalArs" class="text-lg font-extrabold text-slate-900 mt-1 font-mono">$ 0,00</h3>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg">
+            <span class="font-bold text-blue-800 uppercase block text-[10px]">Equiv. kg grano</span>
+            <h3 id="lblTotalKilos" class="text-lg font-extrabold text-blue-900 mt-1">0 Kg</h3>
+        </div>
+        <div class="bg-indigo-50 border border-indigo-200 p-3 rounded-lg">
+            <span class="font-bold text-indigo-800 uppercase block text-[10px]">Líneas</span>
+            <h3 id="lblCant" class="text-lg font-extrabold text-indigo-900 mt-1">0</h3>
+        </div>
+    </div>
+
+    <div id="resumenFuentes" class="flex flex-wrap gap-2 mb-3 text-[11px] no-print"></div>
+
+    <div class="overflow-x-auto border border-slate-300 rounded">
+        <table class="fin-table w-full text-left border-collapse text-[11px]">
+            <thead>
+                <tr class="bg-slate-700 text-white uppercase font-semibold">
+                    <th class="p-2 whitespace-nowrap">Detalle</th>
+                    <th class="p-2 whitespace-nowrap">Forma pago</th>
+                    <th class="p-2 whitespace-nowrap">Cta Cte</th>
+                    <th class="p-2 whitespace-nowrap" title="Vencimiento / fecha de pago (pendientes sin debitar)">Fecha vto/pago</th>
+                    <th class="p-2 whitespace-nowrap">Cuota</th>
+                    <th class="p-2 text-right whitespace-nowrap">T/C</th>
+                    <th class="p-2 whitespace-nowrap">Plazo</th>
+                    <th class="p-2 text-right whitespace-nowrap">Capital</th>
+                    <th class="p-2 text-right whitespace-nowrap">Intereses</th>
+                    <th class="p-2 text-right whitespace-nowrap">Impuestos</th>
+                    <th class="p-2 text-right whitespace-nowrap">Cargos</th>
+                    <th class="p-2 text-right whitespace-nowrap">Subtotal</th>
+                    <th class="p-2 text-right whitespace-nowrap font-bold">Totales</th>
+                    <th class="p-2 whitespace-nowrap">Varios</th>
+                </tr>
+            </thead>
+            <tbody id="tablaFinanciera">
+                <tr><td colspan="14" class="p-6 text-center text-slate-400">Cargando…</td></tr>
+            </tbody>
+            <tfoot>
+                <tr class="bg-slate-100 border-t-2 border-slate-400 font-bold">
+                    <td class="p-2" colspan="3">Total a Pagar mes</td>
+                    <td class="p-2" id="lblMesFooter" colspan="8"></td>
+                    <td class="p-2 text-right font-mono text-rose-800" id="lblFooterPagar" colspan="2">$ 0,00</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<script>
+function parseMoney(val) {
+    if (val == null || val === '') return 0;
+    let s = String(val).trim().replace(/\$/g, '').replace(/\s/g, '');
+    if (!s) return 0;
+    if (s.indexOf(',') >= 0) {
+        s = s.replace(/\./g, '').replace(',', '.');
+    } else if ((s.match(/\./g) || []).length > 1) {
+        s = s.replace(/\./g, '');
+    }
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+}
+
+function formatMoney(n, dec = 2) {
+    return Number(n || 0).toLocaleString('es-AR', {
+        minimumFractionDigits: dec,
+        maximumFractionDigits: dec,
+    });
+}
+
+function fmtMoneySign(n) {
+    const v = Number(n || 0);
+    if (v < 0) return '$-' + formatMoney(Math.abs(v));
+    return '$ ' + formatMoney(v);
+}
+
+function onMoneyFocus(el) {
+    const n = parseMoney(el.value);
+    el.value = n ? String(n).replace('.', ',') : '';
+    el.select();
+}
+
+function onMoneyBlur(el) {
+    const n = parseMoney(el.value);
+    el.value = formatMoney(n, 2);
+}
+
+function fmtFecha(iso) {
+    if (!iso) return '';
+    const p = String(iso).slice(0, 10).split('-');
+    if (p.length !== 3) return iso;
+    return `${Number(p[2])}/${Number(p[1])}/${p[0]}`;
+}
+
+function fmtTc(n) {
+    const v = Number(n || 0);
+    if (!v) return '';
+    return formatMoney(v, 2);
+}
+
+function fmtZeroMoney(n) {
+    const v = Number(n || 0);
+    if (Math.abs(v) < 0.005) return '$ 0,00';
+    return fmtMoneySign(v);
+}
+
+function fmtCuota(v) {
+    if (v == null || v === '') return '';
+    const n = Number(String(v).replace(',', '.'));
+    if (Number.isFinite(n)) return String(Math.round(n));
+    return String(v).replace(/\.0+$/, '');
+}
+
+function isoHoy() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function addDaysIso(iso, days) {
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + days);
+    const pad = n => String(n).padStart(2, '0');
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+function aplicarRango() {
+    const sel = document.getElementById('selRango').value;
+    const hoy = isoHoy();
+    document.getElementById('fechaDesde').value = hoy;
+    if (sel === 'custom') return;
+    if (sel === 'mes') {
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        document.getElementById('fechaDesde').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
+        const fin = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        document.getElementById('fechaHasta').value =
+            `${fin.getFullYear()}-${pad(fin.getMonth() + 1)}-${pad(fin.getDate())}`;
+        return;
+    }
+    const dias = parseInt(sel, 10) || 180;
+    document.getElementById('fechaHasta').value = addDaysIso(hoy, dias);
+}
+
+function onFechaManual() {
+    document.getElementById('selRango').value = 'custom';
+}
+
+function tickAhora() {
+    const el = document.getElementById('lblAhora');
+    const d = new Date();
+    el.innerHTML = d.toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+        + '<br><span class="font-mono">' + d.toLocaleTimeString('es-AR') + '</span>';
+}
+
+function initFechas() {
+    document.getElementById('selRango').value = '180';
+    aplicarRango();
+    ['paramDolar', 'paramSoja'].forEach(id => {
+        const el = document.getElementById(id);
+        el.value = formatMoney(parseMoney(el.value), 2);
+    });
+    tickAhora();
+    setInterval(tickAhora, 1000);
+}
+
+async function reimportarAccess() {
+    const estado = document.getElementById('estado-db');
+    estado.textContent = 'Reimportando proyección Access…';
+    estado.className = 'text-[11px] text-amber-700 mt-0.5 font-medium';
+    try {
+        const res = await fetch('/api/financiero/reimportar_proyeccion', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Error al reimportar');
+        estado.textContent = `Importadas ${data.rows || 0} filas Access. Recalculando…`;
+        await cargarProyeccion();
+    } catch (e) {
+        estado.textContent = e.message || 'Error de reimportación';
+        estado.className = 'text-[11px] text-rose-600 mt-0.5 font-medium';
+    }
+}
+
+async function cargarProyeccion() {
+    const estado = document.getElementById('estado-db');
+    const tb = document.getElementById('tablaFinanciera');
+    tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-slate-400">Calculando…</td></tr>`;
+    const params = new URLSearchParams({
+        desde: document.getElementById('fechaDesde').value,
+        hasta: document.getElementById('fechaHasta').value,
+        tc: String(parseMoney(document.getElementById('paramDolar').value)),
+        pizarra_soja: String(parseMoney(document.getElementById('paramSoja').value)),
+        incluir_disponibilidades: document.getElementById('chkDisp').checked ? 'true' : 'false',
+    });
+    try {
+        const res = await fetch('/api/financiero/flujo_proyectado?' + params.toString());
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            estado.textContent = data.detail || 'Error al calcular';
+            estado.className = 'text-[11px] text-rose-600 mt-0.5 font-medium';
+            tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-rose-500">${data.detail || 'Error'}</td></tr>`;
+            return;
+        }
+        const origen = data.origen === 'access'
+            ? `Access (${data.filas_access || 0} filas importadas)`
+            : 'Live (sin proyección Access)';
+        estado.textContent = (data.nota || '') + ' · ' + origen;
+        estado.className = 'text-[11px] text-emerald-700 mt-0.5 font-medium';
+
+        document.getElementById('lblTotalPagar').textContent = fmtMoneySign(data.total_a_pagar);
+        document.getElementById('lblTotalDisp').textContent = fmtMoneySign(data.total_disponibilidades);
+        document.getElementById('lblTotalArs').textContent = fmtMoneySign(data.total_ars);
+        document.getElementById('lblTotalKilos').textContent = formatMoney(data.equivalente_kg, 1) + ' Kg';
+        document.getElementById('lblCant').textContent = String(data.cantidad || 0);
+        document.getElementById('lblMesFooter').textContent = data.mes_label || '';
+        document.getElementById('lblFooterPagar').textContent = fmtMoneySign(data.total_a_pagar);
+
+        const labels = {
+            cheque_emitido: 'Cheques Empresa',
+            credito: 'Créditos',
+            debito: 'Deb Bancario',
+            extras: 'Pago Extras',
+            sueldos: 'Sueldos',
+            disponibilidad: 'Disponibilidades',
+            factura: 'Facturas',
+            alquiler: 'Alquileres',
+            otro: 'Otros',
+        };
+        const fuentes = data.por_fuente || {};
+        document.getElementById('resumenFuentes').innerHTML = Object.keys(fuentes).map(k =>
+            `<span class="bg-slate-100 border border-slate-200 rounded px-2 py-1 font-semibold">
+                ${labels[k] || k}: ${fmtMoneySign(fuentes[k])}
+            </span>`
+        ).join('');
+
+        const lineas = data.lineas || [];
+        if (!lineas.length) {
+            tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-slate-500">Sin movimientos en el período. Probá “Reimportar Access”.</td></tr>`;
+            return;
+        }
+        tb.innerHTML = lineas.map(L => {
+            const disp = L.es_disponibilidad || (L.subtotal || L.monto_ars) < 0;
+            const subCls = disp ? 'cell-disp font-semibold' : 'font-semibold text-slate-800';
+            return `
+            <tr>
+                <td class="p-1.5 whitespace-nowrap max-w-[220px] truncate" title="${(L.detalle || '').replace(/"/g, '&quot;')}">${L.detalle || ''}</td>
+                <td class="p-1.5 whitespace-nowrap text-slate-600">${L.forma_pago || ''}</td>
+                <td class="p-1.5 whitespace-nowrap font-mono text-[10px]">${L.cta_cte || ''}</td>
+                <td class="p-1.5 whitespace-nowrap">${fmtFecha(L.fecha)}</td>
+                <td class="p-1.5 text-center font-mono">${fmtCuota(L.nro_cuota)}</td>
+                <td class="p-1.5 text-right font-mono">${fmtTc(L.tipo_cambio)}</td>
+                <td class="p-1.5 whitespace-nowrap">${L.plazo || ''}</td>
+                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.capital)}</td>
+                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.intereses)}</td>
+                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.impuestos)}</td>
+                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.cargos)}</td>
+                <td class="p-1.5 text-right font-mono ${subCls}">${fmtMoneySign(L.subtotal != null ? L.subtotal : L.monto_ars)}</td>
+                <td class="p-1.5 text-right font-mono font-bold">${fmtMoneySign(L.totales != null ? L.totales : L.acumulado)}</td>
+                <td class="p-1.5 text-slate-500 max-w-[140px] truncate" title="${(L.varios || '').replace(/"/g, '&quot;')}">${L.varios || ''}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        console.error(e);
+        estado.textContent = 'Error de conexión con el servidor.';
+        estado.className = 'text-[11px] text-rose-600 mt-0.5 font-medium';
+        tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-rose-500">No se pudo cargar.</td></tr>`;
+    }
+}
+
+initFechas();
+cargarProyeccion();
+</script>
+</body>
+</html>
