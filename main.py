@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7860,6 +7861,12 @@ except Exception as _e_plat:
 register_plataforma_routes(app, DB_PATH)
 app.add_middleware(AuditMiddleware, get_db=get_db, get_empresa_activa_id=get_empresa_activa_id)
 app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
+
+@app.get("/")
+def pagina_inicio():
+    """En Linux la raíz no abre Index.html (la I mayúscula no coincide con index.html)."""
+    return FileResponse(os.path.join(BASE_DIR, "Index.html"))
+
 
 _data_dir = os.environ.get("CAMPO_DATA_DIR", "").strip()
 if _data_dir:
