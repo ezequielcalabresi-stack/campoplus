@@ -351,10 +351,18 @@
             if (!ses) return;
             const u = ses.usuario || {};
             const ul = document.getElementById('userSessionLabel');
-            if (ul) ul.textContent = (u.nombre || '') + (Number(u.es_superadmin) ? ' - admin' : '');
-            if (Number(u.es_superadmin)) {
+            if (ul) ul.textContent = u.nombre || '';
+            const impersona = localStorage.getItem('campoplus_cuenta_impersonada');
+            if (Number(u.es_superadmin) && !impersona) {
+                location.href = 'Plataforma.html';
+                return;
+            }
+            if (Number(u.es_superadmin) && impersona) {
                 const lp = document.getElementById('linkPlataforma');
-                if (lp) lp.classList.remove('hidden');
+                if (lp) {
+                    lp.textContent = 'Administración Campo+';
+                    lp.classList.remove('hidden');
+                }
             }
             refrescarBranding(ses.empresa);
             await cargarEmpresasHeader();

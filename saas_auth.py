@@ -211,11 +211,15 @@ def init_saas_schema(cursor: sqlite3.Cursor) -> None:
             rol = (r2[0] if not isinstance(r2, sqlite3.Row) else r2["rol"]) if r2 else ""
         except Exception:
             pass
-        if rol and "Administrador Total" in str(rol):
-            cursor.execute(
-                "UPDATE usuarios_sistema SET es_superadmin = 1 WHERE id = ?;",
-                (rid,),
-            )
+
+    cursor.execute(
+        """
+        UPDATE usuarios_sistema
+        SET es_superadmin = 0
+        WHERE LOWER(TRIM(COALESCE(login, ''))) <> 'eze'
+          AND LOWER(TRIM(COALESCE(email, ''))) <> 'ezequielcalabresi@gmail.com';
+        """
+    )
 
 
 def empresa_to_dict(row) -> dict:

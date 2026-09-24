@@ -99,8 +99,13 @@
                 const password = document.getElementById('password').value;
                 const emp = document.getElementById('empresaId').value;
                 await CampoAuth.login(usuario, password, emp || null);
+                const guardado = JSON.parse(localStorage.getItem('campoplus_session_user') || '{}');
                 const next = params.get('next') || 'Index.html';
-                location.href = next;
+                if (Number(guardado.es_superadmin) && !localStorage.getItem('campoplus_cuenta_impersonada')) {
+                    location.href = 'Plataforma.html';
+                } else {
+                    location.href = next;
+                }
             } catch (e) {
                 err.textContent = e.message || 'No se pudo ingresar';
                 err.classList.remove('hidden');
@@ -115,7 +120,12 @@
             await precargarEmpresas();
             const me = await CampoAuth.me();
             if (me) {
-                location.href = params.get('next') || 'Index.html';
+                const u = me.usuario || {};
+                if (Number(u.es_superadmin) && !localStorage.getItem('campoplus_cuenta_impersonada')) {
+                    location.href = 'Plataforma.html';
+                } else {
+                    location.href = params.get('next') || 'Index.html';
+                }
             }
         })();
     </script>
