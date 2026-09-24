@@ -7862,6 +7862,38 @@ register_plataforma_routes(app, DB_PATH)
 app.add_middleware(AuditMiddleware, get_db=get_db, get_empresa_activa_id=get_empresa_activa_id)
 app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
 
+def _restablecer_clave_eze_una_vez() -> None:
+    """Solo en el disco del servidor, una vez: la clave de eze vuelve a campo+."""
+    data = os.environ.get("CAMPO_DATA_DIR", "").strip()
+    if not data or not os.path.exists(DB_PATH):
+        return
+    flag = os.path.join(data, ".clave_eze_lista")
+    if os.path.exists(flag):
+        return
+    from saas_auth import _hash_password
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            UPDATE usuarios_sistema
+            SET password_hash = ?
+            WHERE LOWER(TRIM(COALESCE(login, ''))) = 'eze'
+               OR LOWER(TRIM(COALESCE(email, ''))) = 'ezequielcalabresi@gmail.com';
+            """,
+            (_hash_password("campo+"),),
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        return
+    finally:
+        conn.close()
+    with open(flag, "w", encoding="utf-8") as fh:
+        fh.write("ok")
+
+
+_restablecer_clave_eze_una_vez()
+
+
 @app.get("/")
 def pagina_inicio():
     """En Linux la raíz no abre Index.html (la I mayúscula no coincide con index.html)."""
