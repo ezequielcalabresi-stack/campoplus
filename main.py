@@ -283,6 +283,28 @@ def init_db():
             agente_percepcion_iibb = COALESCE(agente_percepcion_iibb, 1)
         WHERE id = 1;
     """)
+# Tabla maestra de entidades (crear antes de verificar columnas)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS entidades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cuit TEXT UNIQUE,
+            razon_social TEXT NOT NULL,
+            nombre_fantasia TEXT,
+            domicilio TEXT,
+            localidad TEXT,
+            provincia TEXT,
+            es_proveedor INTEGER DEFAULT 1,
+            es_cliente INTEGER DEFAULT 0,
+            centro_costo TEXT DEFAULT '1',
+            regimen_sicore TEXT DEFAULT '',
+            es_propietario_inmueble INTEGER DEFAULT 0,
+            es_cuenta_ajuste INTEGER DEFAULT 0,
+            provincia_codigo TEXT DEFAULT '01',
+            tipo_documento TEXT DEFAULT '80',
+            condicion_iva_codigo TEXT DEFAULT '01',
+            condicion_iva TEXT DEFAULT 'Responsable Inscripto'
+        );
+    """)
  
     cursor.execute("PRAGMA table_info(entidades);")
     cols_entidades = [col[1] for col in cursor.fetchall()]
