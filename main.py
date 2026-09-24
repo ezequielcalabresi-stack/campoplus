@@ -615,7 +615,7 @@ def init_db():
             except Exception as e:
                 print(f"Error importando retenciones.xlsx: {e}")
 
- # 8. Órdenes de Pago
+# 8. Órdenes de Pago (Asegurar que la tabla se cree primero)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS ordenes_pago (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -625,6 +625,12 @@ def init_db():
             empresa_id INTEGER DEFAULT 1
         );
     """)
+
+    # Luego las modificaciones de columnas si ya existiera de antes
+    cursor.execute("PRAGMA table_info(ordenes_pago);")
+    cols_op = [col[1] for col in cursor.fetchall()]
+    if 'empresa_id' not in cols_op:
+        cursor.execute("ALTER TABLE ordenes_pago ADD COLUMN empresa_id INTEGER DEFAULT 1;")
 
     # 9. Cuentas Corrientes Proveedores
     cursor.execute("""
