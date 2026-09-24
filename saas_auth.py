@@ -375,85 +375,93 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
             raise HTTPException(401, "Usuario o contraseña incorrectos")
 
         user = dict(user)
+
         from plataforma import abrir_base_cuenta, master_connect
         import main as _main
-
-        cuenta_user = user.get("cuenta_id") or (None if int(user.get("es_superadmin") or 0) else 1)
-        base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
-        cur_emp = base_emp.cursor()
-        if data.empresa_id:
-            empresa_id = int(data.empresa_id)
-        elif user.get("empresa_id"):
-            empresa_id = int(user["empresa_id"])
-        else:
-            cur_emp.execute("SELECT empresa_activa_id FROM configuracion_empresa WHERE id = 1;")
-            cfg = cur_emp.fetchone()
-            empresa_id = int(cfg["empresa_activa_id"]) if cfg and cfg["empresa_activa_id"] else None
+        try:
+            cuenta_user = user.get("cuenta_id") or (None if int(user.get("es_superadmin") or 0) else 1)
+            base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
+            cur_emp = base_emp.cursor()
+            if data.empresa_id:
+                empresa_id = int(data.empresa_id)
+            elif user.get("empresa_id"):
+                empresa_id = int(user["empresa_id"])
+            else:
+                cur_emp.execute("SELECT empresa_activa_id FROM configuracion_empresa WHERE id = 1;")
+                cfg = cur_emp.fetchone()
+                empresa_id = int(cfg["empresa_activa_id"]) if cfg and cfg["empresa_activa_id"] else None
+                if not empresa_id:
+                    cur_emp.execute("SELECT id FROM empresas ORDER BY id ASC LIMIT 1;")
+                    first = cur_emp.fetchone()
+                    empresa_id = int(first["id"]) if first else None
             if not empresa_id:
-                cur_emp.execute("SELECT id FROM empresas ORDER BY id ASC LIMIT 1;")
-                first = cur_emp.fetchone()
-                empresa_id = int(first["id"]) if first else None
-        if not empresa_id:
-            base_emp.close()
-            conn.close()
-            raise HTTPException(400, "El cliente todavía no tiene empresas cargadas")
-        cur_emp.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
-        emp = cur_emp.fetchone()
-        if not emp:
-            base_emp.close()
-            conn.close()
-            raise HTTPException(400, "Empresa no válida")
-        emp = empresa_to_dict(emp)
-        base_emp.close()
-
-        if not int(user.get("es_superadmin") or 0) and not emp["acceso_habilitado"]:
-            conn.close()
-            raise HTTPException(
-                403,
-                "Acceso suspendido por falta de pago o licencia. Contactá a CAmpo+.",
-            )
-
-        # Usuario no superadmin solo su empresa
-        if not int(user.get("es_superadmin") or 0) and user.get("empresa_id"):
-            if int(user["empresa_id"]) != int(empresa_id):
+                base_emp.close()
                 conn.close()
-                raise HTTPException(403, "No tenés acceso a esa empresa")
+                raise HTTPException(400, "El cliente todavía no tiene empresas cargadas")
+            cur_emp.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+            emp = cur_emp.fetchone()
+            if not emp:
+                base_emp.close()
+                conn.close()
+                raise HTTPException(400, "Empresa no válida")
+            emp = empresa_to_dict(emp)
+            base_emp.close()
 
-        token = secrets.token_urlsafe(32)
-        ahora = datetime.now()
-        expira = (ahora + timedelta(days=7)).isoformat(timespec="seconds")
-        ip = request.client.host if request.client else ""
-        cur.execute(
-            """
-            INSERT INTO sesiones_usuario (token, usuario_id, empresa_id, creado_en, expira_en, ip)
-            VALUES (?, ?, ?, ?, ?, ?);
-            """,
-            (token, user["id"], empresa_id, ahora.isoformat(timespec="seconds"), expira, ip),
-        )
-        # Activar empresa en la base de ESA cuenta (no en la de otro cliente)
-        base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
-        base_emp.execute(
-            "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
-            (empresa_id,),
-        )
-        base_emp.commit()
-        base_emp.close()
-        conn.commit()
-        conn.close()
-        return {
-            "status": "ok",
-            "token": token,
-            "expira_en": expira,
-            "usuario": {
-                "id": user["id"],
-                "nombre": user["nombre"],
-                "email": user["email"],
-                "login": user.get("login") or user.get("email"),
-                "rol": user["rol"],
-                "es_superadmin": int(user.get("es_superadmin") or 0),
-            },
-            "empresa": emp,
-        }
+            if not int(user.get("es_superadmin") or 0) and not emp["acceso_habilitado"]:
+                conn.close()
+                raise HTTPException(
+                    403,
+                    "Acceso suspendido por falta de pago o licencia. Contactá a CAmpo+.",
+                )
+
+            # Usuario no superadmin solo su empresa
+            if not int(user.get("es_superadmin") or 0) and user.get("empresa_id"):
+                if int(user["empresa_id"]) != int(empresa_id):
+                    conn.close()
+                    raise HTTPException(403, "No tenés acceso a esa empresa")
+
+            token = secrets.token_urlsafe(32)
+            ahora = datetime.now()
+            expira = (ahora + timedelta(days=7)).isoformat(timespec="seconds")
+            ip = request.client.host if request.client else ""
+            cur.execute(
+                """
+                INSERT INTO sesiones_usuario (token, usuario_id, empresa_id, creado_en, expira_en, ip)
+                VALUES (?, ?, ?, ?, ?, ?);
+                """,
+                (token, user["id"], empresa_id, ahora.isoformat(timespec="seconds"), expira, ip),
+            )
+            # Activar empresa en la base de ESA cuenta (no en la de otro cliente)
+            base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
+            base_emp.execute(
+                "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
+                (empresa_id,),
+            )
+            base_emp.commit()
+            base_emp.close()
+            conn.commit()
+            conn.close()
+            return {
+                "status": "ok",
+                "token": token,
+                "expira_en": expira,
+                "usuario": {
+                    "id": user["id"],
+                    "nombre": user["nombre"],
+                    "email": user["email"],
+                    "login": user.get("login") or user.get("email"),
+                    "rol": user["rol"],
+                    "es_superadmin": int(user.get("es_superadmin") or 0),
+                },
+                "empresa": emp,
+            }
+
+        except HTTPException:
+            conn.close()
+            raise
+        except Exception as exc:
+            conn.close()
+            raise HTTPException(500, f"{type(exc).__name__}: {exc}") from exc
 
     @app.post("/api/auth/logout")
     def api_logout(request: Request):
