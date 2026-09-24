@@ -10,8 +10,30 @@
         .top-header-box { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 20px; margin-bottom: 15px; }
         .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 10px; }
         .table tbody td { padding: 8px 10px; vertical-align: middle; }
+        .certificado-container { background: #ffffff; border: 2px solid #0f172a; padding: 28px; font-family: 'Courier New', Courier, monospace; color: #000; }
+        .cert-header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+        .cert-section-title { background: #f1f5f9; border-top: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 4px 8px; font-weight: bold; font-size: 11px; margin-top: 12px; margin-bottom: 8px; text-transform: uppercase; }
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+            body * { visibility: hidden !important; }
+            #areaImpresionCertDetalle, #areaImpresionCertDetalle * { visibility: visible !important; }
+            #areaImpresionCertDetalle {
+                position: absolute !important; left: 0; top: 0; width: 100%;
+                background: #fff !important; margin: 0; padding: 0;
+            }
+            .modal, .modal-dialog, .modal-content, .modal-body {
+                position: static !important; transform: none !important;
+                width: 100% !important; max-width: none !important;
+                box-shadow: none !important; border: none !important; background: #fff !important;
+            }
+            .modal-backdrop, .modal-header, .btn, .no-print { display: none !important; }
+            .certificado-container { box-shadow: none !important; }
+        }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="container-fluid my-3 px-4" style="max-width: 1500px;">
@@ -19,8 +41,8 @@
         <div class="top-header-box d-flex justify-content-between align-items-center flex-wrap gap-3">
             <h4 class="fw-bold mb-0 text-dark fs-5">Detalle de Comprobantes y Movimientos por Proveedor</h4>
             <div class="d-flex gap-2">
-                <a href="#" id="btnIrOP" class="btn btn-success btn-sm fw-bold" style="background-color: #059669; border: none;">💸 Emitir Orden de Pago</a>
-                <a href="cuentacorriente.html" class="btn btn-secondary btn-sm fw-bold px-3">← Volver a Proveedores a Pagar</a>
+                <a href="#" id="btnIrOP" class="btn btn-success btn-sm fw-bold" style="background-color: #059669; border: none;">Emitir Orden de Pago</a>
+                <a href="cuentacorriente.html" class="btn btn-secondary btn-sm fw-bold px-3">Volver a Proveedores a Pagar</a>
             </div>
         </div>
 
@@ -45,13 +67,13 @@
         </div>
 
         <div id="bannerAjuste" class="alert alert-danger py-2 px-3 mb-3 d-none" role="alert">
-            <strong>Cuenta de ajuste / banco.</strong> No figura en el padrón comercial de Proveedores/Clientes ni en “a pagar”.
+            <strong>Cuenta de ajuste / banco.</strong> No figura en el padrón comercial de Proveedores/Clientes ni en "a pagar".
             Para verla ahí usá el filtro <em>Solo ctas de ajuste</em> o <em>Todas</em>.
         </div>
 
         <div class="card shadow-sm border mb-3">
             <div class="card-body p-0">
-                <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                <div id="scrollMovimientos" class="table-responsive" style="max-height: 520px; overflow-y: auto;">
                     <table class="table table-striped table-hover mb-0 font-monospace align-middle">
                         <thead class="sticky-top">
                             <tr>
@@ -63,7 +85,7 @@
                                 <th class="text-end text-danger" style="width: 130px;">DEBE ($)</th>
                                 <th class="text-end text-success" style="width: 130px;">HABER ($)</th>
                                 <th class="text-end text-dark" style="width: 140px;">SALDO ($)</th>
-                                <th class="text-center font-sans" style="width: 120px;">ACCIÓN</th>
+                                <th class="text-center font-sans" style="width: 110px;">ACCIÓN</th>
                             </tr>
                         </thead>
                         <tbody id="tablaMovimientos">
@@ -76,7 +98,8 @@
 
         <div class="top-header-box d-flex justify-content-between align-items-center">
             <div class="d-flex gap-2">
-                <button onclick="abrirModalDebito()" class="btn btn-warning btn-sm fw-bold text-dark">➕ Agregar Débito (Factura / Nota Débito)</button>
+                <button onclick="abrirModalDebito()" class="btn btn-warning btn-sm fw-bold text-dark">Factura / NC / Débito</button>
+                <button onclick="abrirModalAjuste()" class="btn btn-outline-dark btn-sm fw-bold">Ajuste de saldo (sin asiento ni retención)</button>
             </div>
         </div>
     </div>
@@ -86,18 +109,24 @@
         <div class="modal-dialog">
             <div class="modal-content shadow-lg border-0">
                 <div class="modal-header bg-dark text-white py-2">
-                    <h5 class="modal-title fs-6 fw-bold">➕ Registrar Factura / Débito (Impacto Contable)</h5>
+                    <h5 class="modal-title fs-6 fw-bold" id="modalDebitoTitulo">Registrar Factura / NC / Débito</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body p-4 bg-light">
                     <form id="formDebito" onsubmit="guardarFactura(event)">
                         <div class="mb-3">
                             <label class="form-label fw-bold">Tipo de Comprobante</label>
-                            <select id="debitoTipo" class="form-select">
+                            <select id="debitoTipo" class="form-select" onchange="onCambioDebitoTipo()">
                                 <option value="Factura A">Factura A</option>
                                 <option value="Factura B">Factura B</option>
+                                <option value="Factura C">Factura C</option>
                                 <option value="Nota de Débito A">Nota de Débito A</option>
+                                <option value="Nota de Débito B">Nota de Débito B</option>
+                                <option value="Nota de Crédito A">Nota de Crédito A</option>
+                                <option value="Nota de Crédito B">Nota de Crédito B</option>
+                                <option value="Nota de Crédito C">Nota de Crédito C</option>
                             </select>
+                            <div class="form-text" id="debitoTipoHint">Factura / ND > DEBE (cargo). NC > HABER (baja saldo).</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Número de Comprobante*</label>
@@ -105,12 +134,12 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Fecha de Emisión*</label>
-                            <input type="date" id="debitoFecha" class="form-control" required>
+                            <input type="text" id="debitoFecha" class="form-control" required placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10">
                         </div>
                         <div class="row g-2 mb-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-bold">Subtotal Neto ($)*</label>
-                                <input type="number" step="0.01" id="debitoNeto" oninput="calcularTotalModal()" class="form-control font-monospace fw-bold" required placeholder="0.00">
+                                <input type="text" id="debitoNeto" oninput="calcularTotalModal()" class="form-control font-monospace fw-bold text-end money-input" data-money inputmode="decimal" required value="0,00">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-bold">Alícuota IVA</label>
@@ -125,22 +154,93 @@
                         <div class="row g-2 mb-3">
                             <div class="col-md-6">
                                 <label class="form-label text-muted small">Importe IVA ($)</label>
-                                <input type="number" step="0.01" id="debitoIva" class="form-control font-monospace bg-light" readonly placeholder="0.00">
+                                <input type="text" id="debitoIva" class="form-control font-monospace bg-light text-end money-input" data-money readonly value="0,00">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label text-muted small">Percepciones IIBB / Otros ($)</label>
-                                <input type="number" step="0.01" id="debitoPerc" oninput="calcularTotalModal()" class="form-control font-monospace" placeholder="0.00">
+                                <input type="text" id="debitoPerc" oninput="calcularTotalModal()" class="form-control font-monospace text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Importe Total Factura ($)*</label>
-                            <input type="number" step="0.01" id="debitoTotal" class="form-control font-monospace fw-bold text-danger fs-5" readonly placeholder="0.00">
+                            <input type="text" id="debitoTotal" class="form-control font-monospace fw-bold text-danger fs-5 text-end money-input" data-money readonly value="0,00">
                         </div>
                         <div class="text-end">
-                            <button type="submit" class="btn btn-success fw-bold px-4">✓ Guardar y Contabilizar</button>
+                            <button type="submit" class="btn btn-success fw-bold px-4">Guardar y Contabilizar</button>
                         </div>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalAjuste" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content shadow-lg border-0">
+                <div class="modal-header bg-dark text-white py-2">
+                    <h5 class="modal-title fs-6 fw-bold">Ajuste de saldo de cuenta corriente</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="small text-muted">Sirve para limpiar saldos que no son reales. No genera asiento contable ni retención.</p>
+                    <form id="formAjuste" onsubmit="guardarAjuste(event)">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Sentido</label>
+                            <select id="ajusteSentido" class="form-select">
+                                <option value="credito">Crédito - baja lo que figura a pagar</option>
+                                <option value="debito">Débito - sube el saldo a pagar</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Fecha</label>
+                            <input type="text" id="ajusteFecha" class="form-control" required placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Importe</label>
+                            <input type="text" id="ajusteImporte" class="form-control font-monospace text-end money-input" data-money inputmode="decimal" required value="0,00">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Motivo</label>
+                            <input type="text" id="ajusteConcepto" class="form-control" required placeholder="Ej. saldo histórico que no corresponde">
+                        </div>
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-dark fw-bold">Guardar ajuste</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalOrigen" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content shadow-lg border-0">
+                <div class="modal-header bg-dark text-white py-2">
+                    <h5 class="modal-title fs-6 fw-bold" id="origenTitulo">Origen del movimiento</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" id="origenCuerpo"></div>
+                <div class="modal-footer no-print" id="origenFooter" style="display:none;">
+                    <button type="button" class="btn btn-success fw-bold" id="btnImprimirCert" onclick="imprimirCertificadoDesdeOrigen()">
+                        Imprimir certificado PDF
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalCertDetalle" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-dark text-white py-2 no-print">
+                    <h5 class="modal-title fs-6 fw-bold">Certificado de retención</h5>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-light btn-sm fw-bold" onclick="window.print()">Imprimir / Guardar PDF</button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-4 bg-light" id="areaImpresionCertDetalle"></div>
             </div>
         </div>
     </div>
@@ -150,19 +250,49 @@
         let cuitGlobal = null;
         let entidadGlobal = {};
 
+        function hoyAR() {
+            const d = new Date();
+            const p = n => String(n).padStart(2, '0');
+            return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear();
+        }
+
+        function fechaAR(valor) {
+            const s = String(valor || '').trim();
+            if (!s) return '';
+            let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m) return m[3] + '/' + m[2] + '/' + m[1];
+            m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+            if (m) return m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') + '/' + m[3];
+            return s;
+        }
+
+        function fechaISO(valor) {
+            const s = String(valor || '').trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            const partes = s.split(/[\/\-\.\s]+/).filter(Boolean);
+            if (partes.length < 2 || partes.length > 3) return s;
+            let d = parseInt(partes[0], 10);
+            let m = parseInt(partes[1], 10);
+            let y = partes.length === 3 ? parseInt(partes[2], 10) : new Date().getFullYear();
+            if (y < 100) y += y >= 50 ? 1900 : 2000;
+            if (!(d >= 1 && d <= 31 && m >= 1 && m <= 12)) return s;
+            const p = n => String(n).padStart(2, '0');
+            return y + '-' + p(m) + '-' + p(d);
+        }
+
         async function inicializar() {
             const urlParams = new URLSearchParams(window.location.search);
             let rawCuit = urlParams.get('cuit');
             
             if (!rawCuit) {
-                alert("⚠️ No se especificó ninguna entidad.");
+                alert("No se especificó ninguna entidad.");
                 window.location.href = 'cuentacorriente.html';
                 return;
             }
 
             cuitGlobal = String(rawCuit).replace(/\D/g, '') || String(rawCuit).trim();
             document.getElementById('btnIrOP').href = `ordenes_pago.html?cuit=${encodeURIComponent(cuitGlobal)}`;
-            document.getElementById('debitoFecha').value = new Date().toISOString().split('T')[0];
+            document.getElementById('debitoFecha').value = hoyAR();
 
             try {
                 const res = await fetch(`/api/cuentas_corrientes/${encodeURIComponent(cuitGlobal)}`);
@@ -199,7 +329,7 @@
                         let colorRen = saldoRen > 0.01 ? "text-danger" : (saldoRen < -0.01 ? "text-primary" : "text-muted");
                         html += `
                             <tr>
-                                <td class="text-center">${m.fecha || ''}</td>
+                                <td class="text-center">${fechaAR(m.fecha)}</td>
                                 <td class="fw-bold">${nombreProv}</td>
                                 <td>${m.tipo_comprobante || 'Factura'} ${m.numero_comprobante ? '- ' + m.numero_comprobante : ''} ${m.estado === 'Pendiente' ? '<span class="badge bg-warning text-dark ms-1">Pendiente</span>' : ''}</td>
                                 <td>${m.forma_pago || '-'}</td>
@@ -207,31 +337,36 @@
                                 <td class="text-end text-danger fw-bold">${debe > 0 ? '$ ' + debe.toLocaleString('es-AR', {minimumFractionDigits: 2}) : ''}</td>
                                 <td class="text-end text-success fw-bold">${haber > 0 ? '$ ' + haber.toLocaleString('es-AR', {minimumFractionDigits: 2}) : ''}</td>
                                 <td class="text-end fw-bold ${colorRen}">$ ${saldoRen.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-                                <td class="text-center">
-                                    <button class="btn btn-danger btn-sm py-0 px-2" style="font-size:11px;" onclick="eliminarMov(${m.id})">Eliminar</button>
+                                <td class="font-sans">
+                                    <div class="d-flex align-items-center justify-content-between gap-2 px-1">
+                                        <button type="button" class="btn btn-outline-dark btn-sm py-0 px-2" style="font-size:11px;" onclick="verOrigen(${m.id})">Ver</button>
+                                        <button type="button" class="btn btn-link text-danger text-decoration-none p-0 lh-1" style="font-size:1.35rem;line-height:1;min-width:1.5rem;" title="Eliminar movimiento" aria-label="Eliminar" onclick="eliminarMov(${m.id})">&times;</button>
+                                    </div>
                                 </td>
                             </tr>
                         `;
                     });
                     tbody.innerHTML = html;
+                    const sc = document.getElementById('scrollMovimientos');
+                    if (sc) sc.scrollTop = sc.scrollHeight;
                 }
 
             } catch (e) {
                 console.error("Error al cargar detalle:", e);
-                document.getElementById('tablaMovimientos').innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger font-sans">⚠️ Error al cargar los datos. Verifique la conexión con el servidor.</td></tr>`;
+                document.getElementById('tablaMovimientos').innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger font-sans">Error al cargar los datos. Verifique la conexión con el servidor.</td></tr>`;
             }
         }
 
         function calcularTotalModal() {
-            let neto = parseFloat(document.getElementById('debitoNeto').value) || 0;
+            let neto = CampoMoney.parse(document.getElementById('debitoNeto').value);
             let alicuota = parseFloat(document.getElementById('debitoAlicuotaIva').value) || 0;
-            let perc = parseFloat(document.getElementById('debitoPerc').value) || 0;
+            let perc = CampoMoney.parse(document.getElementById('debitoPerc').value);
 
             let iva = neto * alicuota;
             let total = neto + iva + perc;
 
-            document.getElementById('debitoIva').value = iva.toFixed(2);
-            document.getElementById('debitoTotal').value = total.toFixed(2);
+            document.getElementById('debitoIva').value = CampoMoney.format(iva);
+            document.getElementById('debitoTotal').value = CampoMoney.format(total);
         }
 
         function actualizarBadgeCentro(centro) {
@@ -240,10 +375,10 @@
             const badge = document.getElementById('badgeCentroCosto');
             if (esSP) {
                 badge.className = 'badge bg-warning text-dark ms-2';
-                badge.innerText = 'S/P · sin asiento oficial';
+                badge.innerText = 'S/P - sin asiento oficial';
             } else {
                 badge.className = 'badge bg-secondary ms-2';
-                badge.innerText = 'Centro 1 · oficial';
+                badge.innerText = 'Centro 1 - oficial';
             }
         }
 
@@ -258,7 +393,7 @@
                 const ban = document.getElementById('bannerAjuste');
                 if (ban) ban.classList.toggle('d-none', !esAjuste);
                 if (entidadGlobal) entidadGlobal.es_cuenta_ajuste = esAjuste;
-                alert(esAjuste ? "✅ Cuenta marcada como Ajuste/Banco. Ya no aparecerá en el listado de proveedores." : "✅ Cuenta desmarcada. Volverá a aparecer en el listado.");
+                alert(esAjuste ? "Cuenta marcada como Ajuste/Banco. Ya no aparecerá en el listado de proveedores." : "Cuenta desmarcada. Volverá a aparecer en el listado.");
             } catch (e) {
                 console.error("Error al actualizar ajuste:", e);
             }
@@ -275,8 +410,8 @@
                 const data = await res.json();
                 actualizarBadgeCentro(data.centro_costo || centro);
                 alert(data.message || (centro === 'SP'
-                    ? '✅ Centro S/P: cta cte operativa, sin asiento en contabilidad oficial.'
-                    : '✅ Centro 1: vuelve a generar asientos oficiales.'));
+                    ? 'Centro S/P: cta cte operativa, sin asiento en contabilidad oficial.'
+                    : 'Centro 1: vuelve a generar asientos oficiales.'));
             } catch (e) {
                 console.error("Error al actualizar centro de costos:", e);
                 alert('No se pudo actualizar el centro de costos.');
@@ -287,20 +422,232 @@
             new bootstrap.Modal(document.getElementById('modalAgregarDebito')).show();
         }
 
+        function abrirModalAjuste() {
+            document.getElementById('ajusteFecha').value = hoyAR();
+            new bootstrap.Modal(document.getElementById('modalAjuste')).show();
+        }
+
+        async function guardarAjuste(event) {
+            event.preventDefault();
+            const fecha = fechaISO(document.getElementById('ajusteFecha').value);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return alert('La fecha tiene que ser dd/mm/aaaa.');
+            const importe = CampoMoney.parse(document.getElementById('ajusteImporte').value);
+            const concepto = document.getElementById('ajusteConcepto').value.trim();
+            if (importe <= 0) return alert('Ingresá un importe mayor a cero.');
+            if (!concepto) return alert('Indicá el motivo del ajuste.');
+            const res = await fetch('/api/cuentas_corrientes/ajuste', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    cuit: cuitGlobal,
+                    sentido: document.getElementById('ajusteSentido').value,
+                    importe: importe,
+                    fecha: fecha,
+                    concepto: concepto,
+                    usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar'
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.detail || 'No se pudo guardar el ajuste');
+                return;
+            }
+            bootstrap.Modal.getInstance(document.getElementById('modalAjuste')).hide();
+            document.getElementById('formAjuste').reset();
+            inicializar();
+        }
+
+        function lineaOrigen(etiqueta, valor) {
+            if (!valor) return '';
+            return `<div class="mb-1"><span class="text-muted">${etiqueta}:</span> <span class="fw-semibold">${escHtml(valor)}</span></div>`;
+        }
+
+        function escHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function verOrigen(id) {
+            const res = await fetch('/api/cc/movimiento/' + id);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.detail || 'No se pudo leer el movimiento');
+                return;
+            }
+            const m = data.movimiento || {};
+            const money = n => '$ ' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 2});
+            let vinculos = (data.vinculos || []).map(v => `
+                <li class="mb-2">
+                    <div class="fw-bold">${escHtml(v.clase)}</div>
+                    <div>${escHtml(v.detalle)}</div>
+                    ${v.extra ? `<div class="text-muted small">${escHtml(v.extra)}</div>` : ''}
+                </li>
+            `).join('');
+            if (!vinculos) {
+                vinculos = '<li class="text-muted">No hay otro comprobante vinculado. El origen es el propio renglón de la cuenta corriente.</li>';
+            }
+            document.getElementById('origenTitulo').textContent = data.titulo || 'Origen del movimiento';
+            document.getElementById('origenCuerpo').innerHTML = `
+                <p class="mb-3">${escHtml(data.resumen || '')}</p>
+                ${lineaOrigen('Fecha', fechaAR(m.fecha))}
+                ${lineaOrigen('Comprobante', [m.tipo_comprobante, m.numero_comprobante].filter(Boolean).join(' '))}
+                ${lineaOrigen('Forma de pago', m.forma_pago)}
+                ${lineaOrigen('Cheque', m.nro_cheque)}
+                ${lineaOrigen('Debe', m.debe ? money(m.debe) : '')}
+                ${lineaOrigen('Haber', m.haber ? money(m.haber) : '')}
+                ${lineaOrigen('Neto / IVA', (m.neto || m.iva) ? (money(m.neto) + ' / ' + money(m.iva)) : '')}
+                ${lineaOrigen('Estado', m.estado)}
+                ${lineaOrigen('Registró', m.usuario_registro)}
+                ${lineaOrigen('Motivo', m.observaciones)}
+                ${m.id_access ? lineaOrigen('Id histórico', m.id_access) : ''}
+                <hr>
+                <div class="fw-bold mb-2">Qué lo generó</div>
+                <ul class="mb-0 ps-3">${vinculos}</ul>
+            `;
+            const tipoUp = String(m.tipo_comprobante || '').toUpperCase();
+            const esRet = tipoUp.includes('RETEN') || tipoUp.includes('PERCEP');
+            window._certOrigen = esRet ? { ccId: m.id, nro: m.numero_comprobante || '' } : null;
+            const foot = document.getElementById('origenFooter');
+            if (foot) foot.style.display = esRet ? 'flex' : 'none';
+            new bootstrap.Modal(document.getElementById('modalOrigen')).show();
+        }
+
+        function moneyFmt(n) {
+            return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function htmlCertificado(c) {
+            const tipo = String(c.tipo_retencion || '').toUpperCase();
+            const esIibb = tipo.includes('IIBB') || tipo.includes('ARBA') || tipo.includes('PERCEP');
+            const esPerc = tipo.includes('PERCEP');
+            const titulo = esIibb
+                ? 'ARBA - AGENCIA DE RECAUDACIÓN PROV. BS. AS.'
+                : 'SI.CO.RE. - Sistema de Control de Retenciones';
+            const sub = esPerc
+ ? 'Certificado de Percepción de Ingresos Brutos / padrón ARBA'
+                : (esIibb
+ ? 'Certificado de Retención de IIBB · Disp. Normativa Serie B Nº 1/04 y mods.'
+                    : 'Normativa AFIP / RG 830 - Régimen de Ganancias');
+            const fecha = fechaAR(c.fecha);
+            const ag = c.agente || {};
+            const sj = c.sujeto || {};
+            const rolAgente = esPerc ? 'percepción' : 'retención';
+            const rolSujeto = esPerc ? 'percibido' : 'retenido';
+            return `
+                <div class="certificado-container bg-white">
+                    <div class="cert-header d-flex justify-content-between align-items-start">
+                        <div>
+                            <h4 class="fw-bold mb-1">${escHtml(titulo)}</h4>
+                            <p class="text-muted mb-0 small">${escHtml(sub)}</p>
+                        </div>
+                        <div class="text-end">
+                            <span class="d-block fw-bold">Certificado Nº: ${escHtml(c.nro_comprobante || '')}</span>
+                            <span class="text-muted small">Fecha: ${escHtml(fecha)}</span>
+                        </div>
+                    </div>
+                    <div class="cert-section-title">A. - Agente de ${escHtml(rolAgente)}</div>
+                    <div class="row small mb-2">
+                        <div class="col-8">Denominación: <strong>${escHtml(ag.razon_social || '')}</strong></div>
+                        <div class="col-4">C.U.I.T. N°: <strong>${escHtml(ag.cuit || '')}</strong></div>
+                        <div class="col-8">Domicilio: <strong>${escHtml(ag.domicilio || 'S/D')}</strong></div>
+                        <div class="col-4">Localidad: <strong>${escHtml(ag.localidad || '')}</strong></div>
+                    </div>
+                    <div class="cert-section-title">B. - Sujeto ${escHtml(rolSujeto)}</div>
+                    <div class="row small mb-2">
+                        <div class="col-8">Denominación: <strong>${escHtml(sj.razon_social || '')}</strong></div>
+                        <div class="col-4">C.U.I.T. N°: <strong>${escHtml(sj.cuit || '')}</strong></div>
+                        <div class="col-8">Domicilio: <strong>${escHtml(sj.domicilio || 'S/D')}</strong></div>
+                        <div class="col-4">Localidad: <strong>${escHtml(sj.localidad || 'S/D')}</strong></div>
+                    </div>
+                    <div class="cert-section-title">C. - Determinación</div>
+                    <table class="table table-bordered text-center font-monospace mb-0" style="font-size:12px;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Base imponible</th>
+                                <th>Régimen / Alícuota</th>
+                                <th>Importe ${esPerc ? 'percibido' : 'retenido'}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="fw-bold">${moneyFmt(c.base_imponible)}</td>
+                                <td class="fw-bold">${escHtml(
+                                    (c.alicuota_pct != null && c.alicuota_pct !== undefined)
+                                        ? ((c.regimen && String(c.regimen).includes('%'))
+                                            ? c.regimen
+                                            : ((c.regimen ? c.regimen + ' ' : '') + Number(c.alicuota_pct).toFixed(2) + '%'))
+                                        : (c.regimen || '—')
+                                )}</td>
+                                <td class="fw-bold text-danger fs-6">${moneyFmt(c.importe_retenido)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="small text-muted mt-3 mb-0" style="font-size:10px;">
+                        Documento emitido conforme al padrón ARBA / normativa vigente. El sujeto podrá computar el importe en su liquidación de IIBB.
+                    </p>
+                </div>`;
+        }
+
+        async function imprimirCertificadoDesdeOrigen() {
+            const ref = window._certOrigen;
+            if (!ref) return alert('Este movimiento no es una retención.');
+            const qs = ref.nro
+                ? ('nro=' + encodeURIComponent(ref.nro))
+                : ('cc_id=' + encodeURIComponent(ref.ccId));
+            const res = await fetch('/api/retenciones/certificado?' + qs);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(data.detail || 'No se pudo cargar el certificado');
+            document.getElementById('areaImpresionCertDetalle').innerHTML = htmlCertificado(data);
+            const origen = bootstrap.Modal.getInstance(document.getElementById('modalOrigen'));
+            if (origen) origen.hide();
+            const modal = new bootstrap.Modal(document.getElementById('modalCertDetalle'));
+            modal.show();
+            setTimeout(() => window.print(), 400);
+        }
+
+        function onCambioDebitoTipo() {
+            const t = (document.getElementById('debitoTipo').value || '').toUpperCase();
+            const esNc = t.includes('NOTA DE CRÉDITO') || t.includes('NOTA DE CREDITO');
+            const hint = document.getElementById('debitoTipoHint');
+            if (hint) {
+                hint.textContent = esNc
+                    ? 'Nota de Crédito: se registra en HABER y baja el saldo a pagar.'
+                    : 'Factura / ND > DEBE (cargo). NC > HABER (baja saldo).';
+                hint.className = 'form-text' + (esNc ? ' text-warning-emphasis fw-semibold' : '');
+            }
+            const totLbl = document.querySelector('label[for="debitoTotal"]') || document.getElementById('debitoTotal')?.previousElementSibling;
+            // label above debitoTotal
+            const labels = document.querySelectorAll('#formDebito .form-label');
+            labels.forEach(l => {
+                if ((l.textContent || '').includes('Importe Total')) {
+                    l.textContent = esNc ? 'Importe Total NC ($)*' : 'Importe Total Factura ($)*';
+                }
+            });
+        }
+
         async function guardarFactura(event) {
             event.preventDefault();
-            let neto = parseFloat(document.getElementById('debitoNeto').value) || 0;
-            let total = parseFloat(document.getElementById('debitoTotal').value) || 0;
-            let iva = parseFloat(document.getElementById('debitoIva').value) || 0;
+            let neto = CampoMoney.parse(document.getElementById('debitoNeto').value);
+            let total = CampoMoney.parse(document.getElementById('debitoTotal').value);
+            let iva = CampoMoney.parse(document.getElementById('debitoIva').value);
+            const tipo = document.getElementById('debitoTipo').value;
+            const esNc = /nota de cr[eé]dito/i.test(tipo);
 
-            if (neto <= 0 || total <= 0) return alert("⚠️ Ingrese un importe válido.");
+            const fechaFactura = fechaISO(document.getElementById('debitoFecha').value);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaFactura)) return alert("La fecha tiene que ser dd/mm/aaaa.");
+            if (neto <= 0 || total <= 0) return alert("Ingrese un importe válido.");
+            // Vto automático +30 días (igual que Ingreso de Facturas)
+            const [yy, mm, dd] = fechaFactura.split('-').map(Number);
+            const vtoDt = new Date(yy, mm - 1, dd);
+            vtoDt.setDate(vtoDt.getDate() + 30);
+            const pad = n => String(n).padStart(2, '0');
+            const vencimientoFactura = `${vtoDt.getFullYear()}-${pad(vtoDt.getMonth() + 1)}-${pad(vtoDt.getDate())}`;
 
             let payload = {
                 cuit: cuitGlobal,
-                tipo_comprobante: document.getElementById('debitoTipo').value,
+                tipo_comprobante: tipo,
                 numero_comprobante: document.getElementById('debitoNro').value,
-                fecha: document.getElementById('debitoFecha').value,
-                vencimiento: document.getElementById('debitoFecha').value,
+                fecha: fechaFactura,
+                vencimiento: vencimientoFactura,
                 neto: neto,
                 iva: iva,
                 total: total,
@@ -313,20 +660,30 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                if (!res.ok) throw new Error("Error al guardar factura");
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.detail || "Error al guardar");
                 
                 bootstrap.Modal.getInstance(document.getElementById('modalAgregarDebito')).hide();
-                alert("✅ Factura registrada e impactada contablemente con éxito.");
+                alert(esNc
+                    ? "Nota de Crédito registrada (baja el saldo a pagar)."
+                    : "Factura registrada e impactada con éxito.");
                 inicializar();
             } catch (e) {
-                alert("🚨 Error: " + e.message);
+                alert("Error: " + e.message);
             }
         }
 
         async function eliminarMov(id) {
-            if (!confirm("¿Eliminar movimiento?")) return;
-            await fetch(`/api/cuentas_corrientes/${id}`, { method: 'DELETE' });
-            inicializar();
+            if (!confirm("¿Eliminar este movimiento de la cuenta corriente?\n\nSolo se borra esta línea. Si hay retención u OP del mismo día, quedan intactas (son movimientos independientes).")) return;
+            try {
+                const res = await fetch(`/api/cuentas_corrientes/${id}`, { method: 'DELETE' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.detail || data.message || 'No se pudo eliminar');
+                alert(data.message || 'Movimiento eliminado.');
+                inicializar();
+            } catch (e) {
+                alert('Error al eliminar: ' + e.message);
+            }
         }
 
         window.onload = inicializar;

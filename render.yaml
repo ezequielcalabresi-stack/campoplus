@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: campo-plus
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: CAMPO_DATA_DIR
+        value: /var/data
+    disk:
+      name: campo-datos
+      mountPath: /var/data
+      sizeGB: 10

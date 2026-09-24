@@ -15,7 +15,8 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOGOS_DIR = os.path.join(BASE_DIR, "logos")
+_DATA_DIR = os.environ.get("CAMPO_DATA_DIR", "").strip()
+LOGOS_DIR = os.path.join(_DATA_DIR, "logos") if _DATA_DIR else os.path.join(BASE_DIR, "logos")
 
 # Paquetes comerciales → módulos habilitados
 PLANES: Dict[str, Dict[str, int]] = {
@@ -299,7 +300,10 @@ def sesion_actual(get_db: Callable, request: Request) -> Optional[dict]:
     token = _token_from_request(request)
     if not token:
         return None
-    conn = get_db()
+    import main as _main
+    from plataforma import master_connect
+
+    conn = master_connect(_main.DB_PATH)
     cur = conn.cursor()
     cur.execute(
         """
@@ -371,13 +375,36 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
             raise HTTPException(401, "Usuario o contraseña incorrectos")
 
         user = dict(user)
-        empresa_id = data.empresa_id or user.get("empresa_id") or get_empresa_activa_id()
-        cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
-        emp = cur.fetchone()
+        from plataforma import abrir_base_cuenta, master_connect
+        import main as _main
+
+        cuenta_user = user.get("cuenta_id") or (None if int(user.get("es_superadmin") or 0) else 1)
+        base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
+        cur_emp = base_emp.cursor()
+        if data.empresa_id:
+            empresa_id = int(data.empresa_id)
+        elif user.get("empresa_id"):
+            empresa_id = int(user["empresa_id"])
+        else:
+            cur_emp.execute("SELECT empresa_activa_id FROM configuracion_empresa WHERE id = 1;")
+            cfg = cur_emp.fetchone()
+            empresa_id = int(cfg["empresa_activa_id"]) if cfg and cfg["empresa_activa_id"] else None
+            if not empresa_id:
+                cur_emp.execute("SELECT id FROM empresas ORDER BY id ASC LIMIT 1;")
+                first = cur_emp.fetchone()
+                empresa_id = int(first["id"]) if first else None
+        if not empresa_id:
+            base_emp.close()
+            conn.close()
+            raise HTTPException(400, "El cliente todavía no tiene empresas cargadas")
+        cur_emp.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+        emp = cur_emp.fetchone()
         if not emp:
+            base_emp.close()
             conn.close()
             raise HTTPException(400, "Empresa no válida")
         emp = empresa_to_dict(emp)
+        base_emp.close()
 
         if not int(user.get("es_superadmin") or 0) and not emp["acceso_habilitado"]:
             conn.close()
@@ -403,11 +430,14 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
             """,
             (token, user["id"], empresa_id, ahora.isoformat(timespec="seconds"), expira, ip),
         )
-        # Activar empresa en config global (compatible con motor actual)
-        cur.execute(
+        # Activar empresa en la base de ESA cuenta (no en la de otro cliente)
+        base_emp = abrir_base_cuenta(_main.DB_PATH, int(cuenta_user) if cuenta_user else 1)
+        base_emp.execute(
             "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
             (empresa_id,),
         )
+        base_emp.commit()
+        base_emp.close()
         conn.commit()
         conn.close()
         return {
@@ -429,7 +459,10 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
     def api_logout(request: Request):
         token = _token_from_request(request)
         if token:
-            conn = get_db()
+            import main as _main
+            from plataforma import master_connect
+
+            conn = master_connect(_main.DB_PATH)
             conn.execute("DELETE FROM sesiones_usuario WHERE token = ?;", (token,))
             conn.commit()
             conn.close()
@@ -473,7 +506,8 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
                 (ses["user_empresa_id"],),
             )
         else:
-            cur.execute("SELECT * FROM empresas ORDER BY razon_social COLLATE NOCASE;")
+            conn.close()
+            raise HTTPException(401, "Tenés que iniciar sesión")
         rows = [empresa_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
@@ -579,20 +613,28 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
 
     @app.post("/api/auth/usuarios")
     def api_crear_usuario_auth(data: UsuarioAuthModel, request: Request):
+        from plataforma import exigir_cupo_usuario
+        import main as _main
+
         ses = sesion_actual(get_db, request)
         if ses and not int(ses.get("es_superadmin") or 0):
             # admin de empresa puede crear usuarios de su empresa
             if data.es_superadmin:
                 raise HTTPException(403, "No podés crear superadmin")
-        conn = get_db()
+        if not int(data.es_superadmin or 0):
+            exigir_cupo_usuario(_main.DB_PATH)
+        from plataforma import cuenta_id_actual, master_connect
+
+        conn = master_connect(_main.DB_PATH)
         cur = conn.cursor()
         login = (data.login or data.email or data.nombre).strip().lower()
         ph = _hash_password(data.password) if data.password else _hash_password("campo+")
+        cuenta_id = None if int(data.es_superadmin or 0) else (cuenta_id_actual() or 1)
         cur.execute(
             """
             INSERT INTO usuarios_sistema
-            (nombre, email, rol, activo, created_at, password_hash, empresa_id, es_superadmin, login)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            (nombre, email, rol, activo, created_at, password_hash, empresa_id, es_superadmin, login, cuenta_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 data.nombre.strip(),
@@ -604,6 +646,7 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
                 data.empresa_id,
                 int(data.es_superadmin or 0),
                 login,
+                cuenta_id,
             ),
         )
         uid = cur.lastrowid
@@ -615,7 +658,10 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
     def api_set_password(uid: int, data: PasswordModel, request: Request):
         if not data.password or len(data.password) < 4:
             raise HTTPException(400, "Password mínimo 4 caracteres")
-        conn = get_db()
+        import main as _main
+        from plataforma import master_connect
+
+        conn = master_connect(_main.DB_PATH)
         conn.execute(
             "UPDATE usuarios_sistema SET password_hash = ? WHERE id = ?;",
             (_hash_password(data.password), uid),

@@ -11,25 +11,32 @@
         .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; padding: 12px; }
         .table tbody td { padding: 12px; vertical-align: middle; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="container my-4" style="max-width: 1300px;">
         <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
             <div>
-                <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Clientes a Cobrar (Cuentas Corrientes con Saldo)</small></h4>
+                <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Clientes a Cobrar (solo es_cliente)</small></h4>
             </div>
             <div class="d-flex gap-2">
-                <a href="cuentacorriente.html" class="btn btn-outline-dark btn-sm fw-bold">📊 Ir a Proveedores a Pagar</a>
-                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">← Volver al Dashboard</a>
+                <a href="cuentacorriente.html" class="btn btn-outline-dark btn-sm fw-bold">Ir a Proveedores a Pagar</a>
+                <a href="facturas_venta.html" class="btn btn-success btn-sm fw-bold">Nueva factura de venta</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">Volver al Dashboard</a>
             </div>
         </div>
 
         <div class="main-card">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="fw-bold mb-0 text-dark">📋 Listado Exclusivo de Clientes con Saldo a Cobrar</h5>
-                <div class="input-group" style="width: 320px;">
-                    <input type="text" id="buscadorCliente" class="form-control form-control-sm" placeholder="Buscar cliente o CUIT..." onkeyup="filtrarClientes()">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <div>
+                    <h5 class="fw-bold mb-0 text-dark">Clientes con saldo a cobrar</h5>
+                    <div class="text-muted small mt-1">Solo entidades marcadas como Cliente. Escribí en el buscador para consultar el padrón de clientes.</div>
+                </div>
+                <div class="input-group" style="width: 340px;">
+                    <input type="text" id="buscadorCliente" class="form-control form-control-sm" placeholder="Buscar en padrón (nombre o CUIT)..." oninput="onBuscarCliente()">
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="limpiarBusqueda()" title="Limpiar">Limpiar</button>
                 </div>
             </div>
 
@@ -81,7 +88,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Monto Cobrado ($)</label>
-                            <input type="number" step="0.01" id="cobroMonto" class="form-control fw-bold font-monospace text-success fs-5" placeholder="0.00" required>
+                            <input type="text" id="cobroMonto" class="form-control fw-bold font-monospace text-success fs-5 money-input text-end" data-money inputmode="decimal" value="0,00" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Observaciones / Referencia</label>
@@ -100,107 +107,137 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let clientesGlobales = [];
+        let modoPadron = false;
+        let busquedaTimer = null;
+
+        function esc(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function renderFilas(lista, desdePadron) {
+            const tbody = document.getElementById('tbodyClientes');
+            if (!lista || lista.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-muted">${
+                    desdePadron
+                        ? 'No hay clientes que coincidan con la búsqueda.'
+                        : 'No hay clientes (es_cliente) con saldo a cobrar. Los proveedores van a «Proveedores a Pagar».'
+                }</td></tr>`;
+                return;
+            }
+            let html = '';
+            lista.forEach(c => {
+                const nombre = c.cliente || c.proveedor || '-';
+                const saldo = Number(c.saldo_a_cobrar != null ? c.saldo_a_cobrar : (c.saldo_neto || 0));
+                const saldoOk = saldo >= 0.01;
+                const ultima = c.ultima_operacion || c.ultima_factura || '-';
+                html += `
+                    <tr>
+                        <td class="fw-bold text-slate-800">${esc(nombre)}${desdePadron && !saldoOk ? ' <span class="badge bg-slate-200 text-slate-600">sin saldo</span>' : ''}</td>
+                        <td class="font-monospace text-muted">${esc(c.cuit)}</td>
+                        <td>${esc(ultima)}</td>
+                        <td class="text-end font-monospace fw-bold ${saldoOk ? 'text-success' : 'text-muted'}">$ ${CampoMoney.format(Math.max(0, saldo))}</td>
+                        <td class="text-center">
+                            ${saldoOk
+                                ? `<button class="btn btn-success btn-sm fw-bold px-3 py-1" style="background-color:#059669; border:none;"
+                                    onclick="abrirModalCobro('${esc(c.cuit)}', '${esc(nombre)}', ${saldo})">Registrar Cobro ?</button>`
+                                : `<span class="text-muted small"> - </span>`}
+                        </td>
+                    </tr>`;
+            });
+            tbody.innerHTML = html;
+        }
 
         async function cargarClientes() {
             try {
-                // Seteamos fecha actual en el modal
                 document.getElementById('cobroFecha').value = new Date().toISOString().split('T')[0];
-
-                const res = await fetch('/api/saldos_proveedores');
+                modoPadron = false;
+                const res = await fetch('/api/saldos_clientes');
+                if (!res.ok) throw new Error('API saldos_clientes');
                 clientesGlobales = await res.json();
-                
-                let tbody = document.getElementById('tbodyClientes');
-                if (!clientesGlobales || clientesGlobales.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-muted">No se registran clientes con saldo pendiente de cobro.</td></tr>`;
-                    return;
-                }
-
-                let html = "";
-                clientesGlobales.forEach(c => {
-                    let saldo = c.saldo_a_pagar || 0;
-                    html += `
-                        <tr>
-                            <td class="fw-bold text-slate-800">${c.proveedor}</td>
-                            <td class="font-monospace text-muted">${c.cuit}</td>
-                            <td>${c.ultima_factura || '-'}</td>
-                            <td class="text-end font-monospace fw-bold text-success">$ ${Math.abs(saldo).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-                            <td class="text-center">
-                                <button class="btn btn-success btn-sm fw-bold px-3 py-1" style="background-color:#059669; border:none;" onclick="abrirModalCobro('${c.cuit}', '${c.proveedor}', ${Math.abs(saldo)})">Registrar Cobro →</button>
-                            </td>
-                        </tr>
-                    `;
-                });
-                tbody.innerHTML = html;
+                renderFilas(clientesGlobales, false);
             } catch (e) {
                 console.error("Error al cargar clientes:", e);
-                document.getElementById('tbodyClientes').innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error al conectar con la base de datos de saldos.</td></tr>`;
+                document.getElementById('tbodyClientes').innerHTML =
+                    `<tr><td colspan="5" class="text-center py-4 text-danger">Error al conectar con saldos de clientes.</td></tr>`;
             }
         }
 
-        function filtrarClientes() {
-            let input = document.getElementById('buscadorCliente').value.toLowerCase();
-            let rows = document.querySelectorAll('#tbodyClientes tr');
-            rows.forEach(row => {
-                let text = row.innerText.toLowerCase();
-                row.style.display = text.includes(input) ? '' : 'none';
-            });
+        function onBuscarCliente() {
+            clearTimeout(busquedaTimer);
+            busquedaTimer = setTimeout(buscarEnPadron, 280);
         }
 
-        function abrirModalCobro(cuit, proveedor, saldoSugerido) {
+        function limpiarBusqueda() {
+            document.getElementById('buscadorCliente').value = '';
+            modoPadron = false;
+            renderFilas(clientesGlobales, false);
+        }
+
+        async function buscarEnPadron() {
+            const q = (document.getElementById('buscadorCliente').value || '').trim();
+            if (q.length < 2) {
+                modoPadron = false;
+                renderFilas(clientesGlobales, false);
+                return;
+            }
+            try {
+                const res = await fetch('/api/clientes/consulta?q=' + encodeURIComponent(q));
+                if (!res.ok) throw new Error('consulta clientes');
+                const data = await res.json();
+                modoPadron = true;
+                renderFilas(data, true);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function abrirModalCobro(cuit, cliente, saldoSugerido) {
             document.getElementById('cobroCuit').value = cuit;
-            document.getElementById('cobroClienteNombre').value = proveedor;
-            document.getElementById('cobroMonto').value = saldoSugerido;
-            
+            document.getElementById('cobroClienteNombre').value = cliente;
+            document.getElementById('cobroMonto').value = CampoMoney.format(saldoSugerido);
             var modal = new bootstrap.Modal(document.getElementById('modalCobro'));
             modal.show();
         }
 
         async function confirmarCobroAPI() {
-            let cuit = document.getElementById('cobroCuit').value;
-            let cliente = document.getElementById('cobroClienteNombre').value;
-            let fecha = document.getElementById('cobroFecha').value;
-            let forma = document.getElementById('cobroForma').value;
-            let monto = parseFloat(document.getElementById('cobroMonto').value);
-            let obs = document.getElementById('cobroObs').value.trim();
+            const cuit = document.getElementById('cobroCuit').value;
+            const cliente = document.getElementById('cobroClienteNombre').value;
+            const fecha = document.getElementById('cobroFecha').value;
+            const forma = document.getElementById('cobroForma').value;
+            const monto = CampoMoney.parse(document.getElementById('cobroMonto').value);
+            const obs = document.getElementById('cobroObs').value.trim();
 
             if (isNaN(monto) || monto <= 0) {
                 alert("Por favor, ingrese un monto válido de cobro.");
                 return;
             }
 
-            let payload = {
+            const payload = {
                 cuit: cuit,
                 fecha: fecha,
-                total_pagado: monto,
-                retencion_iibb: 0,
-                retencion_sicore: 0,
+                monto: monto,
                 forma_pago: forma,
                 observaciones: obs || `Recibo de cobro registrado para ${cliente}`,
                 usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar'
             };
 
             try {
-                const response = await fetch('/api/ordenes_pago', {
+                const response = await fetch('/api/cobros', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
-                const result = await response.json();
+                const result = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(result.detail || "Error al procesar el cobro.");
 
-                alert(`✅ Cobro de $ ${monto.toLocaleString('es-AR', {minimumFractionDigits: 2})} registrado con éxito para ${cliente}.`);
-
-                // Cerrar modal
-                var myModalEl = document.getElementById('modalCobro');
-                var modal = bootstrap.Modal.getInstance(myModalEl);
-                modal.hide();
-
-                // Recargar tabla de saldos
-                cargarClientes();
-
+                alert(`Cobro de $ ${CampoMoney.format(monto)} registrado (Recibo ${result.nro_recibo || ''}) para ${cliente}.`);
+                bootstrap.Modal.getInstance(document.getElementById('modalCobro')).hide();
+                document.getElementById('buscadorCliente').value = '';
+                await cargarClientes();
             } catch (err) {
-                alert("🚨 Error al guardar el cobro: " + err.message);
+                alert("Error al guardar el cobro: " + err.message);
             }
         }
 

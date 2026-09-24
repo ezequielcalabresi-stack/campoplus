@@ -6,7 +6,8 @@
     <title>CAmpo+ | Información Productiva 1 (Fina)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/campoplus-auth.js"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800">
 
@@ -14,23 +15,23 @@
     <div class="flex flex-wrap justify-between items-start gap-3 mb-4 border-b pb-4">
         <div>
             <h2 class="text-2xl font-bold">CAmpo+ <span class="text-sm font-normal text-slate-500">| Información productiva 1 (Fina)</span></h2>
-            <p id="estado" class="text-xs text-slate-500 mt-1">ARCA / AFIP — declaración de cultivos de fina (trigo, cebada, etc.).</p>
+            <p id="estado" class="text-xs text-slate-500 mt-1">ARCA / AFIP - declaración de cultivos de fina (trigo, cebada, etc.).</p>
         </div>
         <div class="flex gap-2 flex-wrap">
-            <a href="InformacionProductiva2.html" class="bg-amber-50 text-amber-900 border border-amber-200 px-3 py-2 rounded-md text-sm font-medium">→ IP2 Gruesa</a>
-            <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium">← Dashboard</a>
+            <a href="InformacionProductiva2.html" class="bg-amber-50 text-amber-900 border border-amber-200 px-3 py-2 rounded-md text-sm font-medium">-> IP2 Gruesa</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium"><- Dashboard</a>
         </div>
     </div>
 
     <div class="flex flex-wrap gap-2 mb-4 items-end text-sm">
         <div class="flex-1 min-w-[180px]">
             <label class="block text-xs font-semibold text-slate-600 mb-1">Buscar</label>
-            <input id="q" type="search" class="w-full border rounded-md p-2" placeholder="Establecimiento, lote, cultivo, partido…"
+            <input id="q" type="search" class="w-full border rounded-md p-2" placeholder="Establecimiento, lote, cultivo, partido..."
                    onkeydown="if(event.key==='Enter'){event.preventDefault();filtrar();}">
         </div>
         <button type="button" onclick="filtrar()" class="bg-purple-800 text-white px-4 py-2 rounded-lg text-sm font-bold">Filtrar</button>
         <div class="bg-purple-50 border border-purple-100 rounded-lg px-3 py-2 text-xs">
-            <span class="font-bold text-purple-900" id="lblResumen">—</span>
+            <span class="font-bold text-purple-900" id="lblResumen"> - </span>
         </div>
     </div>
 
@@ -54,7 +55,7 @@
                 </tr>
             </thead>
             <tbody id="tb" class="divide-y divide-slate-100">
-                <tr><td colspan="13" class="p-6 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colspan="13" class="p-6 text-center text-slate-400">Cargando...</td></tr>
             </tbody>
         </table>
     </div>
@@ -82,7 +83,7 @@ function render(rows){
         return;
     }
     const has = rows.reduce((a,r)=>a+Number(r.has_silo_chico||r.superficie||0),0);
-    document.getElementById('lblResumen').textContent = `${rows.length} lotes · ${fmt(has)} ha`;
+    document.getElementById('lblResumen').textContent = `${rows.length} lotes - ${fmt(has)} ha Silo Chico`;
     tb.innerHTML = rows.map(r => `
         <tr class="hover:bg-purple-50/40">
             <td class="p-2 font-mono text-xs">${esc(r.campania_codigo||'')}</td>
@@ -107,7 +108,7 @@ window.onload = async function(){
         const res = await fetch('/api/agro/arca/ip1');
         rowsAll = res.ok ? await res.json() : [];
         document.getElementById('estado').textContent =
-            `ARCA IP1 (Fina) · ${rowsAll.length} registros importados.`;
+            `ARCA IP1 (Fina) - ${rowsAll.length} registros importados.`;
         document.getElementById('estado').className = 'text-xs text-emerald-700 mt-1';
         filtrar();
     }catch(e){

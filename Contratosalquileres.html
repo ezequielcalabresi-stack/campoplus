@@ -1,34 +1,72 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CAmpo+ | Contratos de Alquiler y Aparcerías</title>
+    <title>CAmpo+ | Contratos de Alquiler y Aparceras</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/campoplus-auth.js"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
     <style>
         .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .badge-pend { background:#fef3c7; color:#92400e; }
     </style>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800">
 
 <div class="max-w-6xl mx-auto p-4 md:p-6 my-6 bg-white rounded-xl shadow-lg">
     <div class="flex flex-wrap justify-between items-start gap-3 mb-4 border-b pb-4">
         <div>
-            <h2 class="text-2xl font-bold">CAmpo+ <span class="text-sm font-normal text-slate-500">| Contratos de Alquiler y Aparcerías</span></h2>
-            <p id="estado-db" class="text-xs text-slate-500 mt-1">Alta de contrato → alimentación de planificación (campo/lote) y Estado Financiero (cuotas).</p>
+            <h2 class="text-2xl font-bold">CAmpo+ <span class="text-sm font-normal text-slate-500">| Contratos de Alquiler y Aparcer�as</span></h2>
+            <p id="estado-db" class="text-xs text-slate-500 mt-1">Alta de contrato / alimentación de planificación (campo/lote) y Estado Financiero (cuotas).</p>
         </div>
         <div class="flex gap-2 flex-wrap">
-            <button type="button" onclick="importarAlquileres()" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 rounded-md text-sm font-bold">↻ Importar Excel</button>
-            <a href="Margenesbrutos.html" class="bg-amber-50 text-amber-900 border border-amber-200 px-3 py-2 rounded-md text-sm font-medium">Márgenes / Planificación</a>
-            <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium">← Dashboard</a>
+            <button type="button" onclick="importarAlquileres()" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 rounded-md text-sm font-bold">Importar Excel</button>
+            <a href="Margenesbrutos.html" class="bg-amber-50 text-amber-900 border border-amber-200 px-3 py-2 rounded-md text-sm font-medium">Mrgenes / Planificacin</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium">Dashboard</a>
+        </div>
+    </div>
+
+    <div class="mb-5 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+            <div>
+                <h3 class="text-sm font-bold text-slate-800 tracking-wide">Tn a favor del arrendador</h3>
+                <p class="text-[11px] text-slate-500 mt-0.5">Saldo de cta cte de alquileres &middot; clic en una fila para abrir la cuenta</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-right hidden sm:block">
+                    <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold block">Total</span>
+                    <span id="lblTotalTnFavor" class="font-mono text-base font-bold text-emerald-700 tabular-nums">&mdash;</span>
+                </div>
+                <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                    <input type="checkbox" id="chkArrendCeros" class="rounded border-slate-300" onchange="cargarVisorArrendadores()">
+                    Mostrar sin saldo
+                </label>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+            <div class="p-0 min-w-0">
+                <div class="flex items-center justify-between px-4 py-2 bg-slate-50/90 border-b border-slate-100">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Oficial</span>
+                    <span id="lblTotOficial" class="font-mono text-xs font-semibold text-slate-600 tabular-nums"></span>
+                </div>
+                <div id="boxArrendadoresOficial" class="max-h-72 overflow-y-auto"></div>
+            </div>
+            <div class="p-0 min-w-0">
+                <div class="flex items-center justify-between px-4 py-2 bg-amber-50/60 border-b border-amber-100">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-800">S/P</span>
+                    <span id="lblTotSp" class="font-mono text-xs font-semibold text-amber-900/80 tabular-nums"></span>
+                </div>
+                <div id="boxArrendadoresSp" class="max-h-72 overflow-y-auto"></div>
+            </div>
         </div>
     </div>
 
     <div class="flex flex-wrap gap-2 mb-4">
         <button type="button" id="tabBtnAlta" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold bg-slate-900 text-white" onclick="verTab('alta')">Nuevo contrato</button>
+        <button type="button" id="tabBtnVentas" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700" onclick="verTab('ventas')">Alta ventas</button>
         <button type="button" id="tabBtnContratos" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700" onclick="verTab('contratos')">Contratos</button>
         <button type="button" id="tabBtnCc" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700" onclick="verTab('cc')">Cta Cte alquileres</button>
     </div>
@@ -40,15 +78,15 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                 <div class="md:col-span-2">
                     <label class="block text-xs font-semibold text-slate-600 mb-1">Propietario / Arrendador *</label>
-                    <input id="fPropietario" class="w-full border rounded-md p-2" placeholder="Ej. Familia Pérez / Alquiler Sta. Julia" oninput="actualizarCtxCrono()">
+                    <input id="fPropietario" class="w-full border rounded-md p-2" placeholder="Ej. Familia Prez / Alquiler Sta. Julia" oninput="actualizarCtxCrono()">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1">CUIT arrendador</label>
                     <input id="fCuitProp" class="w-full border rounded-md p-2 font-mono" placeholder="20123456789" title="Con CUIT se da de alta como proveedor + SICORE 032">
-                    <p class="text-[10px] text-slate-500 mt-0.5">Al guardar → proveedor / dueño inmueble · OP precarga <strong>032</strong>.</p>
+                    <p class="text-[10px] text-slate-500 mt-0.5">Al guardar: proveedor / dueño inmueble / OP precarga <strong>032</strong>.</p>
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">Campaña</label>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Campaa</label>
                     <input id="fCampania" class="w-full border rounded-md p-2 font-mono" placeholder="2526" list="dlCampanias">
                     <datalist id="dlCampanias"></datalist>
                 </div>
@@ -57,11 +95,11 @@
                     <input id="fCampo" class="w-full border rounded-md p-2" placeholder="Ej. Campo Sta. Julia" oninput="actualizarCtxCrono()">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">Hectáreas afectadas *</label>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Hectreas afectadas *</label>
                     <input type="number" step="0.01" id="fHas" class="w-full border rounded-md p-2 text-right font-mono font-bold" value="0" oninput="recalcKilos(); actualizarCtxCrono()">
                 </div>
                 <div class="md:col-span-2">
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">Ubicación (ref. / domicilio rural)</label>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Ubicacin (ref. / domicilio rural)</label>
                     <input id="fUbicacion" class="w-full border rounded-md p-2" placeholder="Ruta / paraje / referencia">
                 </div>
                 <div>
@@ -94,22 +132,22 @@
                     <label class="block text-xs font-semibold text-slate-600 mb-1">Rubro</label>
                     <select id="fRubro" class="w-full border rounded-md p-2 bg-white">
                         <option value="agricultura">Agricultura (grano)</option>
-                        <option value="ganaderia">Ganadería</option>
+                        <option value="ganaderia">Ganadera</option>
                         <option value="mixto">Mixto</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1">Modalidad operativa</label>
                     <select id="fModalidad" class="w-full border rounded-md p-2 bg-white" onchange="onModalidad()">
-                        <option value="Alquiler Kgs">Kilos fijos por hectárea</option>
-                        <option value="Aparceria">Aparcería (%)</option>
+                        <option value="Alquiler Kgs">Kilos fijos por hectrea</option>
+                        <option value="Aparceria">Aparcera (%)</option>
                         <option value="Alquiler Moneda">Alquiler en moneda</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1">Grano con el que se paga *</label>
                     <select id="fGrano" class="w-full border rounded-md p-2 bg-white font-semibold" onchange="actualizarCtxCrono()">
-                        <option value="">— Elegir grano —</option>
+                        <option value=""> Elegir grano </option>
                     </select>
                 </div>
                 <div id="boxKgHa">
@@ -117,7 +155,7 @@
                     <input type="number" step="0.01" id="fKgHa" class="w-full border rounded-md p-2 text-right font-mono" value="80" oninput="recalcKilos()">
                 </div>
                 <div id="boxPct" style="display:none;">
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">% aparcería</label>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">% aparcera</label>
                     <input type="number" step="0.01" id="fPct" class="w-full border rounded-md p-2 text-right font-mono" value="0">
                 </div>
                 <div>
@@ -134,7 +172,7 @@
                     <input type="number" min="1" max="24" id="fCantCuotas" class="w-full border rounded-md p-2 text-right font-mono" value="4">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">1ª cuota (vencimiento)</label>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">1 cuota (vencimiento)</label>
                     <input type="date" id="fPrimeraCuota" class="w-full border rounded-md p-2">
                 </div>
                 <div>
@@ -147,11 +185,11 @@
                 </div>
                 <div class="md:col-span-3">
                     <label class="block text-xs font-semibold text-slate-600 mb-1">Observaciones</label>
-                    <textarea id="fObs" rows="2" class="w-full border rounded-md p-2" placeholder="Notas del contrato…"></textarea>
+                    <textarea id="fObs" rows="2" class="w-full border rounded-md p-2" placeholder="Notas del contrato"></textarea>
                 </div>
                 <div class="md:col-span-3">
                     <button type="button" onclick="generarCuotas(true)" class="w-full md:w-auto bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-700">
-                        Generar cuotas automáticas
+                        Generar cuotas automticas
                     </button>
                 </div>
             </div>
@@ -160,8 +198,8 @@
         <div class="border border-slate-300 rounded-xl overflow-hidden mb-4">
             <div class="bg-slate-800 text-white px-4 py-2.5 flex flex-wrap justify-between gap-2 items-center">
                 <div>
-                    <h3 class="text-sm font-bold uppercase tracking-wide">Cronograma de cuotas → Estado Financiero</h3>
-                    <p id="ctxCrono" class="text-[11px] text-slate-300 mt-0.5">Completá campo, propietario y grano para identificar cada cuota.</p>
+                    <h3 class="text-sm font-bold uppercase tracking-wide">Cronograma de cuotas / Estado Financiero</h3>
+                    <p id="ctxCrono" class="text-[11px] text-slate-300 mt-0.5">Complet� campo, propietario y grano para identificar cada cuota.</p>
                 </div>
             </div>
             <div class="overflow-x-auto">
@@ -173,12 +211,12 @@
                             <th class="p-2 text-left">Vencimiento</th>
                             <th class="p-2 text-left">Grano</th>
                             <th class="p-2 text-right">Kilos asignados</th>
-                            <th class="p-2 text-right">Valuación $</th>
+                            <th class="p-2 text-right">Valuacin $</th>
                             <th class="p-2 text-center">Estado</th>
                         </tr>
                     </thead>
                     <tbody id="tbCuotas">
-                        <tr><td colspan="7" class="p-6 text-center text-slate-400">Generá el cronograma con el botón de arriba.</td></tr>
+                        <tr><td colspan="7" class="p-6 text-center text-slate-400">Gener el cronograma con el botn de arriba.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -196,14 +234,14 @@
     <div id="panelContratos" style="display:none;">
         <div class="flex flex-wrap gap-2 mb-3 items-end">
             <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Campaña</label>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Campaa</label>
                 <select id="filtroCampania" class="rounded border p-2 text-sm bg-white min-w-[120px]" onchange="recargar()">
                     <option value="">Todas</option>
                 </select>
             </div>
             <div class="flex-1 min-w-[180px]">
                 <label class="block text-xs font-semibold text-slate-600 mb-1">Buscar</label>
-                <input id="filtroQ" type="search" class="w-full rounded border p-2 text-sm" placeholder="Campo, propietario, grano…" onkeydown="if(event.key==='Enter'){event.preventDefault();recargar();}">
+                <input id="filtroQ" type="search" class="w-full rounded border p-2 text-sm" placeholder="Arrendador, campo, grano" oninput="onBuscarContratos()" onkeydown="if(event.key==='Enter'){event.preventDefault();recargar();}">
             </div>
             <button type="button" onclick="recargar()" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold">Buscar</button>
         </div>
@@ -211,10 +249,10 @@
             <table class="w-full text-sm">
                 <thead>
                     <tr class="bg-slate-100 text-xs uppercase text-slate-600">
-                        <th class="p-2 text-left">Campaña</th>
+                        <th class="p-2 text-left">Campaa</th>
                         <th class="p-2 text-left">Campo</th>
-                        <th class="p-2 text-left">Propietario</th>
-                        <th class="p-2 text-left">Ubicación</th>
+                        <th class="p-2 text-left">Arrendador</th>
+                        <th class="p-2 text-left">Ubicacin</th>
                         <th class="p-2 text-left">Grano pago</th>
                         <th class="p-2 text-right">Has</th>
                         <th class="p-2 text-right">Kg pactados</th>
@@ -222,30 +260,141 @@
                         <th class="p-2 text-center">Acciones</th>
                     </tr>
                 </thead>
-                <tbody id="tbContratos"><tr><td colspan="9" class="p-4 text-center text-slate-400">Cargando…</td></tr></tbody>
+                <tbody id="tbContratos"><tr><td colspan="9" class="p-4 text-center text-slate-400">Cargando</td></tr></tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- TAB ALTA VENTAS -->
+    <div id="panelVentas" style="display:none;">
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div class="lg:col-span-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <h3 class="text-sm font-bold uppercase text-slate-700 mb-3">Alta de ventas (entrega contra saldo del arrendador)</h3>
+                <p class="text-xs text-slate-500 mb-3">DEBE = tn vendidas  el saldo disponible es HABER (pactado) - DEBE (entregado).</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Locador / Arrendador *</label>
+                        <input id="vLocador" list="dlLocadoresVenta" class="w-full border rounded-md p-2" placeholder="Ej. ALBIOM S.A (S/P)" onchange="onVentaFiltro()" oninput="onVentaFiltroDebounced()">
+                        <datalist id="dlLocadoresVenta"></datalist>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Campaa *</label>
+                        <input id="vCampania" list="dlCampanias" class="w-full border rounded-md p-2 font-mono" placeholder="25-26" onchange="onVentaFiltro()" oninput="onVentaFiltroDebounced()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Grano *</label>
+                        <select id="vGrano" class="w-full border rounded-md p-2" onchange="onVentaFiltro()">
+                            <option value="SOJA">SOJA</option>
+                            <option value="MAIZ">MAZ</option>
+                            <option value="TRIGO">TRIGO</option>
+                            <option value="GIRASOL">GIRASOL</option>
+                            <option value="SORGO">SORGO</option>
+                            <option value="CEBADA">CEBADA</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha pizarra</label>
+                        <input type="date" id="vFechaPizarra" class="w-full border rounded-md p-2" onchange="recalcFechaPago()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Precio pizarra ($/tn)</label>
+                        <input id="vPrecio" class="w-full border rounded-md p-2 text-right font-mono" value="0,00" onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this); recalcTotalVenta()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Das de pago</label>
+                        <input type="number" id="vDiasPago" class="w-full border rounded-md p-2 text-right font-mono" value="12" oninput="recalcFechaPago()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha pago</label>
+                        <input type="date" id="vFechaPago" class="w-full border rounded-md p-2">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Tn vendidas *</label>
+                        <input type="number" step="0.01" id="vTns" class="w-full border rounded-md p-2 text-right font-mono font-bold" value="0" oninput="recalcTotalVenta()">
+                        <p id="vSaldoHint" class="text-[10px] text-slate-500 mt-0.5">Saldo disponible: </p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Total vta $</label>
+                        <input id="vTotal" class="w-full border rounded-md p-2 text-right font-mono font-bold bg-white" readonly value="0,00">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Actividad de gestin</label>
+                        <select id="vActividad" class="w-full border rounded-md p-2 bg-white" onchange="cargarCuentasVenta()"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Cuenta (alquiler / egreso)</label>
+                        <select id="vCuenta" class="w-full border rounded-md p-2 bg-white" onchange="armarDetalleGestion()"></select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Detalle de gestin</label>
+                        <input id="vDetalle" class="w-full border rounded-md p-2" value="Venta" oninput="this.dataset.tocado='1'">
+                        <p class="text-[10px] text-slate-500 mt-0.5">Primero las cuentas de alquiler. Ej. Administracin - Alquiler Albiom (egreso).</p>
+                    </div>
+                    <div class="md:col-span-2 flex flex-wrap items-center gap-3 pt-1">
+                        <label class="inline-flex items-center gap-2 text-xs text-slate-600">
+                            <input type="checkbox" id="vForzar" class="rounded border-slate-300">
+                            Forzar si supera saldo
+                        </label>
+                        <button type="button" onclick="guardarVenta()" class="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">
+                            Ingresar venta
+                        </button>
+                    </div>
+                </div>
+                <p id="vEstado" class="text-xs text-slate-500 mt-3"></p>
+            </div>
+            <div class="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-4">
+                <h3 class="text-sm font-bold uppercase text-slate-700 mb-2">Saldos disponibles</h3>
+                <p class="text-[11px] text-slate-500 mb-2">Clic en una fila para cargar locador / campaa / grano.</p>
+                <div class="overflow-x-auto border rounded-lg max-h-[420px] overflow-y-auto">
+                    <table class="w-full text-xs">
+                        <thead class="sticky top-0 bg-slate-100">
+                            <tr class="text-slate-600 uppercase">
+                                <th class="p-2 text-left">Locador</th>
+                                <th class="p-2 text-left">Campaa</th>
+                                <th class="p-2 text-left">Grano</th>
+                                <th class="p-2 text-right">Saldo tn</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbSaldosVenta">
+                            <tr><td colspan="4" class="p-3 text-center text-slate-400">Eleg locador / campaa o mir todos los saldos.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- TAB CC -->
     <div id="panelCc" style="display:none;">
-        <p class="text-xs text-slate-500 mb-2">Movimientos de Alquileres Cta Cte (DEBE = entregas · HABER = tn pactadas).</p>
-        <div class="overflow-x-auto border rounded-lg">
+        <div class="flex flex-wrap gap-3 items-end mb-3">
+            <div class="min-w-[240px] flex-1">
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Arrendador</label>
+                <input id="ccLocador" list="dlLocadoresCc" class="w-full border rounded-md p-2 text-sm" placeholder="Eleg un arrendador" onchange="onCcLocador()">
+                <datalist id="dlLocadoresCc"></datalist>
+            </div>
+            <div class="p-2 bg-white border rounded text-right min-w-[140px]">
+                <span class="text-[10px] font-bold text-slate-500 block">SALDO TN</span>
+                <span id="ccSaldoLbl" class="font-mono font-bold text-lg"></span>
+            </div>
+        </div>
+        <div id="ccCampanias" class="flex flex-wrap gap-2 mb-3"></div>
+        <p class="text-xs text-slate-500 mb-2">Al elegir arrendador se abre la campaa con saldo a pagar. DEBE = entregas  HABER = tn pactadas.</p>
+        <div id="scrollCc" class="overflow-x-auto border rounded-lg" style="max-height:520px;overflow-y:auto;">
             <table class="w-full text-sm">
-                <thead>
-                    <tr class="bg-slate-100 text-xs uppercase text-slate-600">
-                        <th class="p-2 text-left">Campaña</th>
+                <thead class="sticky top-0 bg-slate-800 text-white">
+                    <tr class="text-xs uppercase">
                         <th class="p-2 text-left">Fecha</th>
-                        <th class="p-2 text-left">Locador</th>
+                        <th class="p-2 text-left">Campaa</th>
                         <th class="p-2 text-left">Grano</th>
-                        <th class="p-2 text-right">DEBE</th>
-                        <th class="p-2 text-right">HABER</th>
+                        <th class="p-2 text-right">Debe tn</th>
+                        <th class="p-2 text-right">Haber tn</th>
+                        <th class="p-2 text-right">Saldo tn</th>
                         <th class="p-2 text-right">$/tn</th>
                         <th class="p-2 text-right">Importe $</th>
                         <th class="p-2 text-left">Detalle</th>
                     </tr>
                 </thead>
-                <tbody id="tbCc"><tr><td colspan="9" class="p-4 text-center text-slate-400">Cargando…</td></tr></tbody>
+                <tbody id="tbCc"><tr><td colspan="9" class="p-4 text-center text-slate-400">Eleg un arrendador.</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -259,7 +408,7 @@
                 <h3 class="text-lg font-bold" id="modalTitulo">Contrato</h3>
                 <p class="text-xs text-slate-500" id="modalSub"></p>
             </div>
-            <button type="button" class="text-slate-500 text-xl font-bold" onclick="cerrarModal()">×</button>
+            <button type="button" class="text-slate-500 text-xl font-bold" onclick="cerrarModal()"></button>
         </div>
         <div id="modalBody" class="text-sm space-y-2"></div>
         <div class="mt-4 overflow-x-auto border rounded-lg max-h-56 overflow-y-auto">
@@ -268,8 +417,12 @@
                 <tbody id="tbModalCuotas"></tbody>
             </table>
         </div>
-        <div class="flex justify-end mt-4">
-            <button type="button" onclick="cerrarModal()" class="px-4 py-2 border rounded-lg text-sm">Cerrar</button>
+        <div class="flex justify-between mt-4 gap-2">
+            <button type="button" onclick="agregarCuotaEdit()" class="px-3 py-2 border rounded-lg text-sm">+ Cuota</button>
+            <div class="flex gap-2">
+                <button type="button" onclick="guardarEdicionContrato()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold">Guardar cambios</button>
+                <button type="button" onclick="cerrarModal()" class="px-4 py-2 border rounded-lg text-sm">Cerrar</button>
+            </div>
         </div>
     </div>
 </div>
@@ -299,14 +452,215 @@ function onMoneyBlur(el) { el.value = formatMoney(parseMoney(el.value)); }
 
 function verTab(cual) {
     document.getElementById('panelAlta').style.display = cual === 'alta' ? '' : 'none';
+    document.getElementById('panelVentas').style.display = cual === 'ventas' ? '' : 'none';
     document.getElementById('panelContratos').style.display = cual === 'contratos' ? '' : 'none';
     document.getElementById('panelCc').style.display = cual === 'cc' ? '' : 'none';
-    ['Alta','Contratos','Cc'].forEach(k => {
-        const on = (cual === k.toLowerCase()) || (cual === 'alta' && k === 'Alta') || (cual === 'cc' && k === 'Cc') || (cual === 'contratos' && k === 'Contratos');
+    ['Alta','Ventas','Contratos','Cc'].forEach(k => {
+        const on = cual === k.toLowerCase();
         const btn = document.getElementById('tabBtn' + k);
+        if (!btn) return;
         btn.className = 'tab-btn px-4 py-2 rounded-lg text-sm ' + (on ? 'font-bold bg-slate-900 text-white' : 'font-medium bg-slate-100 text-slate-700');
     });
-    if (cual === 'contratos' || cual === 'cc') recargar();
+    if (cual === 'contratos') cargarContratos();
+    if (cual === 'cc') { initCcFiltros(); cargarCc(); }
+    if (cual === 'ventas') initPanelVentas();
+}
+
+let _ventaFiltroTimer = null;
+let _saldoVentaActual = null;
+
+function onVentaFiltroDebounced() {
+    clearTimeout(_ventaFiltroTimer);
+    _ventaFiltroTimer = setTimeout(onVentaFiltro, 350);
+}
+
+function recalcFechaPago() {
+    const fp = document.getElementById('vFechaPizarra').value;
+    const dias = parseInt(document.getElementById('vDiasPago').value, 10) || 0;
+    if (!fp) return;
+    const d = new Date(fp + 'T12:00:00');
+    if (isNaN(d.getTime())) return;
+    d.setDate(d.getDate() + dias);
+    document.getElementById('vFechaPago').value = d.toISOString().slice(0, 10);
+}
+
+function recalcTotalVenta() {
+    const tns = num(document.getElementById('vTns').value);
+    const precio = parseMoney(document.getElementById('vPrecio').value);
+    document.getElementById('vTotal').value = formatMoney(tns * precio);
+    actualizarHintSaldo();
+}
+
+function actualizarHintSaldo() {
+    const hint = document.getElementById('vSaldoHint');
+    if (_saldoVentaActual == null) {
+        hint.textContent = 'Saldo disponible:  (eleg locador, campaa y grano)';
+        hint.className = 'text-[10px] text-slate-500 mt-0.5';
+        return;
+    }
+    const tns = num(document.getElementById('vTns').value);
+    const ok = tns <= _saldoVentaActual + 0.0001;
+    hint.textContent = `Saldo disponible: ${fmt(_saldoVentaActual, 3)} tn` + (tns > 0 ? `  resta ${fmt(_saldoVentaActual - tns, 3)}` : '');
+    hint.className = 'text-[10px] mt-0.5 ' + (ok ? 'text-emerald-700 font-semibold' : 'text-rose-600 font-semibold');
+}
+
+async function initPanelVentas() {
+    const hoy = new Date().toISOString().slice(0, 10);
+    if (!document.getElementById('vFechaPizarra').value) {
+        document.getElementById('vFechaPizarra').value = hoy;
+        recalcFechaPago();
+    }
+    if (!document.getElementById('vCampania').value && document.getElementById('fCampania')?.value) {
+        document.getElementById('vCampania').value = document.getElementById('fCampania').value;
+    }
+    await cargarLocadoresVenta();
+    await cargarSaldosVenta();
+    await cargarGranosVenta();
+    await cargarGestionVenta();
+}
+
+async function cargarGranosVenta() {
+    try {
+        const rows = await fetch('/api/agro/catalogos/granos').then(r => r.ok ? r.json() : []);
+        const sel = document.getElementById('vGrano');
+        const cur = sel.value;
+        const defaults = ['SOJA', 'MAIZ', 'TRIGO', 'GIRASOL', 'SORGO', 'CEBADA'];
+        const names = [...new Set([
+            ...defaults,
+            ...rows.map(r => String(r.nombre || '').toUpperCase()).filter(Boolean),
+        ])];
+        sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+        if (cur) sel.value = cur;
+        else sel.value = 'SOJA';
+    } catch (_) { /* keep defaults */ }
+}
+
+let _buscarContratosTimer = null;
+function onBuscarContratos() {
+    clearTimeout(_buscarContratosTimer);
+    _buscarContratosTimer = setTimeout(() => cargarContratos(), 300);
+}
+
+async function cargarLocadoresVenta() {
+    const q = document.getElementById('vLocador').value.trim();
+    const qs = new URLSearchParams();
+    if (q.length >= 2) qs.set('q', q);
+    const rows = await fetch('/api/agro/alquileres_cc/locadores?' + qs.toString()).then(r => r.ok ? r.json() : []);
+    document.getElementById('dlLocadoresVenta').innerHTML =
+        (rows || []).map(n => `<option value="${esc(n)}">`).join('');
+}
+
+async function onVentaFiltro() {
+    await cargarLocadoresVenta();
+    await cargarSaldosVenta();
+    cargarCuentasVenta();
+}
+
+async function cargarSaldosVenta() {
+    const loc = document.getElementById('vLocador').value.trim();
+    const camp = document.getElementById('vCampania').value.trim();
+    const grano = document.getElementById('vGrano').value.trim();
+    const qs = new URLSearchParams();
+    if (loc) qs.set('locador', loc);
+    if (grano) qs.set('grano', grano);
+    if (camp && !loc) qs.set('campania', camp);
+    qs.set('solo_con_saldo', loc ? 'false' : 'true');
+    const rows = await fetch('/api/agro/alquileres_cc/saldos?' + qs.toString()).then(r => r.ok ? r.json() : []);
+    const tb = document.getElementById('tbSaldosVenta');
+
+    _saldoVentaActual = null;
+    if (loc && rows && rows.length) {
+        const g = grano.toUpperCase();
+        const conSaldo = rows.filter(r => Number(r.saldo_tn) > 0.0001 && (!g || String(r.grano || '').toUpperCase() === g));
+        const pool = conSaldo.length ? conSaldo : rows;
+        pool.sort((a, b) => String(b.campania_codigo).localeCompare(String(a.campania_codigo)));
+        const hit = pool.find(r => String(r.campania_codigo) === camp) || pool[0];
+        if (hit && document.getElementById('vCampania').value !== hit.campania_codigo) {
+            document.getElementById('vCampania').value = hit.campania_codigo || '';
+        }
+        if (hit && hit.grano) {
+            const sel = document.getElementById('vGrano');
+            if (![...sel.options].some(o => o.value === hit.grano)) {
+                sel.insertAdjacentHTML('beforeend', `<option value="${esc(hit.grano)}">${esc(hit.grano)}</option>`);
+            }
+            if (sel.value !== hit.grano) sel.value = hit.grano;
+        }
+        _saldoVentaActual = hit ? Number(hit.saldo_tn || 0) : 0;
+    }
+    actualizarHintSaldo();
+
+    if (!rows || !rows.length) {
+        tb.innerHTML = `<tr><td colspan="4" class="p-3 text-center text-slate-400">Sin saldos disponibles con ese filtro.</td></tr>`;
+        return;
+    }
+    tb.innerHTML = rows.map(r => `
+        <tr class="border-t hover:bg-emerald-50 cursor-pointer" onclick='usarSaldoVenta(${JSON.stringify({
+            locador: r.locador, campania: r.campania_codigo, grano: r.grano, saldo: r.saldo_tn
+        })})'>
+            <td class="p-2">${esc(r.locador)}</td>
+            <td class="p-2 font-mono">${esc(r.campania_codigo)}</td>
+            <td class="p-2 font-semibold text-emerald-800">${esc(r.grano || '')}</td>
+            <td class="p-2 text-right font-mono font-bold ${Number(r.saldo_tn) < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fmt(r.saldo_tn, 3)}</td>
+        </tr>`).join('');
+}
+
+function usarSaldoVenta(row) {
+    document.getElementById('vLocador').value = row.locador || '';
+    document.getElementById('vCampania').value = row.campania || '';
+    if (row.grano) {
+        const sel = document.getElementById('vGrano');
+        if (![...sel.options].some(o => o.value === row.grano)) {
+            sel.insertAdjacentHTML('beforeend', `<option value="${esc(row.grano)}">${esc(row.grano)}</option>`);
+        }
+        sel.value = row.grano;
+    }
+    _saldoVentaActual = Number(row.saldo || 0);
+    actualizarHintSaldo();
+    cargarSaldosVenta();
+}
+
+async function guardarVenta() {
+    const body = {
+        locador: document.getElementById('vLocador').value.trim(),
+        campania_codigo: document.getElementById('vCampania').value.trim(),
+        grano: document.getElementById('vGrano').value.trim(),
+        tns_vendidas: num(document.getElementById('vTns').value),
+        precio_pizarra: parseMoney(document.getElementById('vPrecio').value),
+        fecha_pizarra: document.getElementById('vFechaPizarra').value,
+        dias_pago: parseInt(document.getElementById('vDiasPago').value, 10) || 0,
+        fecha_pago: document.getElementById('vFechaPago').value,
+        detalle: document.getElementById('vDetalle').value.trim() || 'Venta',
+        actividad: document.getElementById('vActividad')?.selectedOptions[0]?.textContent || '',
+        cuenta: document.getElementById('vCuenta')?.selectedOptions[0]?.textContent || '',
+        forzar: document.getElementById('vForzar').checked,
+    };
+    if (!body.locador) return alert('Indic el locador.');
+    if (!body.campania_codigo) return alert('Indic la campaa.');
+    if (!body.grano) return alert('Indic el grano.');
+    if (body.tns_vendidas <= 0) return alert('Indic las toneladas vendidas.');
+
+    const res = await fetch('/api/agro/alquileres_cc/venta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    const st = document.getElementById('vEstado');
+    if (!res.ok) {
+        const msg = typeof data.detail === 'string' ? data.detail : 'No se pudo registrar la venta';
+        st.textContent = msg;
+        st.className = 'text-xs text-rose-600 mt-3 font-medium';
+        alert(msg);
+        return;
+    }
+    st.textContent = data.message || 'Venta registrada';
+    st.className = 'text-xs text-emerald-600 mt-3 font-medium';
+    document.getElementById('vTns').value = '0';
+    document.getElementById('vForzar').checked = false;
+    recalcTotalVenta();
+    await cargarSaldosVenta();
+    await cargarCc();
+    await cargarVisorArrendadores();
 }
 
 function onModalidad() {
@@ -325,9 +679,9 @@ function recalcKilos() {
 }
 
 function ctxLabel() {
-    const campo = document.getElementById('fCampo').value.trim() || '—';
-    const prop = document.getElementById('fPropietario').value.trim() || '—';
-    const grano = document.getElementById('fGrano').value || '—';
+    const campo = document.getElementById('fCampo').value.trim() || '';
+    const prop = document.getElementById('fPropietario').value.trim() || '';
+    const grano = document.getElementById('fGrano').value || '';
     const has = fmt(num(document.getElementById('fHas').value));
     return { campo, prop, grano, has };
 }
@@ -335,7 +689,7 @@ function ctxLabel() {
 function actualizarCtxCrono() {
     const c = ctxLabel();
     document.getElementById('ctxCrono').textContent =
-        `Campo: ${c.campo} · Propietario: ${c.prop} · ${c.has} ha · Pago en: ${c.grano}`;
+        `Campo: ${c.campo}  Propietario: ${c.prop}  ${c.has} ha  Pago en: ${c.grano}`;
     if (cuotasMem.length) renderCuotas();
 }
 
@@ -367,7 +721,7 @@ function generarCuotas(aviso) {
         });
     }
     renderCuotas();
-    if (aviso) document.getElementById('estado-db').textContent = `${n} cuotas generadas · van al Estado Financiero al guardar.`;
+    if (aviso) document.getElementById('estado-db').textContent = `${n} cuotas generadas  van al Estado Financiero al guardar.`;
 }
 
 function renderCuotas() {
@@ -379,7 +733,7 @@ function renderCuotas() {
     }
     const total = cuotasMem.length;
     tb.innerHTML = cuotasMem.map(q => {
-        const pertenece = `${esc(c.campo)} · ${esc(c.prop)}`;
+        const pertenece = `${esc(c.campo)}  ${esc(c.prop)}`;
         const [yy, mm, dd] = (q.fecha_vencimiento || '').split('-');
         const fshow = dd ? `${dd}/${mm}/${yy}` : q.fecha_vencimiento;
         return `<tr class="border-t hover:bg-slate-50">
@@ -412,10 +766,10 @@ async function guardarContrato() {
     const campo = document.getElementById('fCampo').value.trim();
     const grano = document.getElementById('fGrano').value.trim();
     const has = num(document.getElementById('fHas').value);
-    if (!prop) return alert('Indicá el propietario / arrendador.');
-    if (!campo) return alert('Indicá el nombre del campo (necesario para planificación).');
-    if (!grano) return alert('Elegí el grano con el que se va a pagar.');
-    if (has <= 0) return alert('Indicá las hectáreas afectadas.');
+    if (!prop) return alert('Indic el propietario / arrendador.');
+    if (!campo) return alert('Indic el nombre del campo (necesario para planificación).');
+    if (!grano) return alert('Eleg el grano con el que se va a pagar.');
+    if (has <= 0) return alert('Indic las hectreas afectadas.');
     if (!cuotasMem.length) generarCuotas(false);
     const cuitProp = (document.getElementById('fCuitProp').value || '').replace(/\D/g, '');
     const body = {
@@ -446,7 +800,7 @@ async function guardarContrato() {
         lng: document.getElementById('fLng').value ? num(document.getElementById('fLng').value) : null,
         cuotas: cuotasMem.map(q => ({
             ...q,
-            detalle: `${campo} · ${prop} · pago en ${grano} · cuota ${q.nro_cuota}`,
+            detalle: `${campo}  ${prop}  pago en ${grano}  cuota ${q.nro_cuota}`,
         })),
     };
     const res = await fetch('/api/agro/contratos_alquileres', {
@@ -454,11 +808,11 @@ async function guardarContrato() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return alert(data.detail || 'No se pudo guardar');
-    let msg = `Contrato #${data.id} guardado · campo_id ${data.campo_id || '—'} (listo para planificación en Márgenes).`;
+    let msg = `Contrato #${data.id} guardado  campo_id ${data.campo_id || ''} (listo para planificación en Mrgenes).`;
     if (cuitProp.length >= 10) {
         msg += ' Arrendador sincronizado como proveedor / dueño inmueble con SICORE 032.';
     } else if (prop) {
-        msg += ' Tip: cargá el CUIT del arrendador para darlo de alta con SICORE 032.';
+        msg += ' Tip: carg el CUIT del arrendador para darlo de alta con SICORE 032.';
     }
     document.getElementById('estado-db').textContent = msg;
     document.getElementById('estado-db').className = 'text-xs text-emerald-600 mt-1 font-medium';
@@ -480,9 +834,9 @@ async function cargarGranos() {
     const rows = await fetch('/api/agro/catalogos/granos').then(r => r.ok ? r.json() : []);
     const sel = document.getElementById('fGrano');
     const cur = sel.value;
-    const defaults = ['Soja', 'Maíz', 'Trigo', 'Girasol', 'Sorgo', 'Cebada'];
+    const defaults = ['Soja', 'Maz', 'Trigo', 'Girasol', 'Sorgo', 'Cebada'];
     const names = [...new Set([...(rows.map(r => r.nombre).filter(Boolean)), ...defaults])];
-    sel.innerHTML = '<option value="">— Elegir grano —</option>' +
+    sel.innerHTML = '<option value=""> Elegir grano </option>' +
         names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
     if (cur) sel.value = cur;
 }
@@ -504,82 +858,308 @@ async function cargarContratos() {
     const rows = await fetch('/api/agro/contratos_alquileres?' + params()).then(r => r.ok ? r.json() : []);
     const tb = document.getElementById('tbContratos');
     if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin contratos. Creá uno en «Nuevo contrato» o importá Excel.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin contratos. Cre uno en Nuevo contrato o import Excel.</td></tr>`;
         return;
     }
     tb.innerHTML = rows.map(c => {
         const kg = c.kilos_totales || ((c.tn_totales || 0) * 1000);
-        const ubi = [c.ubicacion, c.localidad, c.partido].filter(Boolean).join(' · ') || '—';
+        const ubi = [c.ubicacion, c.localidad, c.partido].filter(Boolean).join('  ') || '';
         return `<tr class="border-t hover:bg-slate-50">
             <td class="p-2 font-mono text-xs">${esc(c.campania_codigo)}</td>
-            <td class="p-2 font-medium">${esc(c.nombre_campo || '—')}</td>
-            <td class="p-2">${esc(c.propietario || c.locador)}</td>
+            <td class="p-2 font-medium">${esc(c.nombre_campo || '')}</td>
+            <td class="p-2">${esc(c.locador || c.propietario)}</td>
             <td class="p-2 text-xs text-slate-600">${esc(ubi)}</td>
-            <td class="p-2 font-semibold text-emerald-800">${esc(c.grano || '—')}</td>
+            <td class="p-2 font-semibold text-emerald-800">${esc(c.grano || '')}</td>
             <td class="p-2 text-right font-mono font-bold">${fmt(c.hectareas)}</td>
             <td class="p-2 text-right font-mono">${fmt(kg, 0)}</td>
-            <td class="p-2 text-center font-mono">${c.cant_cuotas || '—'}</td>
+            <td class="p-2 text-center font-mono">${c.cant_cuotas || ''}</td>
             <td class="p-2 text-center"><button class="text-xs px-2 py-0.5 border rounded" onclick="abrirDetalle(${c.id})">Ver</button></td>
         </tr>`;
     }).join('');
 }
 
+function fechaVista(v) {
+    const s = String(v || '').trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? (m[3] + '/' + m[2] + '/' + m[1]) : (s || '');
+}
+
+let _arbolGestion = [];
+let _ccCampania = '';
+
+async function cargarGestionVenta() {
+    const selA = document.getElementById('vActividad');
+    if (!selA || selA.dataset.listo === '1') {
+        armarDetalleGestion();
+        return;
+    }
+    _arbolGestion = await fetch('/api/actividades?con_cuentas=1').then(r => r.ok ? r.json() : []);
+    const orden = (a) => /alquiler/i.test(a.nombre || '') ? 0 : 1;
+    const acts = [...(_arbolGestion || [])].sort((a, b) => orden(a) - orden(b) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+    selA.innerHTML = acts.map(a => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('')
+        || '<option value="">Sin actividades</option>';
+    const pref = acts.find(a => /administr/i.test(a.nombre || '')) || acts.find(a => /alquiler/i.test(a.nombre || '')) || acts[0];
+    if (pref) selA.value = String(pref.id);
+    selA.dataset.listo = '1';
+    cargarCuentasVenta();
+}
+
+function cargarCuentasVenta() {
+    const selA = document.getElementById('vActividad');
+    const selC = document.getElementById('vCuenta');
+    if (!selA || !selC) return;
+    const act = (_arbolGestion || []).find(a => String(a.id) === String(selA.value));
+    let cuentas = (act && act.cuentas) || [];
+    const alq = cuentas.filter(c => /alquiler/i.test(c.nombre || ''));
+    const resto = cuentas.filter(c => !/alquiler/i.test(c.nombre || ''));
+    cuentas = alq.concat(resto);
+    const egreso = cuentas.filter(c => /egreso|gasto/i.test(c.tipo_cta || ''));
+    if (egreso.length) cuentas = egreso.concat(cuentas.filter(c => !egreso.includes(c)));
+    selC.innerHTML = cuentas.map(c => {
+        const tipo = c.tipo_cta ? ` (${c.tipo_cta})` : '';
+        return `<option value="${c.id}">${esc(c.nombre)}${esc(tipo)}</option>`;
+    }).join('') || '<option value="">Sin cuentas</option>';
+    const loc = (document.getElementById('vLocador')?.value || '').split(' ')[0];
+    const hit = loc && cuentas.find(c => (c.nombre || '').toUpperCase().includes(loc.toUpperCase()));
+    if (hit) selC.value = String(hit.id);
+    armarDetalleGestion();
+}
+
+function armarDetalleGestion() {
+    const act = document.getElementById('vActividad')?.selectedOptions[0]?.textContent || '';
+    const cta = document.getElementById('vCuenta')?.selectedOptions[0]?.textContent || '';
+    const det = document.getElementById('vDetalle');
+    if (!det) return;
+    const base = [act, cta].filter(Boolean).join(' - ');
+    if (!det.dataset.tocado || det.dataset.tocado !== '1') {
+        det.value = base || 'Venta';
+    }
+}
+
+async function initCcFiltros() {
+    const rows = await fetch('/api/agro/alquileres_cc/locadores?solo_arrendadores=true').then(r => r.ok ? r.json() : []);
+    document.getElementById('dlLocadoresCc').innerHTML = (rows || []).map(n => `<option value="${esc(n)}">`).join('');
+}
+
+function chipArrendador(r) {
+    const saldo = Number(r.saldo_tn || 0);
+    const conSaldo = Math.abs(saldo) > 0.0001;
+    const nombreSafe = String(r.nombre || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<button type="button" onclick="abrirArrendadorCc('${nombreSafe}')"
+        class="w-full flex items-center justify-between gap-3 px-4 py-2 text-left border-b border-slate-50 last:border-0 hover:bg-emerald-50/40 focus:bg-emerald-50/60 focus:outline-none transition-colors group">
+        <span class="text-[13px] font-medium text-slate-700 truncate group-hover:text-slate-900">${esc(r.nombre)}</span>
+        <span class="font-mono text-[13px] tabular-nums shrink-0 ${conSaldo ? 'text-emerald-700 font-bold' : 'text-slate-300'}">${fmt(saldo, 3)} <span class="text-[9px] font-normal text-slate-400">tn</span></span>
+    </button>`;
+}
+
+function _sumTn(rows) {
+    return (rows || []).reduce((a, r) => a + Number(r.saldo_tn || 0), 0);
+}
+
+async function cargarVisorArrendadores() {
+    const mostrarCeros = document.getElementById('chkArrendCeros')?.checked;
+    const qs = mostrarCeros ? '' : '?solo_con_saldo=true';
+    const rows = await fetch('/api/agro/arrendadores/tn_a_favor' + qs).then(r => r.ok ? r.json() : []);
+    const oficial = (rows || []).filter(r => !r.es_sp);
+    const sp = (rows || []).filter(r => r.es_sp);
+    const totOf = _sumTn(oficial);
+    const totSp = _sumTn(sp);
+    const vacio = (msg) => `<div class="px-4 py-8 text-center text-xs text-slate-400">${msg}</div>`;
+    const lblOf = document.getElementById('lblTotOficial');
+    const lblSp = document.getElementById('lblTotSp');
+    const lblAll = document.getElementById('lblTotalTnFavor');
+    if (lblOf) lblOf.textContent = oficial.length ? `${fmt(totOf, 3)} tn` : '';
+    if (lblSp) lblSp.textContent = sp.length ? `${fmt(totSp, 3)} tn` : '';
+    if (lblAll) lblAll.textContent = `${fmt(totOf + totSp, 3)} tn`;
+    document.getElementById('boxArrendadoresOficial').innerHTML =
+        oficial.length ? oficial.map(chipArrendador).join('') : vacio(mostrarCeros ? 'Sin arrendadores oficiales.' : 'Sin saldo en oficial.');
+    document.getElementById('boxArrendadoresSp').innerHTML =
+        sp.length ? sp.map(chipArrendador).join('') : vacio(mostrarCeros ? 'Sin arrendadores S/P.' : 'Sin saldo en S/P.');
+}
+
+function abrirArrendadorCc(nombre) {
+    verTab('cc');
+    const inp = document.getElementById('ccLocador');
+    inp.value = nombre;
+    onCcLocador();
+}
+
+async function onCcLocador() {
+    const loc = document.getElementById('ccLocador').value.trim();
+    _ccCampania = '';
+    if (!loc) {
+        document.getElementById('ccCampanias').innerHTML = '';
+        document.getElementById('ccSaldoLbl').textContent = '';
+        return cargarCc();
+    }
+    const qs = new URLSearchParams({ locador: loc, solo_con_saldo: 'false' });
+    const saldos = await fetch('/api/agro/alquileres_cc/saldos?' + qs).then(r => r.ok ? r.json() : []);
+    const camps = [];
+    (saldos || []).forEach(s => {
+        if (!camps.some(c => c.codigo === s.campania_codigo)) {
+            camps.push({ codigo: s.campania_codigo, saldo: 0 });
+        }
+        const c = camps.find(x => x.codigo === s.campania_codigo);
+        c.saldo += Number(s.saldo_tn || 0);
+    });
+    camps.sort((a, b) => String(b.codigo).localeCompare(String(a.codigo)));
+    const conSaldo = camps.filter(c => c.saldo > 0.0001);
+    _ccCampania = (conSaldo[0] || camps[0] || {}).codigo || '';
+    document.getElementById('ccCampanias').innerHTML = camps.map(c => `
+        <button type="button" data-camp="${esc(c.codigo)}" onclick="elegirCampaniaCc('${esc(c.codigo)}')"
+            class="px-3 py-1 rounded-full text-xs font-bold border ${c.codigo === _ccCampania ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700'}">
+            ${esc(c.codigo)}  ${fmt(c.saldo, 3)} tn
+        </button>`).join('') || '<span class="text-xs text-slate-400">Sin campaas para este arrendador.</span>';
+    const saldoSel = camps.find(c => c.codigo === _ccCampania);
+    const lbl = document.getElementById('ccSaldoLbl');
+    const saldoTxt = saldoSel ? fmt(saldoSel.saldo, 3) : '';
+    lbl.textContent = saldoTxt;
+    lbl.className = 'font-mono font-bold text-lg ' + (saldoSel && saldoSel.saldo > 0.0001 ? 'text-emerald-800' : 'text-slate-700');
+    await cargarCc();
+}
+
+function elegirCampaniaCc(codigo) {
+    _ccCampania = codigo;
+    document.querySelectorAll('#ccCampanias button').forEach(b => {
+        const on = b.getAttribute('data-camp') === codigo;
+        b.className = 'px-3 py-1 rounded-full text-xs font-bold border ' + (on ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700');
+    });
+    cargarCc();
+}
+
 async function cargarCc() {
-    const rows = await fetch('/api/agro/alquileres_cc?' + params()).then(r => r.ok ? r.json() : []);
+    const loc = document.getElementById('ccLocador')?.value.trim() || '';
+    const qs = new URLSearchParams(params());
+    if (loc) qs.set('locador', loc);
+    if (_ccCampania) qs.set('campania', _ccCampania);
+    const rows = await fetch('/api/agro/alquileres_cc?' + qs.toString()).then(r => r.ok ? r.json() : []);
     const tb = document.getElementById('tbCc');
     if (!rows.length) {
         tb.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin movimientos de CC.</td></tr>`;
         return;
     }
-    tb.innerHTML = rows.map(r => `
-        <tr class="border-t hover:bg-slate-50">
+    const ordenados = [...rows].sort((a, b) => String(a.fecha_pago || a.fecha_pizarra || '').localeCompare(String(b.fecha_pago || b.fecha_pizarra || '')) || (a.id || 0) - (b.id || 0));
+    let saldo = 0;
+    tb.innerHTML = ordenados.map(r => {
+        const debe = Number(r.debe || 0);
+        const haber = Number(r.haber || 0);
+        saldo += haber - debe;
+        const color = saldo > 0.0001 ? 'text-emerald-800' : (saldo < -0.0001 ? 'text-rose-700' : 'text-slate-500');
+        return `<tr class="border-t hover:bg-slate-50">
+            <td class="p-2 font-mono text-xs">${fechaVista(r.fecha_pago || r.fecha_pizarra)}</td>
             <td class="p-2 font-mono text-xs">${esc(r.campania_codigo)}</td>
-            <td class="p-2 font-mono text-xs">${esc(r.fecha_pago || r.fecha_pizarra || '—')}</td>
-            <td class="p-2">${esc(r.locador)}</td>
             <td class="p-2">${esc(r.grano)}</td>
-            <td class="p-2 text-right font-mono">${fmt(r.debe)}</td>
-            <td class="p-2 text-right font-mono">${fmt(r.haber)}</td>
-            <td class="p-2 text-right font-mono">${r.precio_pizarra ? fmt(r.precio_pizarra) : '—'}</td>
-            <td class="p-2 text-right font-mono">${r.importe_total ? '$ ' + fmt(r.importe_total) : '—'}</td>
-            <td class="p-2 text-xs text-slate-600">${esc(r.varios || '')}</td>
-        </tr>`).join('');
+            <td class="p-2 text-right font-mono text-rose-700">${debe ? fmt(debe, 3) : ''}</td>
+            <td class="p-2 text-right font-mono text-emerald-700">${haber ? fmt(haber, 3) : ''}</td>
+            <td class="p-2 text-right font-mono font-bold ${color}">${fmt(saldo, 3)}</td>
+            <td class="p-2 text-right font-mono">${r.precio_pizarra ? fmt(r.precio_pizarra) : ''}</td>
+            <td class="p-2 text-right font-mono">${r.importe_total ? '$ ' + fmt(r.importe_total) : ''}</td>
+            <td class="p-2 text-xs text-slate-600">${esc(r.varios || r.actividad_gestion || '')}</td>
+        </tr>`;
+    }).join('');
+    const sc = document.getElementById('scrollCc');
+    if (sc) sc.scrollTop = sc.scrollHeight;
+    const lbl = document.getElementById('ccSaldoLbl');
+    if (lbl && loc) {
+        lbl.textContent = fmt(saldo, 3);
+        lbl.className = 'font-mono font-bold text-lg ' + (saldo > 0.0001 ? 'text-emerald-800' : 'text-slate-700');
+    }
 }
 
 async function recargar() {
-    await Promise.all([cargarContratos(), cargarCc()]);
+    await Promise.all([cargarContratos(), cargarCc(), cargarVisorArrendadores()]);
+}
+
+let _contratoEditId = null;
+
+function filaCuotaEdit(q, i) {
+    return `<tr class="border-t cuota-edit">
+        <td class="p-1"><input class="w-12 border rounded px-1 py-0.5 text-center" data-k="nro_cuota" value="${esc(q.nro_cuota || i)}"></td>
+        <td class="p-1"><input type="date" class="border rounded px-1 py-0.5" data-k="fecha_vencimiento" value="${esc((q.fecha_vencimiento || '').slice(0, 10))}"></td>
+        <td class="p-1"><input class="w-24 border rounded px-1 py-0.5 text-right font-mono" data-k="kilos" value="${esc(q.kilos || 0)}"></td>
+        <td class="p-1"><input class="w-28 border rounded px-1 py-0.5 text-right font-mono" data-k="valuacion_ars" value="${esc(q.valuacion_ars || 0)}"></td>
+        <td class="p-1"><input class="w-full border rounded px-1 py-0.5" data-k="detalle" value="${esc(q.detalle || '')}"></td>
+    </tr>`;
 }
 
 async function abrirDetalle(id) {
     const d = await fetch('/api/agro/contratos_alquileres/' + id).then(r => r.json());
     if (d.detail) { alert(d.detail); return; }
+    _contratoEditId = d.id;
     document.getElementById('modalTitulo').textContent = d.nombre_campo || d.locador || 'Contrato';
     document.getElementById('modalSub').textContent =
-        `${d.propietario || d.locador || ''} · ${d.campania_codigo || ''} · pago en ${d.grano || '—'}`;
-    const ubi = [d.ubicacion, d.localidad, d.partido, d.provincia].filter(Boolean).join(' · ');
+        `Saldo CC ${fmt(d.saldo_tn, 3)} tn  edit el origen y la cada de cuotas`;
     document.getElementById('modalBody').innerHTML = `
         <div class="grid grid-cols-2 gap-2">
-            <div><span class="text-slate-500 text-xs">Campo</span><div class="font-semibold">${esc(d.nombre_campo || '—')}</div></div>
-            <div><span class="text-slate-500 text-xs">Propietario</span><div class="font-semibold">${esc(d.propietario || d.locador || '—')}</div></div>
-            <div><span class="text-slate-500 text-xs">Ubicación</span><div>${esc(ubi || '—')}</div></div>
-            <div><span class="text-slate-500 text-xs">Has</span><div class="font-mono font-bold">${fmt(d.hectareas)}</div></div>
-            <div><span class="text-slate-500 text-xs">Grano de pago</span><div class="font-semibold text-emerald-800">${esc(d.grano || '—')}</div></div>
-            <div><span class="text-slate-500 text-xs">Modalidad</span><div>${esc(d.modalidad || '—')}</div></div>
-            <div><span class="text-slate-500 text-xs">Kg pactados</span><div class="font-mono">${fmt(d.kilos_totales || (d.tn_totales||0)*1000, 0)}</div></div>
-            <div><span class="text-slate-500 text-xs">Saldo CC (tn)</span><div class="font-mono">${fmt(d.saldo_tn, 3)}</div></div>
+            <div><label class="text-slate-500 text-xs">Campo</label><input id="eCampo" class="w-full border rounded px-2 py-1" value="${esc(d.nombre_campo || '')}"></div>
+            <div><label class="text-slate-500 text-xs">Propietario / arrendador</label><input id="eProp" class="w-full border rounded px-2 py-1" value="${esc(d.propietario || d.locador || '')}"></div>
+            <div><label class="text-slate-500 text-xs">Campaa</label><input id="eCamp" class="w-full border rounded px-2 py-1 font-mono" value="${esc(d.campania_codigo || '')}"></div>
+            <div><label class="text-slate-500 text-xs">Ubicacin</label><input id="eUbi" class="w-full border rounded px-2 py-1" value="${esc(d.ubicacion || '')}"></div>
+            <div><label class="text-slate-500 text-xs">Fecha contrato</label><input type="date" id="eFechaContrato" class="w-full border rounded px-2 py-1" value="${esc((d.fecha_contrato || '').slice(0, 10))}"></div>
+            <div><label class="text-slate-500 text-xs">Fecha vto / fin</label><input type="date" id="eFechaFin" class="w-full border rounded px-2 py-1" value="${esc((d.fecha_finalizacion || '').slice(0, 10))}"></div>
+            <div><label class="text-slate-500 text-xs">Hectreas</label><input id="eHas" class="w-full border rounded px-2 py-1 text-right font-mono" value="${esc(d.hectareas || 0)}"></div>
+            <div><label class="text-slate-500 text-xs">Grano de pago</label><input id="eGrano" class="w-full border rounded px-2 py-1" value="${esc(d.grano || '')}"></div>
+            <div><label class="text-slate-500 text-xs">Kilos / ha</label><input id="eKgHa" class="w-full border rounded px-2 py-1 text-right font-mono" value="${esc(d.kilos_por_ha || 0)}"></div>
+            <div><label class="text-slate-500 text-xs">Kilos pactados</label><input id="eKgTot" class="w-full border rounded px-2 py-1 text-right font-mono" value="${esc(d.kilos_totales || 0)}"></div>
+            <div class="col-span-2"><label class="text-slate-500 text-xs">Modalidad</label><input id="eMod" class="w-full border rounded px-2 py-1" value="${esc(d.modalidad || '')}"></div>
         </div>`;
     const cuotas = d.cuotas || [];
     document.getElementById('tbModalCuotas').innerHTML = cuotas.length
-        ? cuotas.map(q => `<tr class="border-t">
-            <td class="p-1">${q.nro_cuota}</td>
-            <td class="p-1 font-mono">${esc(q.fecha_vencimiento || '')}</td>
-            <td class="p-1 text-right font-mono">${fmt(q.kilos)}</td>
-            <td class="p-1 text-right font-mono">$ ${fmt(q.valuacion_ars)}</td>
-            <td class="p-1">${esc(q.detalle || '')}</td>
-          </tr>`).join('')
-        : `<tr><td colspan="5" class="p-2 text-slate-400">Sin cronograma de cuotas guardado.</td></tr>`;
+        ? cuotas.map((q, i) => filaCuotaEdit(q, i + 1)).join('')
+        : `<tr><td colspan="5" class="p-2 text-slate-400">Sin cuotas. Us + Cuota para armar la cada.</td></tr>`;
     const modal = document.getElementById('modalContrato');
     modal.classList.remove('hidden');
     modal.classList.add('flex');
+}
+
+function agregarCuotaEdit() {
+    const tb = document.getElementById('tbModalCuotas');
+    const n = tb.querySelectorAll('tr.cuota-edit').length + 1;
+    if (!tb.querySelector('tr.cuota-edit')) tb.innerHTML = '';
+    tb.insertAdjacentHTML('beforeend', filaCuotaEdit({ nro_cuota: n, kilos: 0, valuacion_ars: 0 }, n));
+}
+
+function leerCuotasEdit() {
+    return [...document.querySelectorAll('#tbModalCuotas tr.cuota-edit')].map((tr, i) => {
+        const val = k => tr.querySelector(`[data-k="${k}"]`)?.value || '';
+        return {
+            nro_cuota: parseInt(val('nro_cuota'), 10) || (i + 1),
+            fecha_vencimiento: val('fecha_vencimiento'),
+            kilos: num(val('kilos')),
+            valuacion_ars: num(val('valuacion_ars')),
+            detalle: val('detalle'),
+            estado: 'Pendiente',
+        };
+    });
+}
+
+async function guardarEdicionContrato() {
+    if (!_contratoEditId) return;
+    const body = {
+        nombre_campo: document.getElementById('eCampo').value.trim(),
+        propietario: document.getElementById('eProp').value.trim(),
+        locador: document.getElementById('eProp').value.trim(),
+        campania_codigo: document.getElementById('eCamp').value.trim(),
+        ubicacion: document.getElementById('eUbi').value.trim(),
+        fecha_contrato: document.getElementById('eFechaContrato').value,
+        fecha_finalizacion: document.getElementById('eFechaFin').value,
+        hectareas: num(document.getElementById('eHas').value),
+        grano: document.getElementById('eGrano').value.trim(),
+        kilos_por_ha: num(document.getElementById('eKgHa').value),
+        kilos_totales: num(document.getElementById('eKgTot').value),
+        modalidad: document.getElementById('eMod').value.trim(),
+        cuotas: leerCuotasEdit(),
+    };
+    const res = await fetch('/api/agro/contratos_alquileres/' + _contratoEditId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.detail || 'No se pudo guardar'); return; }
+    alert('Contrato actualizado.');
+    cerrarModal();
+    await cargarContratos();
 }
 
 function cerrarModal() {
@@ -589,12 +1169,12 @@ function cerrarModal() {
 }
 
 async function importarAlquileres() {
-    if (!confirm('¿Reimportar Contratos Alquileres + Alquileres Cta Cte desde tablas/tablas.xlsx?')) return;
-    document.getElementById('estado-db').textContent = 'Importando…';
+    if (!confirm('Reimportar Contratos Alquileres + Alquileres Cta Cte desde tablas/tablas.xlsx?')) return;
+    document.getElementById('estado-db').textContent = 'Importando';
     const res = await fetch('/api/agro/importar_alquileres', { method: 'POST' });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) { alert(d.detail || 'Error al importar'); return; }
-    alert(`OK: ${d.contratos_alquileres || 0} contratos · ${d.alquileres_cc || 0} movs CC`);
+    alert(`OK: ${d.contratos_alquileres || 0} contratos  ${d.alquileres_cc || 0} movs CC`);
     await cargarCampanias();
     await recargar();
 }
@@ -615,11 +1195,12 @@ window.onload = async function () {
         initFechas();
         await cargarGranos();
         await cargarCampanias();
+        await cargarVisorArrendadores();
         actualizarCtxCrono();
-        document.getElementById('estado-db').textContent = 'Listo · el contrato crea el campo arrendado para Márgenes / planificación.';
+        document.getElementById('estado-db').textContent = 'Listo  el contrato crea el campo arrendado para Mrgenes / planificación.';
         document.getElementById('estado-db').className = 'text-xs text-emerald-600 mt-1';
     } catch (e) {
-        document.getElementById('estado-db').textContent = 'Error al cargar. ¿Servidor activo?';
+        document.getElementById('estado-db').textContent = 'Error al cargar. Servidor activo?';
         document.getElementById('estado-db').className = 'text-xs text-red-600 mt-1';
     }
 };

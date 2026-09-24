@@ -978,6 +978,345 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         conn.close()
         return rows
 
+    @app.get("/api/agro/alquileres_cc/locadores")
+    def api_alquileres_cc_locadores(
+        campania: Optional[str] = None,
+        grano: Optional[str] = None,
+        q: Optional[str] = None,
+        solo_arrendadores: bool = False,
+    ):
+        """Arrendadores: padrón de proveedores + contratos + cuenta corriente."""
+        conn = get_db()
+        cur = conn.cursor()
+        eid = get_empresa_activa_id()
+        texto = (q or "").strip()
+        sql = """
+            SELECT DISTINCT TRIM(locador) AS locador FROM (
+                SELECT COALESCE(NULLIF(TRIM(nombre_fantasia),''), razon_social) AS locador
+                FROM entidades
+                WHERE COALESCE(es_proveedor, 0) = 1
+                  AND TRIM(COALESCE(razon_social,'')||COALESCE(nombre_fantasia,'')) <> ''
+                UNION
+                SELECT locador FROM alquileres_cta_cte
+                WHERE empresa_id=? AND TRIM(COALESCE(locador,''))<>''
+                UNION
+                SELECT COALESCE(NULLIF(TRIM(propietario),''), locador) FROM contratos_alquileres
+                WHERE empresa_id=? AND TRIM(COALESCE(locador,'')||COALESCE(propietario,''))<>''
+            ) t
+            WHERE locador IS NOT NULL AND TRIM(locador)<>''
+        """
+        params: list = [eid, eid]
+        if texto:
+            sql += " AND UPPER(locador) LIKE ?"
+            params.append(f"%{texto.upper()}%")
+        elif campania or grano:
+            camp = normalizar_codigo_campania(campania) if campania else ""
+            grano_n = (grano or "").strip().upper()
+            sql += """
+              AND UPPER(TRIM(locador)) IN (
+                SELECT UPPER(TRIM(locador)) FROM alquileres_cta_cte
+                WHERE empresa_id=? AND TRIM(COALESCE(locador,''))<>''
+            """
+            params.append(eid)
+            if camp:
+                sql += " AND campania_codigo=?"
+                params.append(camp)
+            if grano_n:
+                sql += " AND UPPER(TRIM(grano))=?"
+                params.append(grano_n)
+            sql += ")"
+        if solo_arrendadores:
+            sql += """
+              AND UPPER(TRIM(locador)) IN (
+                SELECT UPPER(TRIM(COALESCE(NULLIF(TRIM(nombre_fantasia),''), razon_social)))
+                FROM entidades WHERE COALESCE(es_propietario_inmueble, 0) = 1
+                UNION
+                SELECT UPPER(TRIM(razon_social)) FROM entidades
+                WHERE COALESCE(es_propietario_inmueble, 0) = 1
+              )
+            """
+        sql += " ORDER BY locador COLLATE NOCASE LIMIT 80"
+        cur.execute(sql, params)
+        rows = [r["locador"] for r in cur.fetchall() if r["locador"]]
+        conn.close()
+        return rows
+
+    @app.get("/api/agro/arrendadores/tn_a_favor")
+    def api_tn_a_favor_arrendadores(solo_con_saldo: bool = False):
+        """Toneladas a favor de proveedores marcados como arrendadores (oficial y S/P).
+        Deduplica por nombre+oficial/SP (prioriza CUIT fiscal sobre provisionales 99…/00…).
+        """
+        from agro_campania import alta_locadores_faltantes
+        conn = get_db()
+        cur = conn.cursor()
+        alta_locadores_faltantes(cur)
+        conn.commit()
+        eid = get_empresa_activa_id()
+        cur.execute(
+            """
+            SELECT
+                COALESCE(NULLIF(TRIM(e.nombre_fantasia),''), e.razon_social) AS nombre,
+                e.cuit,
+                COALESCE(e.centro_costo, '1') AS centro_costo,
+                ROUND(SUM(COALESCE(cc.haber, 0) - COALESCE(cc.debe, 0)), 4) AS saldo_tn
+            FROM entidades e
+            LEFT JOIN alquileres_cta_cte cc
+              ON cc.empresa_id = ?
+             AND UPPER(TRIM(cc.locador)) = UPPER(TRIM(COALESCE(NULLIF(TRIM(e.nombre_fantasia),''), e.razon_social)))
+            WHERE COALESCE(e.es_propietario_inmueble, 0) = 1
+            GROUP BY nombre, e.cuit, e.centro_costo
+            ORDER BY saldo_tn DESC, nombre COLLATE NOCASE;
+            """,
+            (eid,),
+        )
+
+        def _prio_cuit(cuit: str) -> int:
+            d = "".join(ch for ch in str(cuit or "") if ch.isdigit())
+            if len(d) == 11 and d[:2] in ("20", "23", "24", "27", "30", "33", "34") and not d.startswith("00"):
+                return 0  # fiscal
+            if d.startswith("99"):
+                return 2  # provisorio
+            return 1  # placeholder Access / otros
+
+        # Agrupar por (nombre_norm, es_sp)
+        buckets: dict = {}
+        for r in cur.fetchall():
+            d = dict(r)
+            nombre = (d.get("nombre") or "").strip()
+            if not nombre:
+                continue
+            nombre_u = nombre.upper()
+            es_sp = str(d.get("centro_costo") or "").upper() in ("SP", "S/P") or "(S/P)" in nombre_u or nombre_u.endswith("S/P")
+            key = (nombre_u.replace(".", " ").replace("  ", " ").strip(), es_sp)
+            saldo = float(d.get("saldo_tn") or 0)
+            cuit = str(d.get("cuit") or "")
+            prev = buckets.get(key)
+            if not prev:
+                buckets[key] = {
+                    "nombre": nombre,
+                    "cuit": cuit,
+                    "centro_costo": "SP" if es_sp else "1",
+                    "es_sp": es_sp,
+                    "saldo_tn": saldo,
+                    "_prio": _prio_cuit(cuit),
+                }
+            else:
+                # sumar saldo solo si es otro CUIT distinto (evitar doble conteo del mismo movimiento)
+                if cuit != prev["cuit"]:
+                    # Preferir CUIT fiscal; el saldo de CC se toma del mejor match de nombre
+                    # (ya viene agregado por nombre en el JOIN). Si hay duplicados de entidad,
+                    # nos quedamos con el mayor saldo absoluto y el CUIT de mejor prioridad.
+                    if abs(saldo) > abs(prev["saldo_tn"]):
+                        prev["saldo_tn"] = saldo
+                    if _prio_cuit(cuit) < prev["_prio"]:
+                        prev["cuit"] = cuit
+                        prev["_prio"] = _prio_cuit(cuit)
+                        prev["nombre"] = nombre
+                else:
+                    prev["saldo_tn"] = saldo
+
+        rows = []
+        for v in buckets.values():
+            v.pop("_prio", None)
+            if solo_con_saldo and abs(float(v.get("saldo_tn") or 0)) < 0.0001:
+                continue
+            rows.append(v)
+        rows.sort(key=lambda x: (-float(x.get("saldo_tn") or 0), (x.get("nombre") or "").upper()))
+        conn.close()
+        return rows
+
+    @app.get("/api/agro/alquileres_cc/saldos")
+    def api_alquileres_cc_saldos(
+        locador: Optional[str] = None,
+        campania: Optional[str] = None,
+        grano: Optional[str] = None,
+        solo_con_saldo: bool = True,
+    ):
+        """
+        Saldos disponibles por locador / campaña / grano.
+        Saldo tn = SUM(haber) - SUM(debe)  (pactado − entregado/vendido).
+        """
+        conn = get_db()
+        cur = conn.cursor()
+        eid = get_empresa_activa_id()
+        sql = """
+            SELECT
+                campania_codigo,
+                TRIM(locador) AS locador,
+                UPPER(TRIM(COALESCE(grano,''))) AS grano,
+                ROUND(SUM(COALESCE(haber,0)), 4) AS haber_tn,
+                ROUND(SUM(COALESCE(debe,0)), 4) AS debe_tn,
+                ROUND(SUM(COALESCE(haber,0)) - SUM(COALESCE(debe,0)), 4) AS saldo_tn
+            FROM alquileres_cta_cte
+            WHERE empresa_id=? AND TRIM(COALESCE(locador,''))<>''
+        """
+        params: list = [eid]
+        if locador:
+            sql += " AND UPPER(TRIM(locador)) LIKE ?"
+            params.append("%" + locador.strip().upper() + "%")
+        if campania:
+            sql += " AND campania_codigo=?"
+            params.append(normalizar_codigo_campania(campania))
+        if grano:
+            sql += " AND UPPER(TRIM(grano))=UPPER(TRIM(?))"
+            params.append(grano)
+        sql += " GROUP BY campania_codigo, TRIM(locador), UPPER(TRIM(COALESCE(grano,'')))"
+        if solo_con_saldo:
+            sql += " HAVING ABS(SUM(COALESCE(haber,0)) - SUM(COALESCE(debe,0))) > 0.0001"
+        sql += " ORDER BY campania_codigo DESC, locador COLLATE NOCASE, grano"
+        cur.execute(sql, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return rows
+
+    class AlquilerVentaModel(BaseModel):
+        locador: str
+        campania_codigo: str
+        grano: str
+        tns_vendidas: float
+        precio_pizarra: float = 0
+        fecha_pizarra: Optional[str] = ""
+        dias_pago: int = 12
+        fecha_pago: Optional[str] = ""
+        detalle: Optional[str] = "Venta"
+        actividad: Optional[str] = ""
+        cuenta: Optional[str] = ""
+        forzar: bool = False  # permite vender por encima del saldo
+
+    @app.post("/api/agro/alquileres_cc/venta")
+    def api_alquileres_cc_venta(data: AlquilerVentaModel):
+        """
+        Alta de venta (entrega) contra saldo del arrendador.
+        Impacta DEBE en alquileres_cta_cte (como Access «Alquileres Alta Vtas»).
+        """
+        from importar_tablas_agro import init_import_schema
+        from datetime import datetime, timedelta
+
+        locador = (data.locador or "").strip()
+        grano = (data.grano or "").strip().upper()
+        camp = normalizar_codigo_campania(data.campania_codigo)
+        tns = float(data.tns_vendidas or 0)
+        precio = float(data.precio_pizarra or 0)
+        if not locador:
+            raise HTTPException(400, "Indicá el locador / arrendador.")
+        if not camp:
+            raise HTTPException(400, "Indicá la campaña.")
+        if not grano:
+            raise HTTPException(400, "Indicá el grano.")
+        if tns <= 0:
+            raise HTTPException(400, "Las toneladas vendidas deben ser mayores a 0.")
+
+        conn = get_db()
+        cur = conn.cursor()
+        init_import_schema(cur)
+        eid = get_empresa_activa_id()
+
+        cur.execute(
+            """
+            SELECT
+                ROUND(SUM(COALESCE(haber,0)) - SUM(COALESCE(debe,0)), 4) AS saldo_tn
+            FROM alquileres_cta_cte
+            WHERE empresa_id=? AND campania_codigo=?
+              AND UPPER(TRIM(locador))=UPPER(TRIM(?))
+              AND UPPER(TRIM(COALESCE(grano,'')))=UPPER(TRIM(?));
+            """,
+            (eid, camp, locador, grano),
+        )
+        row = cur.fetchone()
+        saldo = float(row["saldo_tn"] or 0) if row else 0.0
+        if tns > saldo + 0.0001 and not data.forzar:
+            conn.close()
+            raise HTTPException(
+                400,
+                f"Saldo insuficiente: disponible {saldo:.4f} tn · venta {tns:.4f} tn "
+                f"({locador} · {camp} · {grano}). Marcá «forzar» solo si corresponde.",
+            )
+
+        fecha_pizarra = (data.fecha_pizarra or "").strip()[:10]
+        if not fecha_pizarra:
+            fecha_pizarra = datetime.now().strftime("%Y-%m-%d")
+        fecha_pago = (data.fecha_pago or "").strip()[:10]
+        if not fecha_pago:
+            try:
+                base = datetime.strptime(fecha_pizarra, "%Y-%m-%d")
+                fecha_pago = (base + timedelta(days=int(data.dias_pago or 0))).strftime("%Y-%m-%d")
+            except ValueError:
+                fecha_pago = fecha_pizarra
+
+        importe = round(tns * precio, 2)
+        detalle = (data.detalle or "Venta").strip() or "Venta"
+        actividad = (data.actividad or "").strip()
+        cuenta = (data.cuenta or "").strip()
+        if actividad or cuenta:
+            gestion = " - ".join(p for p in (actividad, cuenta) if p)
+            if gestion.lower() not in detalle.lower():
+                detalle = f"{gestion} · {detalle}" if detalle else gestion
+        cols_cc = {r[1] for r in cur.execute("PRAGMA table_info(alquileres_cta_cte)")}
+        if "actividad_gestion" not in cols_cc:
+            cur.execute("ALTER TABLE alquileres_cta_cte ADD COLUMN actividad_gestion TEXT;")
+        if "cuenta_gestion" not in cols_cc:
+            cur.execute("ALTER TABLE alquileres_cta_cte ADD COLUMN cuenta_gestion TEXT;")
+
+        cur.execute(
+            """
+            INSERT INTO alquileres_cta_cte (
+                empresa_id, campania_codigo, locador, fecha_pago, grano,
+                fecha_pizarra, precio_pizarra, debe, haber, varios, importe_total,
+                actividad_gestion, cuenta_gestion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?);
+            """,
+            (
+                eid, camp, locador, fecha_pago, grano,
+                fecha_pizarra, precio, tns, detalle, importe,
+                actividad, cuenta,
+            ),
+        )
+        nuevo_id = cur.lastrowid
+        from motor_contable import asiento_para_alquiler, proveedor_omite_asiento_oficial
+
+        es_sp = proveedor_omite_asiento_oficial(cur, locador)
+        asiento_id = None
+        if not es_sp and importe > 0:
+            asiento_id = asiento_para_alquiler(
+                cur,
+                fecha=fecha_pago or fecha_pizarra,
+                locador=locador,
+                importe=importe,
+                detalle=detalle,
+                empresa_id=eid,
+                origen_id=nuevo_id,
+            )
+            cols_cc = {r[1] for r in cur.execute("PRAGMA table_info(alquileres_cta_cte)")}
+            if "asiento_id" not in cols_cc:
+                cur.execute("ALTER TABLE alquileres_cta_cte ADD COLUMN asiento_id INTEGER;")
+            if asiento_id:
+                cur.execute(
+                    "UPDATE alquileres_cta_cte SET asiento_id=? WHERE id=?;",
+                    (asiento_id, nuevo_id),
+                )
+        saldo_post = round(saldo - tns, 4)
+        conn.commit()
+        conn.close()
+        if es_sp:
+            msg_asiento = "Arrendador S/P: sin asiento contable."
+        elif asiento_id:
+            msg_asiento = f"Asiento #{asiento_id} (Debe Alquileres / Haber Proveedores)."
+        elif importe <= 0:
+            msg_asiento = "Sin precio: no se generó asiento."
+        else:
+            msg_asiento = "Sin asiento."
+        return {
+            "status": "ok",
+            "id": nuevo_id,
+            "asiento_id": asiento_id,
+            "sin_asiento_sp": es_sp,
+            "saldo_antes": saldo,
+            "saldo_despues": saldo_post,
+            "importe_total": importe,
+            "fecha_pago": fecha_pago,
+            "message": f"Venta registrada · {tns} tn · saldo restante {saldo_post} tn. {msg_asiento}",
+        }
+
     @app.get("/api/agro/contratos_alquileres")
     def api_contratos_alquileres(
         campania: Optional[str] = None,

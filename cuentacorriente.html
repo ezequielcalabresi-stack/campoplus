@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -11,7 +11,8 @@
         .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; padding: 12px; }
         .table tbody td { padding: 12px; vertical-align: middle; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="container my-4" style="max-width: 1300px;">
@@ -20,21 +21,21 @@
                 <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Proveedores a Pagar (Facturas / ND sin cubrir)</small></h4>
             </div>
             <div class="d-flex gap-2">
-                <a href="clientes_cobrar.html" class="btn btn-outline-primary btn-sm fw-bold">👥 Ir a Clientes a Cobrar</a>
-                <a href="ordenes_pago.html" class="btn btn-success btn-sm fw-bold" style="background-color: #059669; border:none;">💸 Órdenes de Pago</a>
-                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">← Volver al Dashboard</a>
+                <a href="clientes_cobrar.html" class="btn btn-outline-primary btn-sm fw-bold">Ir a Clientes a Cobrar</a>
+                <a href="ordenes_pago.html" class="btn btn-success btn-sm fw-bold" style="background-color: #059669; border:none;">Órdenes de Pago</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">Volver al Dashboard</a>
             </div>
         </div>
 
         <div class="main-card">
             <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <div>
-                    <h5 class="fw-bold mb-0 text-dark" id="tituloListado">📋 Proveedores con saldo a pagar</h5>
+                    <h5 class="fw-bold mb-0 text-dark" id="tituloListado">Proveedores con saldo a pagar</h5>
                     <small class="text-muted" id="subtituloListado">Listado de pendientes. Escribí en el buscador para consultar todo el padrón y revisar cualquier cta cte.</small>
                 </div>
                 <div class="input-group" style="width: 360px;">
                     <input type="text" id="buscadorProveedor" class="form-control form-control-sm" placeholder="Buscar en padrón (nombre o CUIT)..." oninput="onBuscar()">
-                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="limpiarBusqueda()" title="Volver al listado a pagar">✕</button>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="limpiarBusqueda()" title="Volver al listado a pagar">Limpiar</button>
                 </div>
             </div>
 
@@ -51,7 +52,7 @@
                         </tr>
                     </thead>
                     <tbody id="tablaSaldos">
-                        <tr><td colspan="6" class="text-center py-4 text-muted">🔄 Cargando proveedores a pagar...</td></tr>
+                        <tr><td colspan="6" class="text-center py-4 text-muted">Cargando proveedores a pagar...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -72,12 +73,12 @@
                 const res = await fetch('/api/saldos_proveedores');
                 datosProveedores = await res.json();
                 modoPadron = false;
-                document.getElementById('tituloListado').innerText = '📋 Proveedores con saldo a pagar';
+                document.getElementById('tituloListado').innerText = 'Proveedores con saldo a pagar';
                 document.getElementById('subtituloListado').innerText = 'Listado de pendientes. Escribí en el buscador para consultar todo el padrón y revisar cualquier cta cte.';
                 renderizarTabla(datosProveedores, false);
             } catch (e) {
                 console.error("Error al cargar saldos:", e);
-                document.getElementById('tablaSaldos').innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">⚠️ Error al conectar con el servidor.</td></tr>`;
+                document.getElementById('tablaSaldos').innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error al conectar con el servidor.</td></tr>`;
             }
         }
 
@@ -85,8 +86,8 @@
             let tbody = document.getElementById('tablaSaldos');
             if (!lista || lista.length === 0) {
                 tbody.innerHTML = desdePadron
-                    ? `<tr><td colspan="6" class="text-center py-4 text-muted">⚠️ Sin coincidencias en el padrón. Probá otro nombre o CUIT.</td></tr>`
-                    : `<tr><td colspan="6" class="text-center py-4 text-muted">⚠️ No hay proveedores con facturas/ND pendientes de pago.<br><span class="small">Usá el buscador para consultar el padrón completo.</span></td></tr>`;
+                    ? `<tr><td colspan="6" class="text-center py-4 text-muted">Sin coincidencias en el padrón. Probá otro nombre o CUIT.</td></tr>`
+                    : `<tr><td colspan="6" class="text-center py-4 text-muted">No hay proveedores con facturas/ND pendientes de pago.<br><span class="small">Usá el buscador para consultar el padrón completo.</span></td></tr>`;
                 return;
             }
 
@@ -111,8 +112,8 @@
                         <td class="text-end font-monospace fw-bold ${colorSaldo}">$ ${saldo.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td class="text-center">
                             <div class="d-flex gap-1 justify-content-center flex-wrap">
-                                <a href="detallegestioncc.html?cuit=${cuitQ}" class="btn btn-dark btn-sm fw-bold px-2 py-1" style="background-color: #0f172a; border: none;">Inspeccionar →</a>
-                                ${saldo > 0.01 ? `<a href="ordenes_pago.html?cuit=${cuitQ}" class="btn btn-success btn-sm fw-bold px-2 py-1" style="background-color: #059669; border: none;">OP →</a>` : ''}
+                                <a href="detallegestioncc.html?cuit=${cuitQ}" class="btn btn-dark btn-sm fw-bold px-2 py-1" style="background-color: #0f172a; border: none;">Inspeccionar</a>
+                                ${saldo > 0.01 ? `<a href="ordenes_pago.html?cuit=${cuitQ}" class="btn btn-success btn-sm fw-bold px-2 py-1" style="background-color: #059669; border: none;">OP</a>` : ''}
                             </div>
                         </td>
                     </tr>
@@ -143,7 +144,7 @@
             );
             // Siempre consultar padrón completo (incluye saldos 0 / a favor / ya pagados)
             try {
-                document.getElementById('tablaSaldos').innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">🔍 Buscando en padrón...</td></tr>`;
+                document.getElementById('tablaSaldos').innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">Buscando en padrón...</td></tr>`;
                 const res = await fetch('/api/proveedores/consulta?q=' + encodeURIComponent(texto));
                 let padron = res.ok ? await res.json() : [];
                 // Unir: priorizar resultados del padrón; si API falla, al menos locales
@@ -157,8 +158,8 @@
                     String(a.proveedor || '').localeCompare(String(b.proveedor || ''), 'es')
                 );
                 modoPadron = true;
-                document.getElementById('tituloListado').innerText = '🔎 Consulta de padrón / cta cte';
-                document.getElementById('subtituloListado').innerText = `Resultados para “${texto}” — incluir saldados y S/P. Inspeccionar abre la cuenta corriente.`;
+                document.getElementById('tituloListado').innerText = 'Consulta de padrón / cta cte';
+                document.getElementById('subtituloListado').innerText = `Resultados para "${texto}" - incluir saldados y S/P. Inspeccionar abre la cuenta corriente.`;
                 renderizarTabla(lista, true);
             } catch (e) {
                 console.error(e);
@@ -169,7 +170,7 @@
         function limpiarBusqueda() {
             document.getElementById('buscadorProveedor').value = '';
             modoPadron = false;
-            document.getElementById('tituloListado').innerText = '📋 Proveedores con saldo a pagar';
+            document.getElementById('tituloListado').innerText = 'Proveedores con saldo a pagar';
             document.getElementById('subtituloListado').innerText = 'Listado de pendientes. Escribí en el buscador para consultar todo el padrón y revisar cualquier cta cte.';
             renderizarTabla(datosProveedores, false);
         }

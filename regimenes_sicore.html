@@ -1,11 +1,12 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAmpo+ - Administración de Regímenes SICORE (ARCA)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
     <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg relative">
@@ -15,7 +16,7 @@
                 <p class="text-xs text-emerald-600 mt-1 font-medium">Modifique las alícuotas y Mínimos No Imponibles vigentes de ARCA.</p>
             </div>
             <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
-                ← Volver al Dashboard
+                Volver al Dashboard
             </a>
         </div>
 
@@ -75,10 +76,10 @@
                 });
                 const result = await res.json();
                 if (!res.ok) throw new Error(result.detail);
-                alert("✅ Régimen actualizado con éxito en la base de datos.");
+                alert("Régimen actualizado con éxito en la base de datos.");
                 cargarRegimenes();
             } catch (e) {
-                alert("🚨 Error al actualizar: " + e.message);
+                alert("Error al actualizar: " + e.message);
             }
         }
 

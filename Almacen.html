@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -13,7 +13,9 @@
         .badge-prod { background:#dbeafe; color:#1e40af; }
         .badge-lab { background:#fef3c7; color:#92400e; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
 <div class="container my-4" style="max-width:1100px;">
@@ -23,9 +25,9 @@
             <p class="hint mb-0">Ingresos a <strong>costo neto (sin impuestos)</strong>. Laboreos de terceros también se almacenan para costear OT.</p>
         </div>
         <div class="d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="recalcularStockExcel()">↻ Recalcular stock (Excel)</button>
+            <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="recalcularStockExcel()">Recalcular stock (Excel)</button>
             <a href="ordenestrabajo.html" class="btn btn-sm btn-outline-dark fw-bold">Órdenes de Trabajo</a>
-            <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">← Dashboard</a>
+            <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">Dashboard</a>
         </div>
     </div>
 
@@ -60,7 +62,7 @@
             </div>
             <div class="col-md-2">
                 <label class="small fw-bold">$ unit. NETO *</label>
-                <input type="number" step="0.01" id="ingPrecio" class="form-control form-control-sm font-mono" value="0" title="Sin IVA ni impuestos">
+                <input type="text" id="ingPrecio" class="form-control form-control-sm font-mono text-end money-input" data-money inputmode="decimal" value="0,00" title="Sin IVA ni impuestos">
             </div>
             <div class="col-md-2">
                 <label class="small fw-bold">Fecha</label>
@@ -79,7 +81,7 @@
                 <input id="ingObs" class="form-control form-control-sm">
             </div>
             <div class="col-md-2 d-flex align-items-end">
-                <button class="btn btn-success btn-sm fw-bold w-100" onclick="guardarIngreso()">⬆ Ingresar (neto)</button>
+                <button class="btn btn-success btn-sm fw-bold w-100" onclick="guardarIngreso()">Ingresar (neto)</button>
             </div>
         </div>
         <p class="hint mt-2 mb-0" id="hintTipo">Los productos comprados entran al stock valuados sin impuestos.</p>
@@ -90,10 +92,10 @@
             <h5 class="fw-bold mb-0">Stock actual</h5>
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <input id="filtroBuscar" class="form-control form-control-sm" style="width:180px;"
-                       placeholder="Buscar…" oninput="cargarStock()" title="Filtrar por nombre">
+                       placeholder="Buscar..." oninput="cargarStock()" title="Filtrar por nombre">
                 <div class="form-check mb-0">
                     <input class="form-check-input" type="checkbox" id="filtroSoloStock" checked onchange="cargarStock()">
-                    <label class="form-check-label small" for="filtroSoloStock">Solo con stock ≠ 0</label>
+                    <label class="form-check-label small" for="filtroSoloStock">Solo con stock > 0</label>
                 </div>
                 <select id="filtroTipo" class="form-select form-select-sm" style="width:140px;" onchange="cargarStock()">
                     <option value="">Todos tipos</option>
@@ -120,7 +122,7 @@
                         <th class="text-end">Valor stock</th>
                     </tr>
                 </thead>
-                <tbody id="tablaStock"><tr><td colspan="8" class="text-center text-muted py-3">Cargando…</td></tr></tbody>
+                <tbody id="tablaStock"><tr><td colspan="8" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -148,7 +150,7 @@ function onTipoIngreso() {
 
 function optsCats(selected) {
     return catsCache.map(c => {
-        const ot = c.aplica_ot ? ' · OT' : '';
+        const ot = c.aplica_ot ? ' - OT' : '';
         const sel = c.codigo === selected ? ' selected' : '';
         return `<option value="${c.codigo}"${sel}>${c.nombre}${ot}</option>`;
     }).join('');
@@ -243,7 +245,7 @@ async function cargarStock() {
             ? '<span class="badge bg-success">sí</span>'
             : '<span class="badge bg-secondary">no</span>';
         const manual = Number(i.clasificacion_manual) === 1
-            ? ' <span class="text-muted" title="Clasificación manual (no se pisa al reimportar)">✎</span>'
+            ? ' <span class="text-muted" title="Clasificación manual (no se pisa al reimportar)">M</span>'
             : '';
         const selTipo = `<select class="form-select form-select-sm" style="font-size:12px;min-width:100px;"
             onchange="cambiarClasificacion(${i.id}, 'tipo', this.value)" title="Editar tipo">
@@ -274,7 +276,7 @@ async function cargarStock() {
 async function guardarIngreso() {
     const nombre = document.getElementById('ingNombre').value.trim();
     const cantidad = parseFloat(document.getElementById('ingCant').value || 0);
-    const precio = parseFloat(document.getElementById('ingPrecio').value || 0);
+    const precio = CampoMoney.parse(document.getElementById('ingPrecio').value);
     if (!nombre) return alert('Indicá el nombre.');
     if (cantidad <= 0) return alert('Cantidad inválida.');
     const existente = itemsCache.find(i => (i.nombre || '').toLowerCase() === nombre.toLowerCase()
@@ -301,19 +303,19 @@ async function guardarIngreso() {
     });
     const d = await res.json().catch(()=>({}));
     if (!res.ok) return alert(d.detail || 'Error');
-    alert(`✅ ${d.message}\nStock: ${d.stock_cantidad} · Costo prom. neto: $ ${Number(d.costo_promedio_neto||0).toFixed(2)}`);
+    alert(`${d.message}\nStock: ${d.stock_cantidad} - Costo prom. neto: $ ${Number(d.costo_promedio_neto||0).toFixed(2)}`);
     document.getElementById('ingCant').value = '0';
-    document.getElementById('ingPrecio').value = '0';
+    document.getElementById('ingPrecio').value = CampoMoney.format(0);
     await cargarStock();
 }
 
 async function recalcularStockExcel() {
-    if (!confirm('¿Recalcular stock desde tablas/tablas.xlsx (solapa Stock Almacenes)?\nUsa ENTRADA − SALIDA porque la columna STOCK del Access suele venir en 0.')) return;
+    if (!confirm('¿Recalcular stock desde tablas/tablas.xlsx (solapa Stock Almacenes)?\nUsa ENTRADA - SALIDA porque la columna STOCK del Access suele venir en 0.')) return;
     const res = await fetch('/api/agro/almacen/recalcular_stock', { method: 'POST' });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return alert(d.detail || 'Error al recalcular');
     const s = d.stock || {};
-    alert(`OK: ${s.items_con_stock || 0} ítems con stock · ${s.movimientos_actualizados || 0} movs actualizados`);
+    alert(`OK: ${s.items_con_stock || 0} ítems con stock - ${s.movimientos_actualizados || 0} movs actualizados`);
     await cargarStock();
 }
 

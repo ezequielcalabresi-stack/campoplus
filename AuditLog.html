@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAmpo+ - Log de auditoría / Firmas</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
     <div class="max-w-7xl mx-auto p-6 my-6 bg-white rounded-xl shadow-lg">
@@ -16,22 +17,22 @@
             </div>
             <div class="flex gap-2">
                 <a href="Usuarios.html" class="bg-slate-100 text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-200">Usuarios</a>
-                <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-300"><- Dashboard</a>
             </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
             <div>
                 <label class="text-xs font-bold text-slate-600">Usuario</label>
-                <input id="filtroUsuario" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Nombre…" onkeydown="if(event.key==='Enter')cargar()">
+                <input id="filtroUsuario" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Nombre..." onkeydown="if(event.key==='Enter')cargar()">
             </div>
             <div>
                 <label class="text-xs font-bold text-slate-600">Módulo</label>
-                <input id="filtroModulo" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="ej. agro, bancos…" onkeydown="if(event.key==='Enter')cargar()">
+                <input id="filtroModulo" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="ej. agro, bancos..." onkeydown="if(event.key==='Enter')cargar()">
             </div>
             <div>
                 <label class="text-xs font-bold text-slate-600">Buscar</label>
-                <input id="filtroQ" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Ruta / detalle…" onkeydown="if(event.key==='Enter')cargar()">
+                <input id="filtroQ" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Ruta / detalle..." onkeydown="if(event.key==='Enter')cargar()">
             </div>
             <div class="flex items-end gap-2">
                 <button onclick="cargar()" class="flex-1 bg-emerald-600 text-white p-2 rounded-md text-sm font-bold hover:bg-emerald-700">Filtrar</button>

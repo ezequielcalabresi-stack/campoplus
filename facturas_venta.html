@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Facturas de Venta e IIBB</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.05); padding: 24px; }
+        .certificado-container { background: #fff; border: 2px solid #0f172a; padding: 28px; font-family: 'Courier New', Courier, monospace; color: #000; }
+        .cert-header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+        .cert-section-title { background: #f1f5f9; border-top: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 4px 8px; font-weight: bold; font-size: 11px; margin-top: 12px; margin-bottom: 8px; text-transform: uppercase; }
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            body * { visibility: hidden !important; }
+            #areaCertPerc, #areaCertPerc * { visibility: visible !important; }
+            #areaCertPerc { position: absolute; left: 0; top: 0; width: 100%; }
+            .modal, .modal-dialog, .modal-content, .modal-body { position: static !important; transform: none !important; box-shadow: none !important; border: none !important; width: 100% !important; max-width: none !important; }
+            .modal-backdrop, .modal-header, .btn, .no-print { display: none !important; }
+        }
+    </style>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
+</head>
+<body>
+<div class="container my-4" style="max-width: 960px;">
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Facturas de venta + Percepción IIBB</small></h4>
+        <div class="d-flex gap-2">
+            <a href="clientes_cobrar.html" class="btn btn-outline-primary btn-sm fw-bold">Clientes a cobrar</a>
+            <a href="index.html" class="btn btn-secondary btn-sm" style="background:#e2e8f0;color:#334155;border:none;font-weight:600;">Dashboard</a>
+        </div>
+    </div>
+
+    <div class="main-card">
+        <div id="bannerAgente" class="alert alert-info py-2 small mb-3">Consultando perfil de agente de percepción...</div>
+        <form id="formVenta" onsubmit="guardarVenta(event)">
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Cliente *</label>
+                    <select id="selCliente" class="form-select" required onchange="onClienteChange()">
+                        <option value="">Seleccione un cliente...</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">CUIT</label>
+                    <input id="txtCuit" class="form-control font-monospace bg-light" readonly>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Fecha *</label>
+                    <input type="date" id="txtFecha" class="form-control" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Tipo</label>
+                    <select id="selTipo" class="form-select">
+                        <option value="Factura A">Factura A</option>
+                        <option value="Factura B">Factura B</option>
+                        <option value="Factura C">Factura C</option>
+                        <option value="Nota de Débito A">Nota de Débito A</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Nº comprobante *</label>
+                    <input id="txtNro" class="form-control font-monospace" required placeholder="0001-00001234">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Vencimiento</label>
+                    <input type="date" id="txtVenc" class="form-control">
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Neto ($)*</label>
+                    <input id="txtNeto" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">IVA ($)</label>
+                    <input id="txtIva" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Alícuota perc. ARBA</label>
+                    <div class="input-group">
+                        <input id="txtAlic" class="form-control text-end font-monospace" value="0,00" oninput="recalcDesdeAlic()">
+                        <span class="input-group-text">%</span>
+                        <button type="button" class="btn btn-outline-primary" onclick="consultarArba()">ARBA</button>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Percepción IIBB ($)</label>
+                    <input id="txtPerc" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center bg-light border rounded p-3 mb-3">
+                <div>
+                    <span class="text-muted small fw-bold d-block">TOTAL FACTURA (neto + IVA + perc.)</span>
+                    <span id="lblTotal" class="fs-3 fw-bold text-success font-monospace">$ 0,00</span>
+                </div>
+                <button type="submit" class="btn btn-success fw-bold px-4 py-2">Emitir factura y certificado</button>
+            </div>
+            <p class="small text-muted mb-0">Si la empresa es agente de percepción IIBB, se calcula la alícuota del padrón ARBA sobre el neto y se genera el certificado imprimible.</p>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalCertPerc" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-dark text-white py-2 no-print">
+                <h5 class="modal-title fs-6 fw-bold">Certificado de Percepción IIBB (ARBA)</h5>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-light btn-sm fw-bold" onclick="window.print()">Imprimir / Guardar PDF</button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body p-4 bg-light" id="areaCertPerc"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let clientes = [];
+let empresa = {};
+let esAgentePerc = true;
+let alicDecimal = 0;
+
+function money(n) {
+    return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function init() {
+    document.getElementById('txtFecha').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('txtVenc').value = document.getElementById('txtFecha').value;
+    const [rEnt, rCfg] = await Promise.all([
+        fetch('/api/entidades?rol=cliente'),
+        fetch('/api/configuracion')
+    ]);
+    clientes = rEnt.ok ? await rEnt.json() : [];
+    empresa = rCfg.ok ? await rCfg.json() : {};
+    esAgentePerc = empresa.agente_percepcion_iibb !== 0 && empresa.agente_percepcion_iibb !== false;
+    const ban = document.getElementById('bannerAgente');
+    if (esAgentePerc) {
+        ban.className = 'alert alert-info py-2 small mb-3';
+        ban.innerHTML = '<strong>Agente de percepción IIBB activo.</strong> Al emitir la venta se consulta/aplica el padrón ARBA y se genera el certificado.';
+    } else {
+        ban.className = 'alert alert-warning py-2 small mb-3';
+        ban.innerHTML = '<strong>La empresa no está marcada como agente de percepción IIBB.</strong> Podés activarlo en Configuración de Empresa. La factura se emite sin percepción.';
+        document.getElementById('txtAlic').disabled = true;
+        document.getElementById('txtPerc').disabled = true;
+    }
+    const sel = document.getElementById('selCliente');
+    sel.innerHTML = '<option value="">Seleccione un cliente...</option>' + clientes.map(e => {
+        const nom = e.nombre_fantasia || e.razon_social || e.cuit;
+        const cuit = String(e.cuit || '').replace(/\D/g, '');
+        return `<option value="${esc(cuit)}">${esc(nom)} (CUIT: ${esc(e.cuit)})</option>`;
+    }).join('');
+
+    const qs = new URLSearchParams(location.search);
+    const cuitQ = (qs.get('cuit') || '').replace(/\D/g, '');
+    if (cuitQ) {
+        sel.value = cuitQ;
+        onClienteChange();
+    }
+}
+
+function onClienteChange() {
+    const cuit = document.getElementById('selCliente').value;
+    document.getElementById('txtCuit').value = cuit || '';
+    if (cuit && esAgentePerc) consultarArba();
+}
+
+async function consultarArba() {
+    const cuit = document.getElementById('selCliente').value;
+    if (!cuit) return alert('Elegí un cliente.');
+    try {
+        const res = await fetch('/api/arba/consultar/' + cuit);
+        if (!res.ok) throw new Error('Sin datos');
+        const d = await res.json();
+        const pct = Number(d.alicuota_percepcion || 0);
+        // API suele devolver 1.75 (= 1.75%)
+        const pctShow = pct <= 1 && pct > 0 ? pct * 100 : pct;
+        document.getElementById('txtAlic').value = pctShow.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        alicDecimal = pctShow / 100;
+        recalcDesdeAlic();
+    } catch (e) {
+        alert('No se pudo consultar el padrón ARBA para este CUIT.');
+    }
+}
+
+function recalcDesdeAlic() {
+    const raw = String(document.getElementById('txtAlic').value || '0').trim().replace(',', '.');
+    const pct = parseFloat(raw) || 0;
+    alicDecimal = pct / 100;
+    const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
+    if (esAgentePerc) {
+        document.getElementById('txtPerc').value = CampoMoney.format(neto * alicDecimal);
+    }
+    recalc();
+}
+
+function recalc() {
+    const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
+    const iva = CampoMoney.parse(document.getElementById('txtIva').value);
+    const perc = esAgentePerc ? CampoMoney.parse(document.getElementById('txtPerc').value) : 0;
+    document.getElementById('lblTotal').innerText = money(neto + iva + perc);
+}
+
+function htmlCertPerc(data) {
+    const cli = data.cliente || {};
+    const fecha = (data.fecha || document.getElementById('txtFecha').value || '').split('-');
+    const fAR = fecha.length === 3 ? `${fecha[2]}/${fecha[1]}/${fecha[0]}` : document.getElementById('txtFecha').value;
+    const alic = (Number(data.alicuota_percepcion || 0) * 100).toFixed(2);
+    return `
+    <div class="certificado-container bg-white">
+        <div class="cert-header d-flex justify-content-between">
+            <div>
+                <h4 class="fw-bold mb-1">ARBA - AGENCIA DE RECAUDACIÓN PROV. BS. AS.</h4>
+                <p class="text-muted small mb-0">Certificado de Percepción de Ingresos Brutos</p>
+                <p class="text-muted small mb-0">Régimen General de Percepción · padrón ARBA vigente</p>
+            </div>
+            <div class="text-end">
+                <span class="d-block fw-bold">Certificado Nº: ${esc(data.cert_percepcion || '--')}</span>
+                <span class="text-muted small">Fecha: ${esc(fAR)}</span>
+                <span class="text-muted small d-block">Comprobante: ${esc(document.getElementById('selTipo').value)} ${esc(document.getElementById('txtNro').value)}</span>
+            </div>
+        </div>
+        <div class="cert-section-title">A. - Agente de percepción</div>
+        <div class="row small mb-2">
+            <div class="col-8">Denominación: <strong>${esc(empresa.razon_social || 'SILO CHICO S.A.')}</strong></div>
+            <div class="col-4">CUIT: <strong>${esc(empresa.cuit || '')}</strong></div>
+            <div class="col-8">Domicilio: <strong>${esc(empresa.domicilio || 'S/D')}</strong></div>
+            <div class="col-4">Localidad: <strong>${esc(empresa.localidad || '')}</strong></div>
+        </div>
+        <div class="cert-section-title">B. - Sujeto percibido</div>
+        <div class="row small mb-2">
+            <div class="col-8">Denominación: <strong>${esc(cli.razon_social || '')}</strong></div>
+            <div class="col-4">CUIT: <strong>${esc(cli.cuit || '')}</strong></div>
+            <div class="col-8">Domicilio: <strong>${esc(cli.domicilio || 'S/D')}</strong></div>
+            <div class="col-4">Localidad: <strong>${esc(cli.localidad || 'S/D')}</strong></div>
+        </div>
+        <div class="cert-section-title">C. - Determinación de la percepción</div>
+        <table class="table table-bordered text-center font-monospace mb-0" style="font-size:12px;">
+            <thead class="table-light"><tr><th>Base imponible (neto)</th><th>Alícuota</th><th>Importe percibido</th></tr></thead>
+            <tbody><tr>
+                <td class="fw-bold">${money(CampoMoney.parse(document.getElementById('txtNeto').value))}</td>
+                <td class="fw-bold">${alic}%</td>
+                <td class="fw-bold text-danger fs-6">${money(data.percepcion_iibb)}</td>
+            </tr></tbody>
+        </table>
+        <p class="small text-muted mt-3 mb-0" style="font-size:10px;">
+            Percepción practicada conforme al padrón de ARBA. El sujeto percibido podrá computarla en su liquidación de IIBB.
+        </p>
+    </div>`;
+}
+
+async function guardarVenta(ev) {
+    ev.preventDefault();
+    const cuit = document.getElementById('selCliente').value;
+    const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
+    const iva = CampoMoney.parse(document.getElementById('txtIva').value);
+    const perc = esAgentePerc ? CampoMoney.parse(document.getElementById('txtPerc').value) : 0;
+    const total = neto + iva + perc;
+    if (!cuit || neto <= 0) return alert('Completá cliente y neto.');
+    const payload = {
+        cuit,
+        tipo_comprobante: document.getElementById('selTipo').value,
+        numero_comprobante: document.getElementById('txtNro').value.trim(),
+        fecha: document.getElementById('txtFecha').value,
+        vencimiento: document.getElementById('txtVenc').value || document.getElementById('txtFecha').value,
+        neto, iva,
+        alicuota_percepcion: alicDecimal * 100,
+        percepcion_iibb: perc,
+        total,
+        usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar'
+    };
+    try {
+        const res = await fetch('/api/facturas_venta', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Error al guardar');
+        if (data.cert_percepcion && perc > 0.01) {
+            data.fecha = payload.fecha;
+            document.getElementById('areaCertPerc').innerHTML = htmlCertPerc(data);
+            new bootstrap.Modal(document.getElementById('modalCertPerc')).show();
+        } else {
+            alert(data.message || 'Factura registrada.');
+            location.href = 'detallegestioncc.html?cuit=' + encodeURIComponent(cuit);
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+window.onload = init;
+</script>
+</body>
+</html>

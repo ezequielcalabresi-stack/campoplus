@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -14,7 +14,8 @@
         .badge-plan { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .03em; }
     </style>
     <script src="/campoplus-auth.js"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="container my-4" style="max-width: 1280px;">
@@ -24,10 +25,13 @@
                 <p class="text-muted small mb-0 mt-1">Control comercial: paquetes, bloqueo por falta de pago, logo y módulos por empresa.</p>
             </div>
             <div class="d-flex gap-2">
-                <a href="Index.html" class="btn btn-secondary btn-sm fw-bold" style="background-color: #e2e8f0; color: #334155; border: none;">← Dashboard</a>
+                <a href="Usuarios.html" class="btn btn-outline-dark btn-sm fw-bold">Usuarios</a>
+                <a href="AuditLog.html" class="btn btn-outline-success btn-sm fw-bold">Log auditoría</a>
+                <a href="Index.html" class="btn btn-secondary btn-sm fw-bold" style="background-color: #e2e8f0; color: #334155; border: none;">Dashboard</a>
             </div>
         </div>
 
+        <div id="cupoEmpresas" class="alert alert-light border small mb-3" style="display:none;"></div>
         <div class="main-card">
             <h5 class="fw-bold mb-3" id="formTitulo">Registrar / configurar empresa cliente</h5>
             <form id="formEmpresa" onsubmit="guardarEmpresa(event)">
@@ -75,7 +79,7 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Notas comerciales</label>
-                        <input type="text" id="notas" class="form-control" placeholder="Ej: paquete agro, facturación mensual…">
+                        <input type="text" id="notas" class="form-control" placeholder="Ej: paquete agro, facturación mensual...">
                     </div>
                 </div>
 
@@ -186,7 +190,7 @@
                 const res = await fetch('/api/auth/planes');
                 if (!res.ok) return;
                 const data = await res.json();
-                // presets vienen del backend en PLANES — usamos defaults locales si no hay detalle
+                // presets vienen del backend en PLANES - usamos defaults locales si no hay detalle
                 planPresets = {
                     full: Object.fromEntries(Object.keys(MOD_LABELS).map(k => [k, 1])),
                     agro: { mod_bancos:1, mod_agro:1, mod_almacen:1, mod_ganaderia:0, mod_tambo:0, mod_sicore:1, mod_arba:1, mod_contabilidad:1, mod_liquidaciones:1, es_agente_retencion:1 },
@@ -248,7 +252,7 @@
             tbody.innerHTML = empresasDB.map(e => {
                 const logo = e.logo_url
                     ? `<img src="${e.logo_url}" class="logo-thumb" alt="">`
-                    : `<div class="logo-thumb d-flex align-items-center justify-content-center text-muted small">—</div>`;
+                    : `<div class="logo-thumb d-flex align-items-center justify-content-center text-muted small"> - </div>`;
                 const acceso = Number(e.acceso_habilitado) === 1
                     ? '<span class="badge bg-success">OK</span>'
                     : '<span class="badge bg-danger">Suspendida</span>';
@@ -406,8 +410,29 @@
             location.href = 'Index.html';
         }
 
+        async function mostrarCupo() {
+            const box = document.getElementById('cupoEmpresas');
+            const res = await fetch('/api/plataforma/mi-cupo');
+            if (!res.ok) return;
+            const c = await res.json();
+            box.style.display = '';
+            box.innerHTML = `<b>${c.nombre}</b>: ${c.empresas_usadas} de ${c.empresas_max} empresas (${c.empresas_incluidas} incluidas). ` +
+                (c.puede_crear_empresa
+                    ? 'Podés dar de alta otra empresa de este grupo.'
+                    : 'Cupo completo. Para una empresa más, Campo+ tiene que autorizarla. <button type="button" class="btn btn-outline-dark btn-sm py-0 ms-2" onclick="pedirEmpresa()">Pedir autorización</button>');
+        }
+        async function pedirEmpresa() {
+            const detalle = prompt('¿Qué empresa querés sumar? (razón social)') || '';
+            const res = await fetch('/api/plataforma/solicitudes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tipo: 'empresa', detalle }),
+            });
+            alert(res.ok ? 'Pedido enviado al administrador de Campo+.' : 'No se pudo enviar el pedido.');
+        }
         window.onload = async function () {
             await CampoAuth.requireAuth({ redirect: 'Empresas.html' });
+            mostrarCupo();
             await cargarPlanes();
             buildModChecks(planPresets.full || null);
             await cargarEmpresas();

@@ -1,9 +1,10 @@
-# Nunca subir datos reales ni bases locales
+# Datos locales. campoplus.db se sube una sola vez para sembrar el disco de Render.
 *.db
 *.db-shm
 *.db-wal
 *.db.bak
 *.bak
+!campoplus.db
 padrones_arba/
 PadronRGS*
 padron_unificado.json

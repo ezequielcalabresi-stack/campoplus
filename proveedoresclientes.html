@@ -47,7 +47,8 @@
         }
         .btn-accion-eliminar:hover { background-color: #dc2626; color: #ffffff; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="container my-4" style="max-width: 1280px;">
@@ -57,17 +58,17 @@
                 <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Padrón Unificado de Entidades & Datos Fiscales</small></h4>
             </div>
             <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600; padding: 8px 16px;">
-                ← Volver al Dashboard
+                Volver al Dashboard
             </a>
         </div>
 
         <div class="alert alert-success py-2 px-3 mb-4 fs-6 rounded-3 shadow-sm border-0 d-flex align-items-center gap-2" style="background-color: #ecfdf5; color: #065f46;">
-            <span>✓</span> <strong>Conectado al backend FastAPI.</strong> Padrón sincronizado en tiempo real.
+            <span>?</span> <strong>Conectado al backend FastAPI.</strong> Padrón sincronizado en tiempo real.
         </div>
 
         <!-- FORMULARIO DE LEGAJO FISCAL -->
         <div class="main-card">
-            <h5 class="mb-3 text-secondary fw-bold fs-6 text-uppercase tracking-wide" id="form-titulo">📋 Legajo Fiscal y Domiciliario de la Entidad</h5>
+            <h5 class="mb-3 text-secondary fw-bold fs-6 text-uppercase tracking-wide" id="form-titulo">Legajo Fiscal y Domiciliario de la Entidad</h5>
             <form id="form-entidad">
                 <div class="row g-3">
                     <div class="col-md-4">
@@ -99,24 +100,24 @@
                     <div class="col-md-4">
                         <label class="form-label fw-bold text-slate-700">Centro de Costos</label>
                         <select class="form-select" id="centro_costo">
-                            <option value="1">1 — Contabilidad oficial (genera asientos)</option>
-                            <option value="SP">S/P — Sin Partida (cta cte sí, asiento oficial no)</option>
+                            <option value="1">1 - Contabilidad oficial (genera asientos)</option>
+                            <option value="SP">S/P - Sin Partida (cta cte sí, asiento oficial no)</option>
                         </select>
                         <div class="form-text">Secretito operativo: S/P no impacta el libro diario oficial.</div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold text-slate-700">Régimen SICORE (RG 830)</label>
                         <select class="form-select" id="regimen_sicore">
-                            <option value="">— Sin definir —</option>
-                            <option value="032">032 — Bienes Inmuebles Rurales (incluye leasing)</option>
-                            <option value="031">031 — Bienes Inmuebles Urbanos (incluye leasing)</option>
-                            <option value="030">030 — Alquileres bienes muebles</option>
-                            <option value="078">078 — Enajenación bienes muebles</option>
-                            <option value="094">094 — Locaciones obra/servicios</option>
-                            <option value="095">095 — Transporte de carga</option>
-                            <option value="025">025 — Comisiones comercio</option>
-                            <option value="116">116 — Honorarios director/síndico</option>
-                            <option value="119">119 — Profesiones liberales</option>
+                            <option value=""> -  Sin definir - </option>
+                            <option value="032">032 - Bienes Inmuebles Rurales (incluye leasing)</option>
+                            <option value="031">031 - Bienes Inmuebles Urbanos (incluye leasing)</option>
+                            <option value="030">030 - Alquileres bienes muebles</option>
+                            <option value="078">078 - Enajenación bienes muebles</option>
+                            <option value="094">094 - Locaciones obra/servicios</option>
+                            <option value="095">095 - Transporte de carga</option>
+                            <option value="025">025 - Comisiones comercio</option>
+                            <option value="116">116 - Honorarios director/síndico</option>
+                            <option value="119">119 - Profesiones liberales</option>
                         </select>
                     </div>
                     <div class="col-md-4 d-flex align-items-end pb-1">
@@ -140,11 +141,11 @@
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="es_cuenta_ajuste" onchange="onCuentaAjuste()">
                             <label class="form-check-label fw-semibold text-danger" for="es_cuenta_ajuste">Cta de ajuste / banco</label>
-                            <div class="form-text">Se oculta del padrón comercial y de “a pagar”.</div>
+                            <div class="form-text">Se oculta del padrón comercial y de "a pagar".</div>
                         </div>
                         <div class="ms-auto d-flex gap-2">
                             <button type="button" class="btn btn-outline-secondary btn-sm px-3 fw-semibold" id="btn-cancelar" style="display:none;" onclick="limpiarForm()">Cancelar</button>
-                            <button type="submit" class="btn btn-primary px-4 fw-bold" id="btn-guardar" style="background-color: #0284c7; border: none;">＋ Guardar Entidad</button>
+                            <button type="submit" class="btn btn-primary px-4 fw-bold" id="btn-guardar" style="background-color: #0284c7; border: none;">+ Guardar Entidad</button>
                         </div>
                     </div>
                 </div>
@@ -153,12 +154,15 @@
 
         <!-- BUSCADOR + FILTRO -->
         <div class="mb-4 d-flex flex-wrap gap-2 align-items-center">
-            <input type="text" id="buscador" class="form-control form-control-lg shadow-sm fs-6 flex-grow-1" style="min-width:220px;" placeholder="🔍 Búsqueda rápida por CUIT o Razón Social..." onkeyup="filtrarEntidades()">
-            <select id="filtroVista" class="form-select form-select-lg shadow-sm" style="max-width:260px;" onchange="cargarEntidades()">
+            <input type="text" id="buscador" class="form-control form-control-lg shadow-sm fs-6 flex-grow-1" style="min-width:220px;" placeholder="Búsqueda rápida por CUIT o Razón Social..." onkeyup="filtrarEntidades()">
+            <select id="filtroVista" class="form-select form-select-lg shadow-sm" style="max-width:280px;" onchange="cargarEntidades()">
                 <option value="comerciales" selected>Comerciales (sin ctas ajuste)</option>
+                <option value="arrendadores">Solo arrendadores / locadores</option>
                 <option value="ajuste">Solo ctas de ajuste / banco</option>
                 <option value="todas">Todas</option>
             </select>
+            <button type="button" class="btn btn-outline-dark btn-sm fw-bold px-3" onclick="sincronizarAccess()" title="Actualiza locadores/arrendadores y S/P desde Excel Access">Sync Access (arrendadores)
+            </button>
         </div>
 
         <!-- DIRECTORIO GENERAL -->
@@ -195,13 +199,31 @@
                 const vista = document.getElementById('filtroVista').value;
                 let qs = '';
                 if (vista === 'ajuste') qs = '?solo_ajuste=true';
-                else if (vista === 'todas') qs = '?incluir_ajuste=true';
+                else if (vista === 'todas' || vista === 'arrendadores') qs = '?incluir_ajuste=true';
                 // comerciales = default API (sin ajuste)
                 let res = await fetch('/api/entidades' + qs);
-                entidadesGlobal = await res.json();
+                let data = await res.json();
+                if (vista === 'arrendadores') {
+                    data = (data || []).filter(e => Number(e.es_propietario_inmueble) === 1 || Number(e.es_locador) === 1);
+                }
+                entidadesGlobal = data;
                 filtrarEntidades();
             } catch (err) {
                 console.error("Error cargando entidades:", err);
+            }
+        }
+
+        async function sincronizarAccess() {
+            if (!confirm('¿Sincronizar arrendadores/locadores y S/P desde el Excel Access (tablas/proveedores.xlsx)?')) return;
+            try {
+                const res = await fetch('/api/entidades/sincronizar_access', { method: 'POST' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.detail || 'Error al sincronizar');
+                alert(`Listo.\nArrendadores Excel: ${data.arrendadores_excel}\nActualizados/altas: ${data.upsert_arrendadores}\nEn padrón ahora: ${data.arrendadores_en_db} (S/P: ${data.arrendadores_sp_en_db})`);
+                document.getElementById('filtroVista').value = 'arrendadores';
+                await cargarEntidades();
+            } catch (e) {
+                alert('No se pudo sincronizar: ' + e.message);
             }
         }
 
@@ -214,12 +236,18 @@
             tbody.innerHTML = data.map(e => {
                 const reg = (e.regimen_sicore || (e.es_propietario_inmueble ? '032' : '') || '').toString().padStart(3, '0').replace(/^000$/, '');
                 const regBadge = reg
-                    ? `<span class="badge ${reg === '032' ? 'bg-warning text-dark' : 'bg-dark'} font-monospace px-2 py-1" title="${e.es_propietario_inmueble ? 'Propietario de inmueble → OP precarga 032' : 'Régimen SICORE'}">${reg}</span>`
-                    : '<span class="text-muted">—</span>';
+                    ? `<span class="badge ${reg === '032' ? 'bg-warning text-dark' : 'bg-dark'} font-monospace px-2 py-1" title="${e.es_propietario_inmueble ? 'Propietario de inmueble / OP precarga 032' : 'Régimen SICORE'}">${reg}</span>`
+                    : '<span class="text-muted"> - </span>';
                 const esAj = Number(e.es_cuenta_ajuste) === 1;
                 return `
                 <tr class="${esAj ? 'table-secondary' : ''}">
-                    <td class="fw-bold font-monospace">${e.cuit}</td>
+                    <td class="fw-bold font-monospace">${
+                        String(e.cuit).startsWith('99')
+                            ? '<span class="badge bg-warning text-dark" title="CUIT provisorio - cargá el fiscal">Sin CUIT</span>'
+                            : ((e.centro_costo || '') === 'SP' || String(e.cuit).replace(/^0+/, '') === '' || /^00/.test(String(e.cuit)))
+                                ? `<span class="badge bg-warning text-dark" title="S/P - CUIT Access ${e.cuit}">CUIT 0 (S/P)</span>`
+                                : e.cuit
+                    }</td>
                     <td class="fw-semibold text-slate-800">${e.nombre_fantasia || e.razon_social}
                         ${e.es_propietario_inmueble ? ' <span class="badge bg-warning-subtle text-dark border">Arrendador</span>' : ''}
                         ${esAj ? ' <span class="badge bg-danger-subtle text-danger border">Cta ajuste</span>' : ''}
@@ -239,9 +267,9 @@
                         : '<span class="badge bg-secondary px-2 py-1">1</span>'}</td>
                     <td class="text-center">
                         <div class="d-flex justify-content-center gap-1">
-                            <button class="btn-accion-cc" onclick="window.location.href='detallegestioncc.html?cuit=${e.cuit}'">📊 Cta Cte</button>
-                            <button class="btn-accion-editar" onclick="editarEntidad('${String(e.cuit).replace(/'/g, "\\'")}')">✏️ Editar</button>
-                            <button class="btn-accion-eliminar" onclick="eliminarEntidad('${String(e.cuit).replace(/'/g, "\\'")}')">🗑️ Eliminar</button>
+                            <button class="btn-accion-cc" onclick="window.location.href='detallegestioncc.html?cuit=${e.cuit}'">Cta Cte</button>
+                            <button class="btn-accion-editar" onclick="editarEntidad('${String(e.cuit).replace(/'/g, "\\'")}')">Editar</button>
+                            <button class="btn-accion-eliminar" onclick="eliminarEntidad('${String(e.cuit).replace(/'/g, "\\'")}')">Eliminar</button>
                         </div>
                     </td>
                 </tr>`;
@@ -265,14 +293,13 @@
         }
 
         function filtrarEntidades() {
-            let query = document.getElementById('buscador').value.toLowerCase();
-            let filtrados = entidadesGlobal.filter(e =>
-                (e.cuit && String(e.cuit).toLowerCase().includes(query)) ||
-                (e.nombre_fantasia && e.nombre_fantasia.toLowerCase().includes(query)) ||
-                (e.razon_social && e.razon_social.toLowerCase().includes(query)) ||
-                (e.domicilio && e.domicilio.toLowerCase().includes(query)) ||
-                (e.regimen_sicore && String(e.regimen_sicore).includes(query))
-            );
+            let query = document.getElementById('buscador').value.toLowerCase().trim();
+            const palabras = query.replace(/\./g, ' ').split(/\s+/).filter(Boolean);
+            let filtrados = entidadesGlobal.filter(e => {
+                const texto = [e.cuit, e.nombre_fantasia, e.razon_social, e.domicilio, e.regimen_sicore]
+                    .filter(Boolean).join(' ').toLowerCase().replace(/\./g, ' ');
+                return palabras.every(p => texto.includes(p));
+            });
             renderTabla(filtrados);
         }
 
@@ -280,7 +307,8 @@
             let e = entidadesGlobal.find(x => String(x.cuit) === String(cuit) || String(x.cuit).replace(/\D/g,'') === String(cuit).replace(/\D/g,''));
             if (!e) return;
             document.getElementById('cuit').value = e.cuit;
-            document.getElementById('cuit').readOnly = true;
+            document.getElementById('cuit').dataset.original = e.cuit;
+            document.getElementById('cuit').readOnly = !String(e.cuit).startsWith('99');
             document.getElementById('razon_social').value = e.nombre_fantasia || e.razon_social || '';
             document.getElementById('domicilio').value = e.domicilio || '';
             document.getElementById('localidad').value = e.localidad || '';
@@ -291,7 +319,7 @@
             document.getElementById('es_propietario_inmueble').checked = !!e.es_propietario_inmueble;
             const reg = (e.regimen_sicore || (e.es_propietario_inmueble ? '032' : '') || '').toString();
             document.getElementById('regimen_sicore').value = reg ? reg.padStart(3, '0') : '';
-            document.getElementById('form-titulo').innerText = "✏️ EDITAR ENTIDAD: " + (e.nombre_fantasia || e.cuit);
+            document.getElementById('form-titulo').innerText = "EDITAR ENTIDAD: " + (e.nombre_fantasia || e.cuit);
             document.getElementById('btn-guardar').innerText = "Guardar Cambios";
             document.getElementById('btn-cancelar').style.display = 'inline-block';
             window.scrollTo({top: 0, behavior: 'smooth'});
@@ -300,8 +328,9 @@
         function limpiarForm() {
             document.getElementById('form-entidad').reset();
             document.getElementById('cuit').readOnly = false;
-            document.getElementById('form-titulo').innerText = "📋 Legajo Fiscal y Domiciliario de la Entidad";
-            document.getElementById('btn-guardar').innerText = "＋ Guardar Entidad";
+            document.getElementById('cuit').dataset.original = '';
+            document.getElementById('form-titulo').innerText = "Legajo Fiscal y Domiciliario de la Entidad";
+            document.getElementById('btn-guardar').innerText = "+ Guardar Entidad";
             document.getElementById('btn-cancelar').style.display = 'none';
             document.getElementById('regimen_sicore').value = '';
             document.getElementById('es_propietario_inmueble').checked = false;
@@ -337,6 +366,11 @@
             });
 
             if (res.ok) {
+                const original = document.getElementById('cuit').dataset.original || '';
+                const nuevo = (data.cuit || '').replace(/\D/g, '');
+                if (original.startsWith('99') && nuevo && nuevo !== original.replace(/\D/g, '')) {
+                    await fetch('/api/entidades/' + encodeURIComponent(original), { method: 'DELETE' });
+                }
                 const msg = esAj
                     ? "Guardada como cta de ajuste (no aparece en el padrón comercial)."
                     : (esProp ? "Guardada como proveedor/arrendador con SICORE 032." : "¡Entidad guardada/actualizada!");

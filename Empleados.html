@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <script src="db-core.js"></script>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 
@@ -19,7 +21,7 @@
                 <p id="estado-db" class="text-xs text-amber-600 mt-1">Conectando al núcleo central...</p>
             </div>
             <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
-                ← Volver al Dashboard
+                Volver al Dashboard
             </a>
         </div>
 
@@ -41,7 +43,7 @@
             </div>
             <div class="flex items-end">
                 <button onclick="cargarDatosEmpleado()" class="w-full bg-slate-800 text-white p-2.5 rounded font-bold hover:bg-slate-700">
-                    🔍 Consultar Legajo
+                    Consultar Legajo
                 </button>
             </div>
         </div>
@@ -61,8 +63,7 @@
                     <input type="checkbox" id="excluirInflacion" class="mr-2 h-4 w-4 text-indigo-600 rounded">
                     <label for="excluirInflacion" class="font-medium text-indigo-900">Excluir de la inflación</label>
                 </div>
-                <button onclick="aplicarAjusteIPC()" class="bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700 mt-4">
-                    ⚡ Aplicar Ajuste
+                <button onclick="aplicarAjusteIPC()" class="bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700 mt-4">Aplicar Ajuste
                 </button>
             </div>
         </div>
@@ -75,7 +76,7 @@
                 <div class="space-y-3">
                     <div class="flex justify-between items-center">
                         <span class="text-slate-600">Sueldo Básico Actualizado:</span>
-                        <input type="text" id="inputBasico" value="750.000,00" class="border rounded p-1.5 w-32 text-right font-bold font-mono">
+                        <input type="text" id="inputBasico" value="750.000,00" class="border rounded p-1.5 w-32 text-right font-bold font-mono money-input" data-money inputmode="decimal">
                     </div>
                     <div class="flex justify-between items-center">
                         <span class="text-slate-600">Presentismo / Antigüedad:</span>
@@ -98,11 +99,11 @@
                 <div class="space-y-3">
                     <div class="flex justify-between items-center">
                         <span class="text-slate-600">Adelantos / Vales en Cta Cte:</span>
-                        <input type="text" id="inputAdelantos" value="150.000,00" class="border rounded p-1.5 w-32 text-right text-red-600 font-medium font-mono" oninput="recalcularSueldo()">
+                        <input type="text" id="inputAdelantos" value="150.000,00" class="border rounded p-1.5 w-32 text-right text-red-600 font-medium font-mono money-input" data-money inputmode="decimal" oninput="recalcularSueldo()">
                     </div>
                     <div class="flex justify-between items-center">
                         <span class="text-slate-600">Depósitos Bancarios Previos:</span>
-                        <input type="text" id="inputDepositos" value="300.000,00" class="border rounded p-1.5 w-32 text-right text-red-600 font-medium font-mono" oninput="recalcularSueldo()">
+                        <input type="text" id="inputDepositos" value="300.000,00" class="border rounded p-1.5 w-32 text-right text-red-600 font-medium font-mono money-input" data-money inputmode="decimal" oninput="recalcularSueldo()">
                     </div>
                     <div class="flex justify-between border-t pt-2 font-extrabold text-slate-900 bg-emerald-50 p-2.5 rounded text-sm">
                         <span>Saldo Neto a Cobrar:</span>
@@ -115,9 +116,9 @@
         <!-- SECCIÓN 4: VISTA PREVIA DEL RECIBO PARA RECORTAR -->
         <div class="border-2 border-dashed border-slate-300 rounded-lg p-6 bg-slate-50">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wide">✂️ Recibo de Liquidación (Formato para Recortar y Entregar)</h3>
+                <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wide">Recibo de Liquidación (Formato para Recortar y Entregar)</h3>
                 <button onclick="window.print();" class="bg-slate-800 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-slate-700">
-                    🖨️ Imprimir Recibo
+                    Imprimir Recibo
                 </button>
             </div>
             
@@ -152,12 +153,12 @@
         async function inicializarEmpleados() {
             try {
                 db = await getDbInstance();
-                document.getElementById('estado-db').innerText = "✅ Conectado al núcleo central. Nómina sincronizada.";
+                document.getElementById('estado-db').innerText = "Conectado al núcleo central. Nómina sincronizada.";
                 document.getElementById('estado-db').className = "text-xs text-emerald-600 mt-1 font-medium";
                 poblarSelectEmpleados();
             } catch (e) {
                 console.error(e);
-                document.getElementById('estado-db').innerText = "⚠️ Error al conectar con la base de datos.";
+                document.getElementById('estado-db').innerText = "Error al conectar con la base de datos.";
             }
         }
 
@@ -230,7 +231,7 @@
             let nuevoBasico = basicoActual * (1 + (porc / 100));
             document.getElementById('inputBasico').value = nuevoBasico.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             recalcularSueldo();
-            alert(`⚡ ¡Ajuste por inflación del ${porc}% aplicado al sueldo básico con éxito!`);
+            alert(`¡Ajuste por inflación del ${porc}% aplicado al sueldo básico con éxito!`);
         }
 
         window.onload = inicializarEmpleados;

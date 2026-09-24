@@ -1,11 +1,12 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAmpo+ - Baúl de Credenciales y Contraseñas</title>
     <script src="https://cdn.tailwindcss.com"></script>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 
@@ -17,7 +18,7 @@
                 <p class="text-xs text-slate-500 mt-1">Gestión centralizada y segura de contraseñas para los portales y cuentas del equipo.</p>
             </div>
             <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
-                ← Volver al Dashboard
+                Volver al Dashboard
             </a>
         </div>
 
@@ -44,7 +45,7 @@
                 </div>
                 <div>
                     <label class="block font-medium text-slate-700 mb-1">Contraseña / Clave</label>
-                    <input type="password" id="passBaul" placeholder="••••••••" class="w-full rounded border p-2 bg-white font-mono" required>
+                    <input type="password" id="passBaul" placeholder="--------" class="w-full rounded border p-2 bg-white font-mono" required>
                 </div>
                 <div class="flex items-end">
                     <button type="button" onclick="guardarCredencial()" class="w-full bg-amber-600 text-white p-2.5 rounded text-xs font-bold hover:bg-amber-700 transition-all shadow">
@@ -99,7 +100,7 @@
 
             document.getElementById('formBaul').reset();
             renderCredenciales();
-            alert("✅ ¡Credencial guardada de forma segura en el baúl!");
+            alert("¡Credencial guardada de forma segura en el baúl!");
         }
 
         function togglePasswordView(id) {
@@ -107,10 +108,10 @@
             const btnEl = document.getElementById(`btn-toggle-${id}`);
             if (inputEl.type === 'password') {
                 inputEl.type = 'text';
-                btnEl.innerText = '🙈';
+                btnEl.innerText = '??';
             } else {
                 inputEl.type = 'password';
-                btnEl.innerText = '👁';
+                btnEl.innerText = '??';
             }
         }
 
@@ -127,7 +128,7 @@
                         <td class="p-3 text-slate-600 font-mono">${c.usuario}</td>
                         <td class="p-3 font-mono text-slate-500 flex items-center gap-2">
                             <input type="password" id="pass-input-${c.id}" value="${c.pass}" readonly class="bg-transparent border-0 font-mono w-28 text-slate-700 outline-none">
-                            <button id="btn-toggle-${c.id}" onclick="togglePasswordView(${c.id})" class="text-slate-400 hover:text-slate-700 text-xs px-1" title="Mostrar/Ocultar">👁</button>
+                            <button id="btn-toggle-${c.id}" onclick="togglePasswordView(${c.id})" class="text-slate-400 hover:text-slate-700 text-xs px-1" title="Mostrar/Ocultar">??</button>
                         </td>
                         <td class="p-3 text-center">
                             <button class="text-emerald-600 hover:underline font-bold mr-2" onclick="navigator.clipboard.writeText('${c.pass}'); alert('Contraseña copiada al portapapeles.');">Copiar</button>

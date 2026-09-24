@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,11 +13,14 @@ from datetime import datetime, timedelta
 from motor_contable import (
     init_contabilidad,
     asiento_para_movimiento_banco,
+    asiento_para_comprobante_compra,
+    asiento_para_factura_venta,
     eliminar_cascada_movimiento_banco,
     listar_asientos_plano,
     recalcular_asientos_movimientos_bancarios,
     ejercicios_disponibles,
     ejercicio_desde_fecha,
+    _fecha_iso_contable,
 )
 from agro_campania import init_agro_schema
 from audit import AuditMiddleware, init_audit_schema, register_audit_routes
@@ -43,7 +46,45 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "campoplus.db")
+
+
+def _copiar_sqlite(origen: str, destino: str) -> None:
+    os.makedirs(os.path.dirname(destino) or ".", exist_ok=True)
+    src = sqlite3.connect(origen)
+    dst = sqlite3.connect(destino)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+
+
+def _resolver_db_path() -> str:
+    """Sin CAMPO_DATA_DIR sigue el archivo de esta carpeta (beta local).
+    Con CAMPO_DATA_DIR usa el disco del servidor y lo llena una sola vez."""
+    data = os.environ.get("CAMPO_DATA_DIR", "").strip()
+    local = os.path.join(BASE_DIR, "campoplus.db")
+    if not data:
+        return local
+    os.makedirs(data, exist_ok=True)
+    dest = os.path.join(data, "campoplus.db")
+    if not os.path.exists(dest) and os.path.exists(local):
+        _copiar_sqlite(local, dest)
+        src_cli = os.path.join(BASE_DIR, "datos_clientes")
+        dest_cli = os.path.join(data, "datos_clientes")
+        if os.path.isdir(src_cli) and not os.path.exists(dest_cli):
+            for dirpath, _dirs, files in os.walk(src_cli):
+                for name in files:
+                    if not name.endswith(".db"):
+                        continue
+                    src_db = os.path.join(dirpath, name)
+                    rel = os.path.relpath(src_db, src_cli)
+                    dst_db = os.path.join(dest_cli, rel)
+                    _copiar_sqlite(src_db, dst_db)
+    return dest
+
+
+DB_PATH = _resolver_db_path()
 EXCEL_RETENCIONES = "retenciones.xlsx"
 EXCEL_BANCOS = os.path.join("tablas", "movimientos bancarios.xlsx")
 
@@ -85,7 +126,10 @@ def _clasificar_cuentas_bancarias(cursor) -> None:
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    from plataforma import db_path_efectivo
+
+    path = db_path_efectivo(DB_PATH)
+    conn = sqlite3.connect(path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
@@ -195,7 +239,8 @@ def init_db():
         cursor.executemany(
             "INSERT INTO empresas (razon_social, cuit, tenant_id, localidad) VALUES (?, ?, ?, ?);",
             [
-                ("CAmpo+ Demo S.A.", "30999999999", "demo", "Buenos Aires"),
+                ("Silo Chico S.A.", "30717802868", "silochico", "Chivilcoy"),
+                ("Ezequiel Calabresi", "20270684271", "cala", "Chivilcoy"),
             ],
         )
 
@@ -261,7 +306,7 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
             INSERT INTO configuracion_empresa (id, razon_social, cuit, condicion_iva, localidad, contacto_email, cit_arba)
-            VALUES (1, 'CAmpo+ Demo S.A.', '30999999999', 'Responsable Inscripto', 'Buenos Aires', 'demo@campoplus.local', '');
+            VALUES (1, 'Silo Chico S.A.', '30711166250', 'Responsable Inscripto', 'Chivilcoy', 'contacto@silochico.com.ar', '');
         """)
 
     cursor.execute("PRAGMA table_info(configuracion_empresa);")
@@ -283,29 +328,12 @@ def init_db():
             agente_percepcion_iibb = COALESCE(agente_percepcion_iibb, 1)
         WHERE id = 1;
     """)
-# Tabla maestra de entidades (crear antes de verificar columnas)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS entidades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cuit TEXT UNIQUE,
-            razon_social TEXT NOT NULL,
-            nombre_fantasia TEXT,
-            domicilio TEXT,
-            localidad TEXT,
-            provincia TEXT,
-            es_proveedor INTEGER DEFAULT 1,
-            es_cliente INTEGER DEFAULT 0,
-            centro_costo TEXT DEFAULT '1',
-            regimen_sicore TEXT DEFAULT '',
-            es_propietario_inmueble INTEGER DEFAULT 0,
-            es_cuenta_ajuste INTEGER DEFAULT 0,
-            provincia_codigo TEXT DEFAULT '01',
-            tipo_documento TEXT DEFAULT '80',
-            condicion_iva_codigo TEXT DEFAULT '01',
-            condicion_iva TEXT DEFAULT 'Responsable Inscripto'
-        );
-    """)
  
+    cursor.execute("PRAGMA table_info(ordenes_pago);")
+    cols_op = [col[1] for col in cursor.fetchall()]
+    if 'empresa_id' not in cols_op:
+        cursor.execute("ALTER TABLE ordenes_pago ADD COLUMN empresa_id INTEGER DEFAULT 1;")
+
     cursor.execute("PRAGMA table_info(entidades);")
     cols_entidades = [col[1] for col in cursor.fetchall()]
     if 'provincia_codigo' not in cols_entidades:
@@ -463,9 +491,194 @@ def init_db():
         ("proveedor_cuit", "TEXT"),
         ("op_id", "INTEGER"),
         ("observaciones", "TEXT"),
+        ("caja_cc_id", "INTEGER"),
     ]:
         if col not in cols_chq:
             cursor.execute(f"ALTER TABLE cartera_cheques ADD COLUMN {col} {ddl};")
+
+    # Caja chica (pagos menores / cobros en efectivo)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS caja_movimientos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            fecha TEXT NOT NULL,
+            tipo TEXT NOT NULL,
+            concepto TEXT,
+            monto REAL NOT NULL,
+            forma TEXT DEFAULT 'Efectivo',
+            referencia TEXT,
+            cheque_id INTEGER,
+            proveedor_cuit TEXT,
+            cc_id INTEGER,
+            cc_proveedor_id INTEGER,
+            usuario_registro TEXT,
+            created_at TEXT
+        );
+    """)
+
+    # Bienes de uso / patrimonio (EECC + carpetas bancarias)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bienes_patrimoniales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            id_access INTEGER,
+            tipo_rodado TEXT,
+            nro_factura TEXT,
+            marca TEXT,
+            detalle TEXT,
+            fecha_compra TEXT,
+            modelo TEXT,
+            anio TEXT,
+            marca_chasis TEXT,
+            nro_chasis TEXT,
+            marca_motor TEXT,
+            nro_motor TEXT,
+            nro_patente TEXT,
+            importe_neto REAL DEFAULT 0,
+            iva REAL DEFAULT 0,
+            otros_impuestos REAL DEFAULT 0,
+            total REAL DEFAULT 0,
+            porcentaje_iva REAL DEFAULT 0,
+            total_usd REAL DEFAULT 0,
+            fecha_baja TEXT,
+            valor_residual REAL DEFAULT 0,
+            comprador TEXT,
+            UNIQUE(empresa_id, id_access)
+        );
+    """)
+    cursor.execute("PRAGMA table_info(bienes_patrimoniales);")
+    cols_bp = {col[1] for col in cursor.fetchall()}
+    for col, ddl in [
+        ("categoria", "TEXT"),
+        ("valor_historico", "REAL"),
+        ("valor_comercial", "REAL DEFAULT 0"),
+        ("valor_comercial_usd", "REAL DEFAULT 0"),
+        ("tipo_cambio_comercial", "REAL DEFAULT 0"),
+        ("fecha_valor_comercial", "TEXT"),
+        ("moneda", "TEXT DEFAULT 'ARS'"),
+        ("vida_util_anos", "INTEGER"),
+        ("tasa_anual_pct", "REAL"),
+        ("metodo_amortizacion", "TEXT DEFAULT 'Lineal'"),
+        ("amortizacion_acumulada", "REAL DEFAULT 0"),
+        ("fecha_inicio_amort", "TEXT"),
+        ("ubicacion", "TEXT"),
+        ("observaciones", "TEXT"),
+        ("activo", "INTEGER DEFAULT 1"),
+        ("superficie_ha", "REAL"),
+        ("nomenclatura", "TEXT"),
+        ("partida", "TEXT"),
+        ("usuario_registro", "TEXT"),
+    ]:
+        if col not in cols_bp:
+            cursor.execute(f"ALTER TABLE bienes_patrimoniales ADD COLUMN {col} {ddl};")
+    # Completar categoría / valor histórico / vida útil sobre datos importados
+    cursor.execute("""
+        UPDATE bienes_patrimoniales
+        SET valor_historico = CASE
+            WHEN COALESCE(valor_historico, 0) > 0.01 THEN valor_historico
+            WHEN COALESCE(importe_neto, 0) > 0.01 THEN importe_neto
+            WHEN COALESCE(total, 0) > 0.01 THEN total
+            ELSE COALESCE(valor_historico, 0)
+        END
+        WHERE COALESCE(valor_historico, 0) < 0.01;
+    """)
+    cursor.execute("""
+        UPDATE bienes_patrimoniales
+        SET categoria = CASE
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%COSECH%' THEN 'Cosechadora'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%SEMBRAD%' THEN 'Sembradora'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%TOLVA%'
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%ACOPLAD%' THEN 'Tolva / Acoplado'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%EXTRACTOR%' THEN 'Extractora'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%PICK%'
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%CAMIONETA%'
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) IN ('SW4','HILUX') THEN 'Camioneta'
+            WHEN UPPER(REPLACE(TRIM(COALESCE(tipo_rodado,'')),'Ó','O')) LIKE '%CAMION%' THEN 'Camión'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%TRACTOR%' THEN 'Tractor'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%CABEZAL%' THEN 'Cabezal'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%FERTILIZ%' THEN 'Fertilizadora'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%DESMALEZ%' THEN 'Desmalezadora'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%PULVERIZ%' THEN 'Pulverizador'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%RETRO%' THEN 'Retroexcavadora'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%NIVELAD%' THEN 'Niveladora'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%GUINCHE%'
+              OR UPPER(REPLACE(TRIM(COALESCE(tipo_rodado,'')),'Ú','U')) LIKE '%GRUA%' THEN 'Guinche / Grúa'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%CASILLA%'
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%INSTAL%' THEN 'Instalación'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%INMUEBLE%'
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%PROPIEDAD%'
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%CAMPO%'
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%LOTE%'
+              OR UPPER(TRIM(COALESCE(categoria,''))) = 'PROPIEDAD' THEN 'Propiedad'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%MUEBLE%' THEN 'Muebles'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) IN ('AUTO','SEDAN','RODADO')
+              OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%AUTO%' THEN 'Rodado'
+            WHEN UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%MAQUINARIA%'
+              OR TRIM(COALESCE(tipo_rodado,'')) = '' THEN
+                CASE
+                    WHEN UPPER(TRIM(COALESCE(categoria,''))) IN (
+                        'TRACTOR','COSECHADORA','SEMBRADORA','CAMIONETA','CAMIÓN','CAMION',
+                        'TOLVA / ACOPLADO','PULVERIZADOR','PROPIEDAD','INSTALACIÓN','INSTALACION',
+                        'RODADO','MUEBLES','EXTRACTORA','CABEZAL','FERTILIZADORA','DESMALEZADORA'
+                    ) THEN categoria
+                    ELSE COALESCE(NULLIF(TRIM(categoria),''), 'Maquinaria')
+                END
+            ELSE COALESCE(NULLIF(TRIM(categoria),''), 'Maquinaria')
+        END
+        WHERE COALESCE(categoria,'') IN ('', 'Maquinaria', 'Rodado', 'Instalacion', 'Propiedad', 'Muebles', 'Otro')
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%TRACTOR%'
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%COSECH%'
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%PICK%'
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%ACOPLAD%'
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%TOLVA%'
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%SEMBRAD%'
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%CAMION%'
+           OR UPPER(TRIM(COALESCE(tipo_rodado,''))) LIKE '%PULVERIZ%';
+    """)
+    cursor.execute("""
+        UPDATE bienes_patrimoniales
+        SET tasa_anual_pct = CASE
+                WHEN categoria IN ('Rodado','Camión','Camioneta') THEN 20
+                WHEN categoria = 'Propiedad' THEN 2
+                WHEN categoria IN ('Instalacion','Instalación') THEN 5
+                WHEN categoria = 'Muebles' THEN 10
+                ELSE 10
+            END,
+            vida_util_anos = CASE
+                WHEN categoria IN ('Rodado','Camión','Camioneta') THEN 5
+                WHEN categoria = 'Propiedad' THEN 50
+                WHEN categoria IN ('Instalacion','Instalación') THEN 20
+                WHEN categoria = 'Muebles' THEN 10
+                ELSE 10
+            END
+        WHERE COALESCE(tasa_anual_pct, 0) < 0.01 OR COALESCE(vida_util_anos, 0) < 1;
+    """)
+    cursor.execute("""
+        UPDATE bienes_patrimoniales
+        SET activo = 0
+        WHERE TRIM(COALESCE(fecha_baja,'')) != '';
+    """)
+    cursor.execute("""
+        UPDATE bienes_patrimoniales
+        SET activo = COALESCE(activo, 1)
+        WHERE TRIM(COALESCE(fecha_baja,'')) = '' AND activo IS NULL;
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bienes_amortizaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            bien_id INTEGER NOT NULL,
+            ejercicio TEXT NOT NULL,
+            fecha_cierre TEXT,
+            monto REAL DEFAULT 0,
+            asiento_id INTEGER,
+            usuario_registro TEXT,
+            created_at TEXT,
+            UNIQUE(empresa_id, bien_id, ejercicio)
+        );
+    """)
+
     # Normalizar estados legacy (vacíos → En cartera; no tocar Emitido/Depositado/Entregado)
     cursor.execute("""
         UPDATE cartera_cheques SET estado = 'En cartera'
@@ -632,7 +845,7 @@ def init_db():
             except Exception as e:
                 print(f"Error importando retenciones.xlsx: {e}")
 
-# 8. Órdenes de Pago (CREAR LA TABLA PRIMERO)
+ # 8. Órdenes de Pago
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS ordenes_pago (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -643,7 +856,6 @@ def init_db():
         );
     """)
 
-    
     # 9. Cuentas Corrientes Proveedores
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS cuentas_corrientes (
@@ -655,6 +867,12 @@ def init_db():
             empresa_id INTEGER DEFAULT 1
         );
     """)
+    cursor.execute("PRAGMA table_info(cuentas_corrientes);")
+    cols_cc = {col[1] for col in cursor.fetchall()}
+    if "observaciones" not in cols_cc:
+        cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN observaciones TEXT;")
+    if "asiento_id" not in cols_cc:
+        cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN asiento_id INTEGER;")
 
     # 10. Agro / Márgenes brutos — campos, lotes, campañas, arrendamientos
     from agro_campania import init_agro_schema
@@ -1470,11 +1688,27 @@ class OrdenPagoModel(BaseModel):
     regimen_sicore: Optional[str] = "078"
     forma_pago: str = "Transferencia"
     nro_cheque: Optional[str] = ""
+    fecha_vto_cheque: Optional[str] = ""
+    cheques_cartera: Optional[List[int]] = None
+    solo_retenciones: bool = False
+    base_imponible: float = 0.0
     observaciones: Optional[str] = ""
     usuario_registro: str = "Administrador"
+    # True = solo aplica retenciones en CC (sin transferencia/cheque/efectivo).
+    # Las facturas quedan Pendiente hasta cargar el pago real después.
+    alicuota_iibb: Optional[float] = None  # decimal (0.0175) o % (1.75)
 
 class AjustarCuentaModel(BaseModel):
     es_cuenta_ajuste: int
+
+class AjusteSaldoCcModel(BaseModel):
+    """Crédito o débito solo de cuenta corriente: sin asiento y sin retención."""
+    cuit: str
+    sentido: str  # credito | debito
+    importe: float
+    fecha: str
+    concepto: str
+    usuario_registro: str = "Administrador"
 
 class CentroCostoModel(BaseModel):
     centro_costo: str = "1"  # '1' oficial | 'SP' sin partida
@@ -1533,6 +1767,7 @@ class MovimientoCtaCteBancoModel(BaseModel):
     fecha_debito: Optional[str] = ""
     proveedor: str
     nro_cheque: Optional[str] = ""
+    fecha_vencimiento: Optional[str] = ""
     tipo_operacion: str
     monto: float
     imp_chq: Optional[float] = 0.0
@@ -1580,6 +1815,69 @@ class ChequeAplicarPagoModel(BaseModel):
     proveedor_cuit: str
     fecha: Optional[str] = ""
     observaciones: Optional[str] = ""
+
+
+class CajaMovimientoModel(BaseModel):
+    fecha: str
+    monto: float
+    concepto: str = ""
+    forma: str = "Efectivo"
+    referencia: Optional[str] = ""
+    proveedor_cuit: Optional[str] = ""
+    impactar_cc_proveedor: bool = False
+    usuario_registro: str = "Administrador"
+
+
+class CajaCobrarChequeModel(BaseModel):
+    fecha: Optional[str] = ""
+    observaciones: Optional[str] = ""
+    usuario_registro: str = "Administrador"
+
+
+class BienPatrimonialModel(BaseModel):
+    categoria: str = "Maquinaria"  # Tractor | Cosechadora | Camioneta | Tolva / Acoplado | ...
+    tipo_rodado: Optional[str] = ""
+    marca: Optional[str] = ""
+    modelo: Optional[str] = ""
+    detalle: Optional[str] = ""
+    anio: Optional[str] = ""
+    nro_patente: Optional[str] = ""
+    nro_chasis: Optional[str] = ""
+    nro_motor: Optional[str] = ""
+    nro_factura: Optional[str] = ""
+    fecha_compra: Optional[str] = ""
+    fecha_inicio_amort: Optional[str] = ""
+    valor_historico: float = 0.0
+    importe_neto: Optional[float] = None
+    iva: Optional[float] = 0.0
+    total: Optional[float] = None
+    valor_residual: float = 0.0
+    valor_comercial: float = 0.0
+    valor_comercial_usd: float = 0.0
+    tipo_cambio_comercial: float = 0.0
+    fecha_valor_comercial: Optional[str] = ""
+    moneda: str = "ARS"
+    vida_util_anos: Optional[int] = None
+    tasa_anual_pct: Optional[float] = None
+    metodo_amortizacion: str = "Lineal"
+    amortizacion_acumulada: float = 0.0
+    ubicacion: Optional[str] = ""
+    superficie_ha: Optional[float] = None
+    nomenclatura: Optional[str] = ""
+    partida: Optional[str] = ""
+    observaciones: Optional[str] = ""
+    activo: int = 1
+    fecha_baja: Optional[str] = ""
+    usuario_registro: str = "Administrador"
+
+
+class AmortizarBienesModel(BaseModel):
+    ejercicio: Optional[str] = ""  # ej. 2025/2026
+    fecha_cierre: Optional[str] = ""  # default 30/06 del ejercicio
+    aplicar: bool = False  # False = solo simulación
+    generar_asiento: bool = False
+    usuario_registro: str = "Administrador"
+
 
 class CreditoModel(BaseModel):
     entidad_financiera: str = ""
@@ -1803,6 +2101,20 @@ def _normalizar_centro_costo(valor: Optional[str], razon: str = "", fantasia: st
     if "(S/P)" in texto or " S/P" in texto or texto.endswith("S/P"):
         return "SP"
     return "1"
+
+@app.post("/api/entidades/sincronizar_access")
+def api_sincronizar_padron_access():
+    """Actualiza el padrón desde tablas/proveedores.xlsx (Access),
+    marcando locadores/arrendadores y S/P (CUIT placeholder / centro SP)."""
+    try:
+        from sincronizar_padron_access import sincronizar_padron_access
+        result = sincronizar_padron_access()
+    except Exception as exc:
+        raise HTTPException(500, f"No se pudo sincronizar el padrón: {exc}")
+    if result.get("status") != "ok":
+        raise HTTPException(400, result.get("message") or "Error al sincronizar")
+    return result
+
 
 @app.post("/api/entidades")
 def guardar_entidad(data: EntidadModel):
@@ -2290,40 +2602,57 @@ def api_vincular_prestamos_existentes():
     return {"backfill": bf, "sync": sync}
 
 # Impuesto a los débitos y créditos bancarios (Ley 25.413):
-# 6/1000 (0,6%) sobre el débito + 6/1000 (0,6%) sobre el crédito = 1,2% total estimado.
-ALICUOTA_IMP_CHEQUE_DEBITO = 6 / 1000
-ALICUOTA_IMP_CHEQUE_CREDITO = 6 / 1000
-ALICUOTA_IMP_CHEQUE_TOTAL = ALICUOTA_IMP_CHEQUE_DEBITO + ALICUOTA_IMP_CHEQUE_CREDITO
+# Cada movimiento lleva SOLO su tramo de 6‰ (0,6%).
+# El 1,2% se conforma a lo largo del ciclo (crédito + débito), nunca en un solo asiento.
+ALICUOTA_IMP_DEBITOS_CREDITOS = 6 / 1000  # 6‰ por lado
+# Alias legacy (no usar para estimar un solo movimiento)
+ALICUOTA_IMP_CHEQUE_DEBITO = ALICUOTA_IMP_DEBITOS_CREDITOS
+ALICUOTA_IMP_CHEQUE_CREDITO = ALICUOTA_IMP_DEBITOS_CREDITOS
+ALICUOTA_IMP_CHEQUE_TOTAL = ALICUOTA_IMP_DEBITOS_CREDITOS * 2  # solo referencia documental
 
 
 def _resolver_imp_cheque(data: MovimientoCtaCteBancoModel) -> float:
     """
-    Impuesto al cheque (débitos y créditos bancarios):
-    - 6/1000 al débito + 6/1000 al crédito = 1,2% total
-    - Transferencias (misma titularidad) / depósitos / FCI / Rescate FCI: 0
-    - Cheques: usa el importe informado, o estima 1,2% si se pide aplicar
-    - Débitos: solo si aplica_imp_cheque o viene un importe > 0
+    Impuesto a los débitos y créditos bancarios (6‰ por movimiento):
+
+    - Débito / cheque emitido / e-cheq: 6‰ sobre el monto (lado débito).
+    - Depósito / acreditación: 6‰ sobre el monto (lado crédito), si aplica.
+    - El 1,2% NO se carga en un solo movimiento: se forma con un crédito + un débito.
+
+    Exentos (salvo que el usuario fuerce importe / aplica_imp_cheque):
+    - Transferencia entre cuentas misma titularidad
+    - Suscripción FCI / Rescate FCI
+    - Depósitos sin marcar «aplica» (misma titularidad otro banco, ciertos préstamos
+      agro, rescate FCI ya tipificado, ALYC/caución 24hs Mercado de Valores, etc.)
     """
     tipo = (data.tipo_operacion or "").strip().lower()
     informado = float(data.imp_chq or 0)
-    estimado = round(float(data.monto) * ALICUOTA_IMP_CHEQUE_TOTAL, 2)
+    estimado_lado = round(float(data.monto) * ALICUOTA_IMP_DEBITOS_CREDITOS, 2)
+
+    # Exentos por tipo (0 salvo importe forzado con aplica)
     if tipo in (
         "transferencia", "transferencias",
-        "deposito", "depósito",
         "fci", "suscripcion fci", "suscripción fci",
         "rescate fci", "rescate_fci", "rescatefci",
     ):
         return informado if data.aplica_imp_cheque else 0.0
-    if tipo == "cheque":
+
+    # Lado DÉBITO: cheque emitido, débito genérico
+    if tipo in ("cheque", "debito", "débito"):
         if informado > 0:
             return informado
         if data.aplica_imp_cheque:
-            return estimado
+            return estimado_lado
         return 0.0
-    if tipo in ("debito", "débito"):
+
+    # Lado CRÉDITO: depósito / acreditación
+    if tipo in ("deposito", "depósito", "acreditacion", "acreditación", "credito", "crédito"):
+        if informado > 0 and data.aplica_imp_cheque:
+            return informado
         if data.aplica_imp_cheque:
-            return informado if informado > 0 else estimado
-        return informado if informado > 0 else 0.0
+            return estimado_lado if informado <= 0 else informado
+        return 0.0
+
     return informado if data.aplica_imp_cheque else 0.0
 
 
@@ -2488,6 +2817,7 @@ def guardar_movimiento_cta_cte(data: MovimientoCtaCteBancoModel):
         # Cheque emitido: también en cartera (fecha emisión = fecha cobro) para consulta detalle
         if tipo == "cheque" and (data.nro_cheque or "").strip():
             nro = (data.nro_cheque or "").strip()
+            vto_chq = (data.fecha_vencimiento or fec_debito or data.fecha_cobro or "").strip()[:10]
             cursor.execute(
                 """
                 SELECT id FROM cartera_cheques
@@ -2509,7 +2839,7 @@ def guardar_movimiento_cta_cte(data: MovimientoCtaCteBancoModel):
                     WHERE id = ?;
                     """,
                     (
-                        data.fecha_cobro, fec_debito or data.fecha_cobro, data.monto,
+                        data.fecha_cobro, vto_chq, data.monto,
                         cuenta.get("banco") or "", data.proveedor or "", ya["id"],
                     ),
                 )
@@ -2517,12 +2847,12 @@ def guardar_movimiento_cta_cte(data: MovimientoCtaCteBancoModel):
                 cursor.execute(
                     """
                     INSERT INTO cartera_cheques
-                    (tipo, nro_cheque, banco, cuit_emisor, librador, fecha_emision, fecha_pago, monto, moneda, estado, cuenta_id)
-                    VALUES ('Emitido', ?, ?, '', ?, ?, ?, ?, 'ARS', 'Emitido', ?);
+                    (tipo, nro_cheque, banco, cuit_emisor, librador, fecha_emision, fecha_pago, monto, moneda, estado, cuenta_id, empresa_id)
+                    VALUES ('Emitido', ?, ?, '', ?, ?, ?, ?, 'ARS', 'Emitido', ?, ?);
                     """,
                     (
                         nro, cuenta.get("banco") or "", data.proveedor or "",
-                        data.fecha_cobro, fec_debito or data.fecha_cobro, data.monto, data.cuenta_id,
+                        data.fecha_cobro, vto_chq, data.monto, data.cuenta_id, empresa_id,
                     ),
                 )
 
@@ -2543,6 +2873,63 @@ def guardar_movimiento_cta_cte(data: MovimientoCtaCteBancoModel):
                 "UPDATE movimientos_cta_cte_bancos SET asiento_id = ? WHERE id = ?;",
                 (asiento_id, mov_id),
             )
+
+        cc_proveedor = False
+        if tipo in ("cheque", "debito", "débito") and (data.proveedor or "").strip():
+            cursor.execute(
+                """
+                SELECT cuit FROM entidades
+                WHERE COALESCE(es_proveedor, 0) = 1
+                  AND (
+                    UPPER(TRIM(COALESCE(razon_social,''))) = UPPER(TRIM(?))
+                    OR UPPER(TRIM(COALESCE(nombre_fantasia,''))) = UPPER(TRIM(?))
+                  )
+                LIMIT 1;
+                """,
+                (data.proveedor.strip(), data.proveedor.strip()),
+            )
+            entp = cursor.fetchone()
+            if entp:
+                cuit_p = entp["cuit"]
+                vto_cc = ((data.fecha_vencimiento or data.fecha_cobro or "")[:10])
+                forma_cc = "Cheque Propio" if tipo == "cheque" else "Débito bancario"
+                cursor.execute(
+                    """
+                    INSERT INTO cuentas_corrientes (
+                        entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque,
+                        fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id
+                    ) VALUES (?, 'Pago banco', ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 'Pagado', 'Banco', ?);
+                    """,
+                    (
+                        cuit_p, data.nro_cheque or str(mov_id), forma_cc, data.nro_cheque or "",
+                        data.fecha_cobro, vto_cc, data.monto, data.monto, empresa_id,
+                    ),
+                )
+                restante = float(data.monto or 0)
+                placeholders = ",".join("?" for _ in _TIPOS_PAGO)
+                cuit_clean = "".join(filter(str.isdigit, str(cuit_p)))
+                cursor.execute(
+                    f"""
+                    SELECT id, COALESCE(NULLIF(total, 0), debe, 0) AS monto
+                    FROM cuentas_corrientes
+                    WHERE REPLACE(entidad_id, '-', '') = ?
+                      AND COALESCE(empresa_id, 1) = ?
+                      AND COALESCE(debe, 0) > 0.01
+                      AND COALESCE(tipo_comprobante, '') NOT IN ({placeholders})
+                      AND COALESCE(estado, 'Pendiente') IN ('Pendiente', 'pendiente', '')
+                    ORDER BY fecha ASC, id ASC;
+                    """,
+                    (cuit_clean, empresa_id, *_TIPOS_PAGO),
+                )
+                for row in cursor.fetchall():
+                    if restante <= 0.01:
+                        break
+                    cursor.execute(
+                        "UPDATE cuentas_corrientes SET estado = 'Pagado' WHERE id = ?;",
+                        (row["id"],),
+                    )
+                    restante -= float(row["monto"] or 0)
+                cc_proveedor = True
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -2555,6 +2942,8 @@ def guardar_movimiento_cta_cte(data: MovimientoCtaCteBancoModel):
         if asiento_id is None
         else "Movimiento guardado y asiento contable generado."
     )
+    if cc_proveedor:
+        msg += " El pago bajó la cuenta corriente del proveedor."
     return {
         "status": "success",
         "message": msg,
@@ -2637,6 +3026,610 @@ def api_plan_cuentas():
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+
+# ——— Bienes de uso / Patrimonio (EECC + carpetas bancarias) ———
+
+_TASAS_BIEN_DEFAULT = {
+    "Rodado": (20.0, 5),
+    "Camión": (20.0, 5),
+    "Camioneta": (20.0, 5),
+    "Maquinaria": (10.0, 10),
+    "Tractor": (10.0, 10),
+    "Cosechadora": (10.0, 10),
+    "Sembradora": (10.0, 10),
+    "Tolva / Acoplado": (10.0, 10),
+    "Extractora": (10.0, 10),
+    "Cabezal": (10.0, 10),
+    "Fertilizadora": (10.0, 10),
+    "Desmalezadora": (10.0, 10),
+    "Pulverizador": (10.0, 10),
+    "Retroexcavadora": (10.0, 10),
+    "Niveladora": (10.0, 10),
+    "Guinche / Grúa": (10.0, 10),
+    "Propiedad": (2.0, 50),
+    "Instalacion": (5.0, 20),
+    "Instalación": (5.0, 20),
+    "Muebles": (10.0, 10),
+    "Otro": (10.0, 10),
+}
+
+# Categorías estilo Access (detalle operativo)
+_CATEGORIAS_BIEN_ACCESS = [
+    "Tractor", "Cosechadora", "Sembradora", "Tolva / Acoplado", "Pulverizador",
+    "Fertilizadora", "Desmalezadora", "Extractora", "Cabezal", "Niveladora",
+    "Retroexcavadora", "Guinche / Grúa", "Maquinaria",
+    "Camioneta", "Camión", "Rodado",
+    "Propiedad", "Instalación", "Muebles", "Otro",
+]
+
+
+def _norm_txt_bien(s: str) -> str:
+    t = (s or "").strip().upper()
+    for a, b in (
+        ("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"),
+        ("Ñ", "N"), ("Ü", "U"),
+    ):
+        t = t.replace(a, b)
+    return t
+
+
+def _categoria_bien_desde_tipo(tipo_rodado: str = "", categoria: str = "") -> str:
+    """
+    Categoría operativa como en Access: Tractor, Tolva, Camioneta, Cosechadora, etc.
+    Prioriza tipo_rodado (campo Access); si no alcanza, usa categoria actual.
+    """
+    t = _norm_txt_bien(tipo_rodado)
+    c = _norm_txt_bien(categoria)
+    blob = f"{t} {c}".strip()
+
+    reglas = [
+        (("COSECH",), "Cosechadora"),
+        (("SEMBRAD",), "Sembradora"),
+        (("TOLVA", "ACOPLAD"), "Tolva / Acoplado"),
+        (("EXTRACTOR",), "Extractora"),  # antes de Tractor (EXTRACTORA contiene TRACTOR)
+        (("PICK", "CAMIONETA", "SW4", "HILUX"), "Camioneta"),
+        (("CAMION",), "Camión"),
+        (("TRACTOR",), "Tractor"),
+        (("CABEZAL",), "Cabezal"),
+        (("FERTILIZ",), "Fertilizadora"),
+        (("DESMALEZ",), "Desmalezadora"),
+        (("PULVERIZ",), "Pulverizador"),
+        (("RETRO",), "Retroexcavadora"),
+        (("NIVELAD",), "Niveladora"),
+        (("GUINCHE", "GRUA"), "Guinche / Grúa"),
+        (("CASILLA", "INSTAL"), "Instalación"),
+        (("PROPIEDAD", "INMUEBLE", "CAMPO", "LOTE"), "Propiedad"),
+        (("MUEBLE",), "Muebles"),
+        (("AUTO", "SEDAN", "RODADO"), "Rodado"),
+        (("MAQUINARIA",), "Maquinaria"),
+    ]
+    for keys, label in reglas:
+        if any(k in blob for k in keys):
+            return label
+    # Si ya es una categoría Access conocida, respetarla
+    for known in _CATEGORIAS_BIEN_ACCESS:
+        if _norm_txt_bien(known) == c:
+            return known
+    if c:
+        # título amigable
+        return (categoria or tipo_rodado or "Otro").strip().title() or "Otro"
+    return "Maquinaria"
+
+
+def _defaults_amort_categoria(categoria: str):
+    cat = (categoria or "Maquinaria").strip()
+    if cat in _TASAS_BIEN_DEFAULT:
+        return _TASAS_BIEN_DEFAULT[cat]
+    # familia por palabras
+    n = _norm_txt_bien(cat)
+    if any(k in n for k in ("CAMION", "CAMIONETA", "PICK", "RODADO", "AUTO", "SEDAN")):
+        return _TASAS_BIEN_DEFAULT["Rodado"]
+    if any(k in n for k in ("PROPIEDAD", "INMUEBLE", "CAMPO")):
+        return _TASAS_BIEN_DEFAULT["Propiedad"]
+    if "INSTAL" in n or "CASILLA" in n:
+        return _TASAS_BIEN_DEFAULT["Instalación"]
+    if "MUEBLE" in n:
+        return _TASAS_BIEN_DEFAULT["Muebles"]
+    return _TASAS_BIEN_DEFAULT["Maquinaria"]
+
+
+def _valor_historico_bien(row: dict) -> float:
+    for k in ("valor_historico", "importe_neto", "total"):
+        try:
+            v = float(row.get(k) or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        if v > 0.01:
+            return round(v, 2)
+    return 0.0
+
+
+def _enriquecer_bien(row: dict, fecha_corte: Optional[str] = None) -> dict:
+    d = dict(row)
+    cat = _categoria_bien_desde_tipo(d.get("tipo_rodado") or "", d.get("categoria") or "")
+    d["categoria"] = cat
+    tasa_def, vida_def = _defaults_amort_categoria(cat)
+    hist = _valor_historico_bien(d)
+    d["valor_historico"] = hist
+    residual = round(float(d.get("valor_residual") or 0), 2)
+    tasa = float(d.get("tasa_anual_pct") or 0) or tasa_def
+    vida = int(d.get("vida_util_anos") or 0) or vida_def
+    if tasa <= 0 and vida > 0:
+        tasa = round(100.0 / vida, 4)
+    if vida <= 0 and tasa > 0:
+        vida = max(1, int(round(100.0 / tasa)))
+    d["tasa_anual_pct"] = tasa
+    d["vida_util_anos"] = vida
+    acum = round(float(d.get("amortizacion_acumulada") or 0), 2)
+    base = max(0.0, hist - residual)
+    cuota = round(base * (tasa / 100.0), 2) if tasa > 0 else (round(base / vida, 2) if vida else 0.0)
+    d["cuota_anual"] = cuota
+    # Amortización teórica al corte (no altera acum guardada)
+    inicio = (d.get("fecha_inicio_amort") or d.get("fecha_compra") or "")[:10]
+    corte = (fecha_corte or datetime.now().strftime("%Y-%m-%d"))[:10]
+    anios = 0.0
+    if inicio and corte >= inicio:
+        try:
+            d0 = datetime.strptime(inicio[:10], "%Y-%m-%d")
+            d1 = datetime.strptime(corte[:10], "%Y-%m-%d")
+            anios = max(0.0, (d1 - d0).days / 365.25)
+        except ValueError:
+            anios = 0.0
+    teorica = round(min(base, cuota * anios), 2) if cuota > 0 else 0.0
+    d["amortizacion_teorica"] = teorica
+    d["amortizacion_acumulada"] = acum
+    vnc = round(max(0.0, hist - acum), 2)
+    d["valor_neto_contable"] = vnc
+    comercial_usd = round(float(d.get("valor_comercial_usd") or 0), 2)
+    tc = round(float(d.get("tipo_cambio_comercial") or 0), 4)
+    comercial_ars = round(float(d.get("valor_comercial") or 0), 2)
+    if comercial_usd > 0.01 and tc > 0:
+        comercial_ars = round(comercial_usd * tc, 2)
+    elif comercial_ars > 0.01 and comercial_usd < 0.01:
+        # legado: valor_comercial estaba en pesos
+        comercial_usd = 0.0
+    d["valor_comercial_usd"] = comercial_usd
+    d["tipo_cambio_comercial"] = tc
+    d["valor_comercial"] = comercial_ars  # equiv. pesos
+    d["valor_comercial_ars"] = comercial_ars
+    d["activo"] = int(d.get("activo") if d.get("activo") is not None else 1)
+    if (d.get("fecha_baja") or "").strip():
+        d["activo"] = 0
+    return d
+
+
+def _payload_bien_from_model(data: BienPatrimonialModel) -> dict:
+    tipo = (data.tipo_rodado or "").strip()
+    cat = _categoria_bien_desde_tipo(tipo, (data.categoria or "").strip())
+    if not tipo:
+        tipo = cat
+    tasa_def, vida_def = _defaults_amort_categoria(cat)
+    hist = float(data.valor_historico or 0)
+    if hist < 0.01:
+        hist = float(data.importe_neto or data.total or 0)
+    neto = float(data.importe_neto if data.importe_neto is not None else hist)
+    total = float(data.total if data.total is not None else (neto + float(data.iva or 0)))
+    tasa = float(data.tasa_anual_pct) if data.tasa_anual_pct not in (None, 0) else tasa_def
+    vida = int(data.vida_util_anos) if data.vida_util_anos else vida_def
+    return {
+        "categoria": cat,
+        "tipo_rodado": tipo,
+        "marca": (data.marca or "").strip(),
+        "modelo": (data.modelo or "").strip(),
+        "detalle": (data.detalle or "").strip(),
+        "anio": str(data.anio or "").replace(".0", "").strip(),
+        "nro_patente": (data.nro_patente or "").strip(),
+        "nro_chasis": (data.nro_chasis or "").strip(),
+        "nro_motor": (data.nro_motor or "").strip(),
+        "nro_factura": (data.nro_factura or "").strip(),
+        "fecha_compra": (data.fecha_compra or "")[:10],
+        "fecha_inicio_amort": (data.fecha_inicio_amort or data.fecha_compra or "")[:10],
+        "valor_historico": round(hist, 2),
+        "importe_neto": round(neto, 2),
+        "iva": round(float(data.iva or 0), 2),
+        "total": round(total, 2),
+        "valor_residual": round(float(data.valor_residual or 0), 2),
+        "valor_comercial_usd": round(float(data.valor_comercial_usd or 0), 2),
+        "tipo_cambio_comercial": round(float(data.tipo_cambio_comercial or 0), 4),
+        "valor_comercial": round(
+            float(data.valor_comercial_usd or 0) * float(data.tipo_cambio_comercial or 0)
+            if float(data.valor_comercial_usd or 0) > 0 and float(data.tipo_cambio_comercial or 0) > 0
+            else float(data.valor_comercial or 0),
+            2,
+        ),
+        "fecha_valor_comercial": (data.fecha_valor_comercial or "")[:10],
+        "moneda": (data.moneda or "ARS").strip() or "ARS",
+        "vida_util_anos": vida,
+        "tasa_anual_pct": tasa,
+        "metodo_amortizacion": (data.metodo_amortizacion or "Lineal").strip() or "Lineal",
+        "amortizacion_acumulada": round(float(data.amortizacion_acumulada or 0), 2),
+        "ubicacion": (data.ubicacion or "").strip(),
+        "superficie_ha": data.superficie_ha,
+        "nomenclatura": (data.nomenclatura or "").strip(),
+        "partida": (data.partida or "").strip(),
+        "observaciones": (data.observaciones or "").strip(),
+        "activo": 1 if int(data.activo or 0) else 0,
+        "fecha_baja": (data.fecha_baja or "")[:10] if not int(data.activo or 0) else "",
+        "usuario_registro": (data.usuario_registro or "Administrador").strip(),
+    }
+
+
+@app.get("/api/patrimonio/bienes")
+def api_patrimonio_listar(
+    categoria: str = "",
+    q: str = "",
+    solo_activos: bool = True,
+    fecha_corte: str = "",
+):
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    sql = "SELECT * FROM bienes_patrimoniales WHERE COALESCE(empresa_id,1)=?"
+    params: list = [empresa_id]
+    q_txt = (q or "").strip()
+    # Listado operativo: sin bajas. Búsqueda histórica (con texto) o desmarcar "solo activos" las incluye.
+    if solo_activos and not q_txt:
+        sql += " AND COALESCE(activo,1)=1 AND TRIM(COALESCE(fecha_baja,''))=''"
+    if (categoria or "").strip():
+        sql += " AND UPPER(TRIM(COALESCE(categoria,''))) = UPPER(TRIM(?))"
+        params.append(categoria.strip())
+    if q_txt:
+        like = f"%{q_txt}%"
+        sql += """ AND (
+            COALESCE(marca,'') LIKE ? OR COALESCE(modelo,'') LIKE ?
+            OR COALESCE(detalle,'') LIKE ? OR COALESCE(nro_patente,'') LIKE ?
+            OR COALESCE(tipo_rodado,'') LIKE ? OR COALESCE(ubicacion,'') LIKE ?
+            OR COALESCE(nomenclatura,'') LIKE ? OR COALESCE(partida,'') LIKE ?
+            OR COALESCE(categoria,'') LIKE ?
+        )"""
+        params.extend([like] * 9)
+    sql += " ORDER BY COALESCE(categoria,''), COALESCE(fecha_compra,''), id;"
+    cursor.execute(sql, params)
+    corte = (fecha_corte or "")[:10] or None
+    rows = [_enriquecer_bien(dict(r), corte) for r in cursor.fetchall()]
+    tot_hist = round(sum(r["valor_historico"] for r in rows), 2)
+    tot_com_usd = round(sum(float(r.get("valor_comercial_usd") or 0) for r in rows), 2)
+    tot_com = round(sum(float(r.get("valor_comercial_ars") or r.get("valor_comercial") or 0) for r in rows), 2)
+    tot_vnc = round(sum(r["valor_neto_contable"] for r in rows), 2)
+    tot_acum = round(sum(float(r.get("amortizacion_acumulada") or 0) for r in rows), 2)
+    cursor.execute(
+        """
+        SELECT DISTINCT TRIM(categoria) AS c
+        FROM bienes_patrimoniales
+        WHERE COALESCE(empresa_id,1)=? AND TRIM(COALESCE(categoria,'')) != ''
+        ORDER BY c COLLATE NOCASE;
+        """,
+        (empresa_id,),
+    )
+    cats_db = [r["c"] for r in cursor.fetchall() if r["c"]]
+    cats = sorted(set(_CATEGORIAS_BIEN_ACCESS + cats_db), key=lambda x: x.lower())
+    conn.close()
+    return {
+        "bienes": rows,
+        "categorias": cats,
+        "resumen": {
+            "cantidad": len(rows),
+            "total_historico": tot_hist,
+            "total_comercial_usd": tot_com_usd,
+            "total_comercial": tot_com,
+            "total_neto_contable": tot_vnc,
+            "total_amort_acumulada": tot_acum,
+        },
+    }
+
+
+@app.get("/api/patrimonio/bienes/{bien_id}")
+def api_patrimonio_get(bien_id: int):
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM bienes_patrimoniales WHERE id=? AND COALESCE(empresa_id,1)=?;",
+        (bien_id, empresa_id),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, "Bien no encontrado")
+    return _enriquecer_bien(dict(row))
+
+
+@app.post("/api/patrimonio/bienes")
+def api_patrimonio_crear(data: BienPatrimonialModel):
+    empresa_id = get_empresa_activa_id()
+    p = _payload_bien_from_model(data)
+    if p["valor_historico"] < 0.01 and p["valor_comercial"] < 0.01 and p["valor_comercial_usd"] < 0.01:
+        raise HTTPException(400, "Indicá al menos valor histórico (EECC) o valor comercial (USD).")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO bienes_patrimoniales (
+            empresa_id, categoria, tipo_rodado, marca, modelo, detalle, anio,
+            nro_patente, nro_chasis, nro_motor, nro_factura, fecha_compra, fecha_inicio_amort,
+            valor_historico, importe_neto, iva, total, valor_residual,
+            valor_comercial_usd, tipo_cambio_comercial, valor_comercial, fecha_valor_comercial, moneda,
+            vida_util_anos, tasa_anual_pct, metodo_amortizacion, amortizacion_acumulada,
+            ubicacion, superficie_ha, nomenclatura, partida, observaciones,
+            activo, fecha_baja, usuario_registro
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+        """,
+        (
+            empresa_id, p["categoria"], p["tipo_rodado"], p["marca"], p["modelo"], p["detalle"], p["anio"],
+            p["nro_patente"], p["nro_chasis"], p["nro_motor"], p["nro_factura"], p["fecha_compra"], p["fecha_inicio_amort"],
+            p["valor_historico"], p["importe_neto"], p["iva"], p["total"], p["valor_residual"],
+            p["valor_comercial_usd"], p["tipo_cambio_comercial"], p["valor_comercial"], p["fecha_valor_comercial"], p["moneda"],
+            p["vida_util_anos"], p["tasa_anual_pct"], p["metodo_amortizacion"], p["amortizacion_acumulada"],
+            p["ubicacion"], p["superficie_ha"], p["nomenclatura"], p["partida"], p["observaciones"],
+            p["activo"], p["fecha_baja"], p["usuario_registro"],
+        ),
+    )
+    bien_id = cursor.lastrowid
+    conn.commit()
+    cursor.execute("SELECT * FROM bienes_patrimoniales WHERE id=?;", (bien_id,))
+    out = _enriquecer_bien(dict(cursor.fetchone()))
+    conn.close()
+    return {"status": "success", "id": bien_id, "bien": out}
+
+
+@app.put("/api/patrimonio/bienes/{bien_id}")
+def api_patrimonio_actualizar(bien_id: int, data: BienPatrimonialModel):
+    empresa_id = get_empresa_activa_id()
+    p = _payload_bien_from_model(data)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM bienes_patrimoniales WHERE id=? AND COALESCE(empresa_id,1)=?;",
+        (bien_id, empresa_id),
+    )
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(404, "Bien no encontrado")
+    cursor.execute(
+        """
+        UPDATE bienes_patrimoniales SET
+            categoria=?, tipo_rodado=?, marca=?, modelo=?, detalle=?, anio=?,
+            nro_patente=?, nro_chasis=?, nro_motor=?, nro_factura=?, fecha_compra=?, fecha_inicio_amort=?,
+            valor_historico=?, importe_neto=?, iva=?, total=?, valor_residual=?,
+            valor_comercial_usd=?, tipo_cambio_comercial=?, valor_comercial=?, fecha_valor_comercial=?, moneda=?,
+            vida_util_anos=?, tasa_anual_pct=?, metodo_amortizacion=?, amortizacion_acumulada=?,
+            ubicacion=?, superficie_ha=?, nomenclatura=?, partida=?, observaciones=?,
+            activo=?, fecha_baja=?, usuario_registro=?
+        WHERE id=?;
+        """,
+        (
+            p["categoria"], p["tipo_rodado"], p["marca"], p["modelo"], p["detalle"], p["anio"],
+            p["nro_patente"], p["nro_chasis"], p["nro_motor"], p["nro_factura"], p["fecha_compra"], p["fecha_inicio_amort"],
+            p["valor_historico"], p["importe_neto"], p["iva"], p["total"], p["valor_residual"],
+            p["valor_comercial_usd"], p["tipo_cambio_comercial"], p["valor_comercial"], p["fecha_valor_comercial"], p["moneda"],
+            p["vida_util_anos"], p["tasa_anual_pct"], p["metodo_amortizacion"], p["amortizacion_acumulada"],
+            p["ubicacion"], p["superficie_ha"], p["nomenclatura"], p["partida"], p["observaciones"],
+            p["activo"], p["fecha_baja"], p["usuario_registro"],
+            bien_id,
+        ),
+    )
+    conn.commit()
+    cursor.execute("SELECT * FROM bienes_patrimoniales WHERE id=?;", (bien_id,))
+    out = _enriquecer_bien(dict(cursor.fetchone()))
+    conn.close()
+    return {"status": "success", "bien": out}
+
+
+@app.delete("/api/patrimonio/bienes/{bien_id}")
+def api_patrimonio_baja(bien_id: int, hard: bool = False):
+    """Baja lógica (fecha_baja) o hard delete."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM bienes_patrimoniales WHERE id=? AND COALESCE(empresa_id,1)=?;",
+        (bien_id, empresa_id),
+    )
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(404, "Bien no encontrado")
+    if hard:
+        cursor.execute("DELETE FROM bienes_amortizaciones WHERE bien_id=? AND COALESCE(empresa_id,1)=?;", (bien_id, empresa_id))
+        cursor.execute("DELETE FROM bienes_patrimoniales WHERE id=?;", (bien_id,))
+        msg = "Bien eliminado."
+    else:
+        hoy = datetime.now().strftime("%Y-%m-%d")
+        cursor.execute(
+            "UPDATE bienes_patrimoniales SET activo=0, fecha_baja=? WHERE id=?;",
+            (hoy, bien_id),
+        )
+        msg = "Bien dado de baja."
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": msg}
+
+
+@app.get("/api/patrimonio/resumen_bancario")
+def api_patrimonio_resumen_bancario():
+    """Totales por categoría para carpetas bancarias (valor comercial + VNC)."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT * FROM bienes_patrimoniales
+        WHERE COALESCE(empresa_id,1)=? AND COALESCE(activo,1)=1 AND TRIM(COALESCE(fecha_baja,''))='';
+        """,
+        (empresa_id,),
+    )
+    rows = [_enriquecer_bien(dict(r)) for r in cursor.fetchall()]
+    por_cat: dict = {}
+    for r in rows:
+        cat = r["categoria"]
+        bucket = por_cat.setdefault(cat, {
+            "categoria": cat, "cantidad": 0,
+            "valor_historico": 0.0, "valor_comercial_usd": 0.0,
+            "valor_comercial": 0.0, "valor_neto_contable": 0.0,
+        })
+        bucket["cantidad"] += 1
+        bucket["valor_historico"] = round(bucket["valor_historico"] + r["valor_historico"], 2)
+        bucket["valor_comercial_usd"] = round(bucket["valor_comercial_usd"] + float(r.get("valor_comercial_usd") or 0), 2)
+        bucket["valor_comercial"] = round(bucket["valor_comercial"] + float(r.get("valor_comercial_ars") or r.get("valor_comercial") or 0), 2)
+        bucket["valor_neto_contable"] = round(bucket["valor_neto_contable"] + r["valor_neto_contable"], 2)
+    conn.close()
+    categorias = sorted(por_cat.values(), key=lambda x: x["categoria"])
+    return {
+        "categorias": categorias,
+        "total_historico": round(sum(c["valor_historico"] for c in categorias), 2),
+        "total_comercial_usd": round(sum(c["valor_comercial_usd"] for c in categorias), 2),
+        "total_comercial": round(sum(c["valor_comercial"] for c in categorias), 2),
+        "total_neto_contable": round(sum(c["valor_neto_contable"] for c in categorias), 2),
+        "cantidad": len(rows),
+    }
+
+
+@app.post("/api/patrimonio/amortizar")
+def api_patrimonio_amortizar(data: AmortizarBienesModel):
+    """Simula o aplica amortización lineal del ejercicio (cierre 30/06)."""
+    from motor_contable import crear_asiento, _asegurar_cuenta, init_contabilidad
+
+    empresa_id = get_empresa_activa_id()
+    ej = (data.ejercicio or "").strip()
+    if not ej:
+        ej = ejercicio_desde_fecha(datetime.now().strftime("%Y-%m-%d"))
+    # ejercicio "2025/2026" → cierre 2026-06-30
+    cierre = (data.fecha_cierre or "").strip()[:10]
+    if not cierre:
+        try:
+            anio_fin = int(ej.split("/")[-1])
+            cierre = f"{anio_fin}-06-30"
+        except Exception:
+            cierre = datetime.now().strftime("%Y-%m-%d")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT * FROM bienes_patrimoniales
+        WHERE COALESCE(empresa_id,1)=? AND COALESCE(activo,1)=1 AND TRIM(COALESCE(fecha_baja,''))='';
+        """,
+        (empresa_id,),
+    )
+    bienes = [dict(r) for r in cursor.fetchall()]
+    detalle = []
+    total_amort = 0.0
+    for b in bienes:
+        enr = _enriquecer_bien(b, cierre)
+        hist = enr["valor_historico"]
+        residual = round(float(b.get("valor_residual") or 0), 2)
+        base = max(0.0, hist - residual)
+        acum = round(float(b.get("amortizacion_acumulada") or 0), 2)
+        pendiente = max(0.0, base - acum)
+        if pendiente < 0.01:
+            continue
+        # ¿Ya amortizado este ejercicio?
+        cursor.execute(
+            """
+            SELECT monto FROM bienes_amortizaciones
+            WHERE COALESCE(empresa_id,1)=? AND bien_id=? AND ejercicio=?;
+            """,
+            (empresa_id, b["id"], ej),
+        )
+        ya = cursor.fetchone()
+        if ya and data.aplicar:
+            continue
+        cuota = enr["cuota_anual"]
+        # Prorrateo primer año si compra dentro del ejercicio
+        inicio = (b.get("fecha_inicio_amort") or b.get("fecha_compra") or "")[:10]
+        factor = 1.0
+        if inicio and inicio > f"{int(cierre[:4]) - 1}-07-01":
+            try:
+                d0 = datetime.strptime(inicio, "%Y-%m-%d")
+                d1 = datetime.strptime(cierre, "%Y-%m-%d")
+                if d0 > d1:
+                    continue
+                dias = (d1 - d0).days + 1
+                factor = min(1.0, max(0.0, dias / 365.25))
+            except ValueError:
+                factor = 1.0
+        monto = round(min(pendiente, cuota * factor), 2)
+        if monto < 0.01:
+            continue
+        total_amort += monto
+        detalle.append({
+            "bien_id": b["id"],
+            "descripcion": f"{enr['categoria']} · {b.get('marca') or ''} {b.get('modelo') or b.get('detalle') or ''}".strip(),
+            "categoria": enr["categoria"],
+            "valor_historico": hist,
+            "amort_acumulada_antes": acum,
+            "amort_ejercicio": monto,
+            "amort_acumulada_despues": round(acum + monto, 2),
+            "valor_neto_despues": round(max(0.0, hist - acum - monto), 2),
+            "ya_registrada": bool(ya),
+            "monto_previo_ejercicio": float(ya["monto"]) if ya else 0.0,
+        })
+
+    asiento_id = None
+    if data.aplicar and detalle:
+        init_contabilidad(cursor)
+        # Cuentas según plan (gasto amort / depreciación acum. bienes de uso)
+        cta_gasto = _asegurar_cuenta(cursor, "5.1.90", "Amortización Bienes de Uso", "Resultado")
+        cta_acum = _asegurar_cuenta(cursor, "1.2.90", "Amortización Acumulada Bienes de Uso", "Activo")
+        for d in detalle:
+            if d.get("ya_registrada"):
+                continue
+            cursor.execute(
+                """
+                UPDATE bienes_patrimoniales
+                SET amortizacion_acumulada = COALESCE(amortizacion_acumulada,0) + ?
+                WHERE id=?;
+                """,
+                (d["amort_ejercicio"], d["bien_id"]),
+            )
+            cursor.execute(
+                """
+                INSERT INTO bienes_amortizaciones (
+                    empresa_id, bien_id, ejercicio, fecha_cierre, monto, usuario_registro, created_at
+                ) VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(empresa_id, bien_id, ejercicio) DO UPDATE SET
+                    monto=excluded.monto, fecha_cierre=excluded.fecha_cierre;
+                """,
+                (
+                    empresa_id, d["bien_id"], ej, cierre, d["amort_ejercicio"],
+                    data.usuario_registro or "Administrador",
+                    datetime.now().isoformat(timespec="seconds"),
+                ),
+            )
+        if data.generar_asiento and total_amort > 0.01:
+            asiento_id = crear_asiento(
+                cursor,
+                fecha=cierre,
+                concepto=f"Amortización bienes de uso ejercicio {ej}",
+                lineas=[
+                    {"cuenta_id": cta_gasto, "debe": total_amort, "haber": 0},
+                    {"cuenta_id": cta_acum, "debe": 0, "haber": total_amort},
+                ],
+                empresa_id=empresa_id,
+                origen_modulo="patrimonio_amort",
+                referencia=f"AMORT-{ej}",
+            )
+            cursor.execute(
+                """
+                UPDATE bienes_amortizaciones SET asiento_id=?
+                WHERE COALESCE(empresa_id,1)=? AND ejercicio=? AND asiento_id IS NULL;
+                """,
+                (asiento_id, empresa_id, ej),
+            )
+        conn.commit()
+
+    conn.close()
+    return {
+        "status": "success",
+        "simulacion": not data.aplicar,
+        "ejercicio": ej,
+        "fecha_cierre": cierre,
+        "total_amortizacion": round(total_amort, 2),
+        "cantidad": len(detalle),
+        "asiento_id": asiento_id,
+        "detalle": detalle,
+    }
+
 
 @app.patch("/api/bancos/movimientos_cta_cte/{id_mov}/conciliar")
 def conciliar_movimiento_manual(id_mov: int, data: ConciliacionManualModel):
@@ -3293,6 +4286,18 @@ def eliminar_cheque_cartera(cheque_id: int):
         if cursor.rowcount:
             revertidos.append(f"CC pago #{op_id}")
 
+    caja_cc = ch["caja_cc_id"] if "caja_cc_id" in ch.keys() else None
+    if caja_cc:
+        cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (caja_cc,))
+        if cursor.rowcount:
+            revertidos.append(f"CC caja #{caja_cc}")
+        cursor.execute(
+            "DELETE FROM caja_movimientos WHERE cheque_id = ? AND COALESCE(empresa_id,1) = ?;",
+            (cheque_id, empresa_id),
+        )
+        if cursor.rowcount:
+            revertidos.append("mov. caja")
+
     cursor.execute("DELETE FROM cartera_cheques WHERE id = ?;", (cheque_id,))
     conn.commit()
     conn.close()
@@ -3301,6 +4306,403 @@ def eliminar_cheque_cartera(cheque_id: int):
         "status": "success",
         "message": f"Cheque {ch['nro_cheque'] or cheque_id} eliminado.{extra}",
     }
+
+
+def _ensure_entidad_caja(cursor, empresa_id: int = 1) -> str:
+    """Devuelve el CUIT de la entidad CAJA (la crea si no existe)."""
+    cursor.execute(
+        """
+        SELECT cuit FROM entidades
+        WHERE UPPER(TRIM(COALESCE(razon_social,''))) IN ('CAJA', 'CAJA EFECTIVO', 'EFECTIVO')
+           OR UPPER(TRIM(COALESCE(nombre_fantasia,''))) IN ('CAJA', 'CAJA EFECTIVO', 'EFECTIVO')
+        ORDER BY CASE WHEN UPPER(TRIM(COALESCE(nombre_fantasia,''))) = 'CAJA' THEN 0 ELSE 1 END
+        LIMIT 1;
+        """
+    )
+    row = cursor.fetchone()
+    if row and row["cuit"]:
+        return str(row["cuit"])
+    # CUIT sintético local (no AFIP): 20 + 9 dígitos fijos de caja
+    cuit = "20999999001"
+    cursor.execute(
+        """
+        INSERT INTO entidades (
+            cuit, razon_social, nombre_fantasia, es_cliente, es_proveedor,
+            es_cuenta_bancaria, es_cuenta_ajuste
+        ) VALUES (?, 'CAJA', 'CAJA', 0, 0, 1, 0);
+        """,
+        (cuit,),
+    )
+    return cuit
+
+
+def _saldo_caja_movimientos(cursor, empresa_id: int, hasta: Optional[str] = None) -> float:
+    hasta = (hasta or "9999-12-31")[:10]
+    cursor.execute(
+        """
+        SELECT COALESCE(SUM(CASE WHEN LOWER(tipo)='ingreso' THEN monto
+                                 WHEN LOWER(tipo)='egreso' THEN -monto
+                                 ELSE 0 END), 0) AS saldo
+        FROM caja_movimientos
+        WHERE COALESCE(empresa_id, 1) = ?
+          AND COALESCE(fecha, '') <= ?;
+        """,
+        (empresa_id, hasta),
+    )
+    row = cursor.fetchone()
+    return round(float(row["saldo"] or 0), 2) if row else 0.0
+
+
+def _insert_caja_mov(
+    cursor,
+    *,
+    empresa_id: int,
+    fecha: str,
+    tipo: str,
+    monto: float,
+    concepto: str,
+    forma: str = "Efectivo",
+    referencia: str = "",
+    cheque_id: Optional[int] = None,
+    proveedor_cuit: Optional[str] = None,
+    usuario: str = "Administrador",
+    mirror_cc: bool = True,
+) -> dict:
+    """Inserta movimiento de caja y espejo en cta cte de entidad CAJA."""
+    from datetime import datetime as _dt
+
+    tipo = (tipo or "").strip().lower()
+    if tipo not in ("ingreso", "egreso"):
+        raise HTTPException(400, "Tipo de caja inválido (ingreso|egreso).")
+    monto = round(float(monto or 0), 2)
+    if monto <= 0:
+        raise HTTPException(400, "El monto debe ser mayor a cero.")
+    fecha = (fecha or "")[:10]
+    if not fecha:
+        fecha = _dt.now().strftime("%Y-%m-%d")
+
+    cuit_caja = _ensure_entidad_caja(cursor, empresa_id)
+    concepto = (concepto or ("Ingreso a caja" if tipo == "ingreso" else "Pago en efectivo")).strip()
+    forma = (forma or "Efectivo").strip()
+    referencia = (referencia or "").strip()
+    usuario = (usuario or "Administrador").strip()
+
+    cc_id = None
+    if mirror_cc:
+        debe = monto if tipo == "ingreso" else 0.0
+        haber = monto if tipo == "egreso" else 0.0
+        tipo_comp = "Ingreso Caja" if tipo == "ingreso" else "Egreso Caja"
+        cursor.execute(
+            """
+            INSERT INTO cuentas_corrientes (
+                entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque,
+                fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id,
+                observaciones
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                cuit_caja,
+                tipo_comp,
+                referencia or tipo_comp,
+                forma,
+                "",
+                fecha,
+                fecha,
+                monto,
+                debe,
+                haber,
+                monto,
+                "Registrado",
+                usuario,
+                empresa_id,
+                concepto,
+            ),
+        )
+        cc_id = cursor.lastrowid
+
+    cursor.execute(
+        """
+        INSERT INTO caja_movimientos (
+            empresa_id, fecha, tipo, concepto, monto, forma, referencia,
+            cheque_id, proveedor_cuit, cc_id, usuario_registro, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """,
+        (
+            empresa_id,
+            fecha,
+            tipo,
+            concepto,
+            monto,
+            forma,
+            referencia,
+            cheque_id,
+            (proveedor_cuit or "").strip() or None,
+            cc_id,
+            usuario,
+            _dt.now().isoformat(timespec="seconds"),
+        ),
+    )
+    mov_id = cursor.lastrowid
+    return {"id": mov_id, "cc_id": cc_id, "cuit_caja": cuit_caja, "monto": monto, "fecha": fecha, "tipo": tipo}
+
+
+@app.get("/api/caja/saldo")
+def api_caja_saldo():
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _ensure_entidad_caja(cursor, empresa_id)
+    cursor.execute("SELECT COUNT(*) FROM caja_movimientos WHERE COALESCE(empresa_id,1)=?;", (empresa_id,))
+    n = int(cursor.fetchone()[0] or 0)
+    saldo = _saldo_caja_movimientos(cursor, empresa_id) if n else _saldo_caja_efectivo(cursor, empresa_id, "9999-12-31")
+    # Si aún no hay movimientos del módulo, devolver también el legado como sugerencia
+    legado = 0.0
+    if n == 0:
+        legado = round(float(saldo or 0), 2)
+        saldo = 0.0
+    conn.commit()
+    conn.close()
+    return {
+        "saldo": round(float(saldo or 0), 2),
+        "movimientos": n,
+        "saldo_legado_sugerido": legado,
+        "usa_modulo_caja": n > 0,
+    }
+
+
+@app.get("/api/caja/movimientos")
+def api_caja_movimientos(desde: str = "", hasta: str = "", limit: int = 200):
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    q = """
+        SELECT * FROM caja_movimientos
+        WHERE COALESCE(empresa_id, 1) = ?
+    """
+    params: list = [empresa_id]
+    if (desde or "").strip():
+        q += " AND COALESCE(fecha,'') >= ?"
+        params.append(desde[:10])
+    if (hasta or "").strip():
+        q += " AND COALESCE(fecha,'') <= ?"
+        params.append(hasta[:10])
+    q += " ORDER BY fecha DESC, id DESC LIMIT ?;"
+    params.append(max(1, min(int(limit or 200), 1000)))
+    cursor.execute(q, params)
+    rows = [dict(r) for r in cursor.fetchall()]
+    saldo = _saldo_caja_movimientos(cursor, empresa_id)
+    conn.close()
+    return {"saldo": saldo, "movimientos": rows}
+
+
+@app.post("/api/caja/ingreso")
+def api_caja_ingreso(data: CajaMovimientoModel):
+    """Ingreso de efectivo a caja (cobro, extracción de banco, saldo inicial, etc.)."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    mov = _insert_caja_mov(
+        cursor,
+        empresa_id=empresa_id,
+        fecha=data.fecha,
+        tipo="ingreso",
+        monto=data.monto,
+        concepto=data.concepto or "Ingreso a caja",
+        forma=data.forma or "Efectivo",
+        referencia=data.referencia or "",
+        usuario=data.usuario_registro or "Administrador",
+    )
+    conn.commit()
+    saldo = _saldo_caja_movimientos(cursor, empresa_id)
+    conn.close()
+    return {"status": "success", "message": "Ingreso registrado en caja.", "movimiento": mov, "saldo": saldo}
+
+
+@app.post("/api/caja/egreso")
+def api_caja_egreso(data: CajaMovimientoModel):
+    """Pago menor en efectivo desde caja. Opcionalmente impacta CC del proveedor."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    saldo_act = _saldo_caja_movimientos(cursor, empresa_id)
+    if float(data.monto or 0) > saldo_act + 0.01:
+        conn.close()
+        raise HTTPException(
+            400,
+            f"Saldo insuficiente en caja ($ {saldo_act:,.2f}). Registrá un ingreso o saldo inicial antes.",
+        )
+
+    prov_cuit = "".join(ch for ch in str(data.proveedor_cuit or "") if ch.isdigit())
+    mov = _insert_caja_mov(
+        cursor,
+        empresa_id=empresa_id,
+        fecha=data.fecha,
+        tipo="egreso",
+        monto=data.monto,
+        concepto=data.concepto or "Pago en efectivo",
+        forma=data.forma or "Efectivo",
+        referencia=data.referencia or "",
+        proveedor_cuit=prov_cuit or None,
+        usuario=data.usuario_registro or "Administrador",
+    )
+
+    cc_prov_id = None
+    if data.impactar_cc_proveedor and prov_cuit:
+        cursor.execute(
+            """
+            SELECT cuit, COALESCE(nombre_fantasia, razon_social) AS nombre,
+                   COALESCE(es_proveedor, 0) AS es_proveedor
+            FROM entidades WHERE REPLACE(cuit,'-','') = ? LIMIT 1;
+            """,
+            (prov_cuit,),
+        )
+        ent = cursor.fetchone()
+        if not ent:
+            conn.close()
+            raise HTTPException(404, "Proveedor no encontrado en el padrón.")
+        if int(ent["es_proveedor"] or 0) != 1:
+            conn.close()
+            raise HTTPException(400, "La entidad no está marcada como Proveedor.")
+        monto = round(float(data.monto or 0), 2)
+        cursor.execute(
+            """
+            INSERT INTO cuentas_corrientes (
+                entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque,
+                fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id,
+                observaciones
+            ) VALUES (?, 'Pago', ?, 'Efectivo / Caja', '', ?, ?, ?, 0, 0, ?, ?, 'Pagado', ?, ?, ?);
+            """,
+            (
+                ent["cuit"],
+                data.referencia or f"CAJA-{mov['id']}",
+                (data.fecha or "")[:10],
+                (data.fecha or "")[:10],
+                monto,
+                monto,
+                monto,
+                data.usuario_registro or "Administrador",
+                empresa_id,
+                data.concepto or f"Pago en efectivo desde caja — {ent['nombre']}",
+            ),
+        )
+        cc_prov_id = cursor.lastrowid
+        cursor.execute(
+            "UPDATE caja_movimientos SET cc_proveedor_id = ? WHERE id = ?;",
+            (cc_prov_id, mov["id"]),
+        )
+
+    conn.commit()
+    saldo = _saldo_caja_movimientos(cursor, empresa_id)
+    conn.close()
+    return {
+        "status": "success",
+        "message": "Egreso registrado en caja.",
+        "movimiento": mov,
+        "cc_proveedor_id": cc_prov_id,
+        "saldo": saldo,
+    }
+
+
+@app.post("/api/caja/cobrar_cheque/{cheque_id}")
+def api_caja_cobrar_cheque(cheque_id: int, data: CajaCobrarChequeModel):
+    """Cobra un cheque de cartera en caja: el efectivo entra a caja y el cheque sale de disponibles."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM cartera_cheques WHERE id = ? AND COALESCE(empresa_id,1) = ?;",
+        (cheque_id, empresa_id),
+    )
+    ch = cursor.fetchone()
+    if not ch:
+        conn.close()
+        raise HTTPException(404, "Cheque no encontrado")
+    est = (ch["estado"] or "").strip().lower()
+    if est not in ("en cartera", "en carteras"):
+        conn.close()
+        raise HTTPException(400, f"El cheque no está disponible (estado: {ch['estado']})")
+
+    monto = round(float(ch["monto"] or 0), 2)
+    if monto <= 0:
+        conn.close()
+        raise HTTPException(400, "Monto de cheque inválido")
+
+    from datetime import date as _date
+    fecha = (data.fecha or ch["fecha_recepcion"] or ch["fecha_pago"] or "").strip()[:10]
+    if not fecha:
+        fecha = _date.today().isoformat()
+
+    nro = (ch["nro_cheque"] or "").strip()
+    ref = (ch["cliente_nombre"] or ch["dador"] or ch["librador"] or "").strip()
+    concepto = f"Cobro en caja ch. {nro}" + (f" — {ref}" if ref else "")
+    obs = (data.observaciones or "").strip()
+    if obs:
+        concepto = f"{concepto} ({obs})"
+
+    mov = _insert_caja_mov(
+        cursor,
+        empresa_id=empresa_id,
+        fecha=fecha,
+        tipo="ingreso",
+        monto=monto,
+        concepto=concepto[:200],
+        forma="Cheque cobrado",
+        referencia=nro,
+        cheque_id=cheque_id,
+        usuario=data.usuario_registro or "Administrador",
+    )
+    cursor.execute(
+        """
+        UPDATE cartera_cheques
+        SET estado = 'Cobrado en caja', caja_cc_id = ?,
+            observaciones = TRIM(COALESCE(observaciones,'') || ?)
+        WHERE id = ?;
+        """,
+        (mov.get("cc_id"), " | Cobrado en caja", cheque_id),
+    )
+    conn.commit()
+    saldo = _saldo_caja_movimientos(cursor, empresa_id)
+    conn.close()
+    return {
+        "status": "success",
+        "message": f"Cheque {nro} cobrado en caja ($ {monto:,.2f}).",
+        "movimiento": mov,
+        "saldo": saldo,
+    }
+
+
+@app.delete("/api/caja/movimientos/{mov_id}")
+def api_caja_eliminar_mov(mov_id: int):
+    """Anula un movimiento de caja (y su espejo en CC / vínculo de cheque si aplica)."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM caja_movimientos WHERE id = ? AND COALESCE(empresa_id,1) = ?;",
+        (mov_id, empresa_id),
+    )
+    mov = cursor.fetchone()
+    if not mov:
+        conn.close()
+        raise HTTPException(404, "Movimiento de caja no encontrado")
+    if mov["cc_id"]:
+        cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (mov["cc_id"],))
+    if mov["cc_proveedor_id"]:
+        cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (mov["cc_proveedor_id"],))
+    if mov["cheque_id"]:
+        cursor.execute(
+            """
+            UPDATE cartera_cheques
+            SET estado = 'En cartera', caja_cc_id = NULL
+            WHERE id = ? AND LOWER(TRIM(COALESCE(estado,''))) LIKE '%caja%';
+            """,
+            (mov["cheque_id"],),
+        )
+    cursor.execute("DELETE FROM caja_movimientos WHERE id = ?;", (mov_id,))
+    conn.commit()
+    saldo = _saldo_caja_movimientos(cursor, empresa_id)
+    conn.close()
+    return {"status": "success", "message": "Movimiento anulado.", "saldo": saldo}
 
 
 def _normalizar_tasa_pct(valor) -> float:
@@ -3924,6 +5326,305 @@ _TIPOS_NO_FACTURA = _TIPOS_PAGO + (
     "Transferencia", "Movimiento", "Cheque", "Caja", "PAGO Terceros",
 )
 
+def _explicar_origen_movimiento(cursor, mov: dict) -> dict:
+    """Arma de qué operación salió un renglón de cuenta corriente, sin inventar vínculos."""
+    tipo = (mov.get("tipo_comprobante") or "").strip()
+    nro = (mov.get("numero_comprobante") or "").strip()
+    tipo_up = tipo.upper()
+    if tipo_up.startswith("AJUSTE"):
+        titulo = "Ajuste manual de saldo"
+        resumen = "Crédito o débito cargado solo en la cuenta corriente. No tiene asiento contable ni retención."
+    elif "RETEN" in tipo_up or tipo_up.startswith("RET ") or "PERCEP" in tipo_up:
+        titulo = "Retención o percepción"
+        resumen = "Importe retenido o percibido, aplicado al saldo del proveedor."
+    elif tipo_up in ("ORDEN DE PAGO", "PAGO", "PAGO TERCEROS", "TRANSFERENCIA", "CAJA", "CHEQUE") or "PAGO" in tipo_up or "CHEQUE" in tipo_up:
+        titulo = "Pago"
+        resumen = "Salida de dinero o valor que cancela saldo (transferencia, caja, cheque u orden de pago)."
+    elif "FACTURA" in tipo_up or "NOTA DE DÉBITO" in tipo_up or "NOTA DE DEBITO" in tipo_up or tipo_up == "MOVIMIENTO":
+        titulo = "Cargo del proveedor"
+        resumen = "Factura, nota de débito o movimiento importado que aumenta lo que hay que pagar."
+    else:
+        titulo = tipo or "Movimiento"
+        resumen = "Movimiento de cuenta corriente."
+
+    vinculos = []
+    if nro:
+        try:
+            cursor.execute(
+                """
+                SELECT nro_orden, fecha, total_pagado, retencion_iibb, retencion_sicore,
+                       forma_pago, observaciones
+                FROM ordenes_pago
+                WHERE nro_orden = ?;
+                """,
+                (nro,),
+            )
+            op = cursor.fetchone()
+            if op:
+                vinculos.append({
+                    "clase": "Orden de pago",
+                    "detalle": (
+                        f"{op['nro_orden']} del {op['fecha'] or '—'} · "
+                        f"{op['forma_pago'] or 'sin forma de pago'} · "
+                        f"pagado {float(op['total_pagado'] or 0):,.2f}"
+                    ),
+                    "extra": op["observaciones"] or "",
+                })
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute(
+                """
+                SELECT fecha, tipo_retencion, regimen, importe_retenido, nro_comprobante, razon_social
+                FROM retenciones_sicore
+                WHERE nro_comprobante = ?;
+                """,
+                (nro,),
+            )
+            for ret in cursor.fetchall():
+                vinculos.append({
+                    "clase": f"Certificado {ret['tipo_retencion'] or 'retención'}",
+                    "detalle": (
+                        f"{ret['nro_comprobante']} · régimen {ret['regimen'] or '—'} · "
+                        f"importe {float(ret['importe_retenido'] or 0):,.2f}"
+                    ),
+                    "extra": ret["razon_social"] or "",
+                })
+        except sqlite3.OperationalError:
+            pass
+    try:
+        cursor.execute(
+            """
+            SELECT descripcion, destino_tipo, actividad_nombre, cuenta_nombre,
+                   neto, cantidad, unidad, item_nombre, campania_codigo, detalle_tipo
+            FROM factura_imputaciones
+            WHERE cc_id = ?;
+            """,
+            (mov.get("id"),),
+        )
+        for imp in cursor.fetchall():
+            partes = [imp["descripcion"] or imp["item_nombre"] or "Renglón"]
+            if imp["actividad_nombre"]:
+                partes.append(imp["actividad_nombre"])
+            if imp["cuenta_nombre"]:
+                partes.append(imp["cuenta_nombre"])
+            if imp["campania_codigo"]:
+                partes.append(f"campaña {imp['campania_codigo']}")
+            if float(imp["cantidad"] or 0):
+                partes.append(f"{imp['cantidad']} {imp['unidad'] or ''}".strip())
+            vinculos.append({
+                "clase": "Imputación de factura",
+                "detalle": " · ".join(partes),
+                "extra": f"Neto {float(imp['neto'] or 0):,.2f}",
+            })
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            """
+            SELECT nro_cheque, banco, librador, cliente_nombre, monto, estado, observaciones
+            FROM cartera_cheques
+            WHERE cc_id = ? OR op_id = ?;
+            """,
+            (mov.get("id"), mov.get("id")),
+        )
+        for ch in cursor.fetchall():
+            vinculos.append({
+                "clase": "Cheque",
+                "detalle": (
+                    f"Nº {ch['nro_cheque'] or '—'} · {ch['banco'] or ''} · "
+                    f"{ch['librador'] or ch['cliente_nombre'] or ''} · "
+                    f"estado {ch['estado'] or '—'}"
+                ).strip(),
+                "extra": ch["observaciones"] or "",
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    return {
+        "titulo": titulo,
+        "resumen": resumen,
+        "vinculos": vinculos,
+        "movimiento": {
+            "id": mov.get("id"),
+            "fecha": mov.get("fecha"),
+            "tipo_comprobante": tipo,
+            "numero_comprobante": nro,
+            "forma_pago": mov.get("forma_pago") or "",
+            "nro_cheque": mov.get("nro_cheque") or "",
+            "neto": float(mov.get("neto") or 0),
+            "iva": float(mov.get("iva") or 0),
+            "debe": float(mov.get("debe") or 0),
+            "haber": float(mov.get("haber") or 0),
+            "total": float(mov.get("total") or 0),
+            "estado": mov.get("estado") or "",
+            "usuario_registro": mov.get("usuario_registro") or "",
+            "observaciones": mov.get("observaciones") or "",
+            "id_access": mov.get("id_access"),
+        },
+    }
+
+
+@app.get("/api/cc/movimiento/{id_mov}")
+def origen_movimiento_cc(id_mov: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM cuentas_corrientes WHERE id = ?;", (id_mov,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    data = _explicar_origen_movimiento(cursor, dict(row))
+    conn.close()
+    return data
+
+
+@app.get("/api/retenciones/certificado")
+def api_certificado_retencion(nro: Optional[str] = None, cc_id: Optional[int] = None):
+    """Datos para reimprimir un certificado SICORE / IIBB (PDF vía impresión del navegador)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    nro_comp = (nro or "").strip()
+    if not nro_comp and cc_id:
+        cursor.execute(
+            "SELECT numero_comprobante, tipo_comprobante FROM cuentas_corrientes WHERE id = ?;",
+            (int(cc_id),),
+        )
+        mov = cursor.fetchone()
+        if not mov:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+        nro_comp = (mov["numero_comprobante"] or "").strip()
+    if not nro_comp:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Indique nro de certificado o cc_id")
+
+    cursor.execute(
+        """
+        SELECT fecha, razon_social, cuit, base_imponible, regimen, importe_retenido,
+               nro_comprobante, tipo_retencion
+        FROM retenciones_sicore
+        WHERE nro_comprobante = ?
+        LIMIT 1;
+        """,
+        (nro_comp,),
+    )
+    ret = cursor.fetchone()
+    if not ret:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Certificado no encontrado")
+
+    cursor.execute("SELECT * FROM configuracion_empresa WHERE id = 1;")
+    cfg = cursor.fetchone()
+    cuit_suj = "".join(ch for ch in str(ret["cuit"] or "") if ch.isdigit())
+    cursor.execute(
+        """
+        SELECT razon_social, nombre_fantasia, cuit, domicilio, localidad, provincia
+        FROM entidades WHERE REPLACE(cuit, '-', '') = ? LIMIT 1;
+        """,
+        (cuit_suj,),
+    )
+    ent = cursor.fetchone()
+    conn.close()
+
+    agente = {
+        "razon_social": (cfg["razon_social"] if cfg else None) or "SILO CHICO S.A.",
+        "cuit": (cfg["cuit"] if cfg else None) or "30717802868",
+        "domicilio": (cfg["domicilio"] if cfg else None) or "",
+        "localidad": (cfg["localidad"] if cfg else None) or "",
+    }
+    sujeto_nombre = (
+        (ent["nombre_fantasia"] if ent and ent["nombre_fantasia"] else None)
+        or (ent["razon_social"] if ent else None)
+        or ret["razon_social"]
+        or ""
+    )
+    base = float(ret["base_imponible"] or 0)
+    importe = float(ret["importe_retenido"] or 0)
+    regimen = (ret["regimen"] or "").strip()
+    # Si el régimen no trae %, inferirla de base/importe (certificados viejos solo decían "ARBA")
+    alicuota_pct = None
+    import re as _re
+    m_pct = _re.search(r"([\d.,]+)\s*%", regimen)
+    if m_pct:
+        try:
+            alicuota_pct = float(m_pct.group(1).replace(",", "."))
+        except ValueError:
+            alicuota_pct = None
+    if alicuota_pct is None and base > 0.01 and importe > 0:
+        alicuota_pct = round(importe / base * 100, 4)
+    if alicuota_pct is not None and "%" not in regimen:
+        regimen = f"{regimen} {alicuota_pct:.2f}%".strip() if regimen else f"{alicuota_pct:.2f}%"
+
+    return {
+        "nro_comprobante": ret["nro_comprobante"],
+        "tipo_retencion": (ret["tipo_retencion"] or "SICORE").upper(),
+        "fecha": ret["fecha"],
+        "regimen": regimen,
+        "alicuota_pct": alicuota_pct,
+        "base_imponible": base,
+        "importe_retenido": importe,
+        "agente": agente,
+        "sujeto": {
+            "razon_social": sujeto_nombre,
+            "cuit": (ent["cuit"] if ent else None) or ret["cuit"],
+            "domicilio": (ent["domicilio"] if ent else None) or "",
+            "localidad": (ent["localidad"] if ent else None) or "",
+        },
+    }
+
+
+@app.post("/api/cuentas_corrientes/ajuste")
+def registrar_ajuste_saldo_cc(data: AjusteSaldoCcModel):
+    """Corrige el saldo del proveedor. No genera asiento ni retención."""
+    sentido = (data.sentido or "").strip().lower()
+    if sentido not in ("credito", "debito"):
+        raise HTTPException(status_code=400, detail="El sentido debe ser credito o debito.")
+    importe = round(float(data.importe or 0), 2)
+    if importe <= 0:
+        raise HTTPException(status_code=400, detail="El importe tiene que ser mayor a cero.")
+    concepto = (data.concepto or "").strip()
+    if not concepto:
+        raise HTTPException(status_code=400, detail="Indicá el motivo del ajuste.")
+    cuit_clean = "".join(filter(str.isdigit, str(data.cuit)))
+    if not cuit_clean:
+        raise HTTPException(status_code=400, detail="CUIT inválido.")
+
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(cuentas_corrientes);")
+    if "observaciones" not in {c[1] for c in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN observaciones TEXT;")
+
+    debe = importe if sentido == "debito" else 0.0
+    haber = importe if sentido == "credito" else 0.0
+    tipo = "Ajuste débito" if sentido == "debito" else "Ajuste crédito"
+    cursor.execute(
+        """
+        INSERT INTO cuentas_corrientes (
+            entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque,
+            fecha, vencimiento, neto, iva, debe, haber, total, estado,
+            usuario_registro, empresa_id, observaciones
+        ) VALUES (?, ?, '', 'Ajuste de saldo', '', ?, ?, 0, 0, ?, ?, ?, 'Ajuste', ?, ?, ?);
+        """,
+        (
+            cuit_clean, tipo, data.fecha, data.fecha,
+            debe, haber, importe,
+            data.usuario_registro or "Administrador",
+            empresa_id, concepto,
+        ),
+    )
+    nuevo_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {
+        "status": "success",
+        "id": nuevo_id,
+        "message": "Ajuste registrado solo en la cuenta corriente (sin asiento ni retención).",
+    }
+
+
 @app.get("/api/cuentas_corrientes/{cuit}")
 def obtener_detalle_cuenta_corriente(cuit: str):
     empresa_id = get_empresa_activa_id()
@@ -3962,45 +5663,57 @@ def obtener_detalle_cuenta_corriente(cuit: str):
 
 @app.delete("/api/cuentas_corrientes/{id_mov}")
 def eliminar_movimiento_cuenta_corriente(id_mov: int):
+    """Borra un solo renglón de CC.
+
+    OP y retenciones son movimientos independientes: borrar la transferencia/OP
+    no elimina las retenciones del mismo día (ni viceversa, salvo el certificado
+    vinculado al propio renglón de retención).
+    """
     conn = get_db()
     cursor = conn.cursor()
-    
-    cursor.execute("SELECT entidad_id, tipo_comprobante, numero_comprobante, fecha FROM cuentas_corrientes WHERE id = ?;", (id_mov,))
+
+    cursor.execute("SELECT * FROM cuentas_corrientes WHERE id = ?;", (id_mov,))
     mov = cursor.fetchone()
-    
+
     if mov:
-        entidad_id = mov['entidad_id']
-        tipo_comp = mov['tipo_comprobante']
-        nro_comp = mov['numero_comprobante']
-        fecha_mov = mov['fecha']
-        
+        tipo_comp = (mov["tipo_comprobante"] or "").strip()
+        nro_comp = mov["numero_comprobante"]
+        asiento_id = None
+        try:
+            asiento_id = mov["asiento_id"]
+        except (KeyError, IndexError, TypeError):
+            asiento_id = None
+
+        # Imputaciones de factura/NC
+        try:
+            cursor.execute("DELETE FROM factura_imputaciones WHERE cc_id = ?;", (id_mov,))
+        except Exception:
+            pass
+
         cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (id_mov,))
-        
-        if tipo_comp in ['Retención SICORE', 'Retención IIBB'] and nro_comp:
+
+        if asiento_id:
+            try:
+                from motor_contable import eliminar_asiento
+                eliminar_asiento(cursor, int(asiento_id))
+            except Exception as exc:
+                print(f"AVISO al borrar asiento CC: {exc}")
+
+        # Solo si se borra el renglón de retención, limpiar su certificado
+        tipo_up = tipo_comp.upper()
+        es_retencion = (
+            tipo_comp in ("Retención SICORE", "Retención IIBB", "Retencion Ganancias", "Retencion IIBB")
+            or "RETEN" in tipo_up
+        )
+        if es_retencion and nro_comp:
             cursor.execute("DELETE FROM retenciones_sicore WHERE nro_comprobante = ?;", (nro_comp,))
-            
-        elif tipo_comp == 'Orden de Pago':
-            cursor.execute("""
-                SELECT numero_comprobante FROM cuentas_corrientes 
-                WHERE entidad_id = ? AND tipo_comprobante IN ('Retención SICORE', 'Retención IIBB') AND fecha = ?;
-            """, (entidad_id, fecha_mov))
-            retenciones = cursor.fetchall()
-            
-            for ret in retenciones:
-                if ret['numero_comprobante']:
-                    cursor.execute("DELETE FROM retenciones_sicore WHERE nro_comprobante = ?;", (ret['numero_comprobante'],))
-            
-            cursor.execute("""
-                DELETE FROM cuentas_corrientes 
-                WHERE entidad_id = ? AND tipo_comprobante IN ('Retención SICORE', 'Retención IIBB') AND fecha = ?;
-            """, (entidad_id, fecha_mov))
 
         conn.commit()
-        mensaje = "Movimiento y retenciones vinculadas eliminados correctamente."
+        mensaje = "Movimiento eliminado. Las demás líneas de la cuenta quedan intactas."
     else:
         conn.rollback()
         mensaje = "Movimiento no encontrado."
-        
+
     conn.close()
     return {"status": "success", "message": mensaje}
 
@@ -4037,15 +5750,25 @@ def guardar_factura(data: FacturaModel):
     from actividades_imputacion import init_actividades_schema
     init_actividades_schema(cursor)
 
+    tipo_up = (data.tipo_comprobante or "").upper()
+    es_nc = (
+        "NOTA DE CRÉDITO" in tipo_up
+        or "NOTA DE CREDITO" in tipo_up
+        or tipo_up.startswith("NC ")
+    )
+    # Factura / ND → DEBE (cargo). NC → HABER (baja saldo a pagar).
+    debe = 0.0 if es_nc else float(data.total or 0)
+    haber = float(data.total or 0) if es_nc else 0.0
+
     cursor.execute("""
         INSERT INTO cuentas_corrientes (
             entidad_id, tipo_comprobante, numero_comprobante, fecha, vencimiento,
             neto, iva, debe, haber, total, estado, usuario_registro, empresa_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'Pendiente', ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?);
     """, (
         data.cuit, data.tipo_comprobante, data.numero_comprobante, data.fecha,
-        data.vencimiento, data.neto, data.iva, data.total, data.total,
+        data.vencimiento, data.neto, data.iva, debe, haber, data.total,
         data.usuario_registro, empresa_id,
     ))
     cc_id = cursor.lastrowid
@@ -4074,42 +5797,110 @@ def guardar_factura(data: FacturaModel):
                 r.campania_codigo or "", r.detalle_tipo or "",
             ),
         )
-        # Si es insumo con cantidad/precio → ingreso a almacén (costo neto)
+        # Insumo: factura → ingreso almacén; NC → egreso/devolución
         dest = (r.destino_tipo or "").lower()
         if "insumo" in dest and float(r.cantidad or 0) > 0 and float(r.precio_unitario or 0) >= 0:
             try:
-                from agro_almacen import ingresar_almacen
-                ingresar_almacen(
-                    cursor,
-                    empresa_id=empresa_id,
-                    item_id=r.item_almacen_id,
-                    tipo="producto",
-                    codigo="",
-                    nombre=(r.item_nombre or r.descripcion or "Insumo"),
-                    categoria=r.cuenta_nombre or "",
-                    unidad=r.unidad or "Kg",
-                    fecha=data.fecha,
-                    cantidad=float(r.cantidad),
-                    precio_unitario_neto=float(r.precio_unitario or 0),
-                    proveedor_cuit=data.cuit,
-                    proveedor_nombre="",
-                    nro_comprobante=data.numero_comprobante,
-                    observaciones=f"Factura {data.tipo_comprobante} {data.numero_comprobante}",
-                )
+                if es_nc:
+                    from agro_almacen import egresar_almacen_nc
+                    egresar_almacen_nc(
+                        cursor,
+                        empresa_id=empresa_id,
+                        item_id=r.item_almacen_id,
+                        nombre=(r.item_nombre or r.descripcion or "Insumo"),
+                        fecha=data.fecha,
+                        cantidad=float(r.cantidad),
+                        precio_unitario_neto=float(r.precio_unitario or 0),
+                        proveedor_cuit=data.cuit,
+                        nro_comprobante=data.numero_comprobante,
+                        observaciones=f"NC {data.tipo_comprobante} {data.numero_comprobante}",
+                    )
+                else:
+                    from agro_almacen import ingresar_almacen
+                    ingresar_almacen(
+                        cursor,
+                        empresa_id=empresa_id,
+                        item_id=r.item_almacen_id,
+                        tipo="producto",
+                        codigo="",
+                        nombre=(r.item_nombre or r.descripcion or "Insumo"),
+                        categoria=r.cuenta_nombre or "",
+                        unidad=r.unidad or "Kg",
+                        fecha=data.fecha,
+                        cantidad=float(r.cantidad),
+                        precio_unitario_neto=float(r.precio_unitario or 0),
+                        proveedor_cuit=data.cuit,
+                        proveedor_nombre="",
+                        nro_comprobante=data.numero_comprobante,
+                        observaciones=f"Factura {data.tipo_comprobante} {data.numero_comprobante}",
+                    )
             except Exception as exc:
-                print(f"AVISO ingreso almacén desde factura: {exc}")
+                print(f"AVISO almacén desde factura/NC: {exc}")
+
+    # Asiento contable: factura/ND normal o INVERSO para NC
+    asiento_id = None
+    try:
+        cursor.execute("PRAGMA table_info(cuentas_corrientes);")
+        cols_cc = {c[1] for c in cursor.fetchall()}
+        if "asiento_id" not in cols_cc:
+            cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN asiento_id INTEGER;")
+        # Discriminar IVA 21 / 10.5 desde renglones si hay
+        iva21 = 0.0
+        iva105 = 0.0
+        for r in (data.renglones or []):
+            al = float(r.alicuota_iva or 0)
+            neto_r = float(r.neto or 0)
+            if abs(al - 0.105) < 0.001:
+                iva105 += round(neto_r * al, 2)
+            elif al > 0:
+                iva21 += round(neto_r * al, 2)
+        if iva21 <= 0 and iva105 <= 0:
+            iva21 = float(data.iva or 0)
+
+        asiento_id = asiento_para_comprobante_compra(
+            cursor,
+            fecha=data.fecha,
+            tipo_comprobante=data.tipo_comprobante,
+            numero_comprobante=data.numero_comprobante,
+            cuit_proveedor=data.cuit,
+            neto=float(data.neto or 0),
+            iva=float(data.iva or 0),
+            iva_21=iva21,
+            iva_105=iva105,
+            percepcion_iibb=float(data.percepcion_iibb or 0),
+            total=float(data.total or 0),
+            es_nota_credito=es_nc,
+            empresa_id=empresa_id,
+            origen_id=cc_id,
+        )
+        if asiento_id:
+            cursor.execute(
+                "UPDATE cuentas_corrientes SET asiento_id = ? WHERE id = ?;",
+                (asiento_id, cc_id),
+            )
+    except Exception as exc:
+        print(f"AVISO asiento factura/NC: {exc}")
 
     conn.commit()
     conn.close()
-    return {"status": "success", "message": "Factura registrada.", "cc_id": cc_id}
+    if es_nc:
+        msg = "Nota de Crédito registrada: crédito en cta cte (HABER), asiento inverso"
+        if asiento_id:
+            msg += f" #{asiento_id}"
+        msg += " y egreso de almacén si hubo insumos."
+    else:
+        msg = "Factura registrada."
+        if asiento_id:
+            msg += f" Asiento #{asiento_id}."
+    return {"status": "success", "message": msg, "cc_id": cc_id, "asiento_id": asiento_id, "es_nota_credito": es_nc}
 
 @app.get("/api/saldos_proveedores")
 def obtener_saldos_proveedores():
-    """Proveedores a pagar:
+    """Proveedores a pagar (solo es_proveedor=1):
     - Saldo neto > 0, o
     - Cargos Pendientes (Debe) sin cubrir — aunque el neto quede a favor
       (p. ej. quedó un Movimiento/Factura pendiente después de una OP).
-    Convención: Factura/ND/cargo → Debe; Pago/OP → Haber.
+    Convención: Factura/ND/cargo → Debe; Pago/OP/NC → Haber.
     """
     empresa_id = get_empresa_activa_id()
     conn = get_db()
@@ -4167,13 +5958,9 @@ def obtener_saldos_proveedores():
            AND COALESCE(cc.empresa_id, 1) = ?
         WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
           AND COALESCE(e.es_cuenta_bancaria, 0) = 0
+          AND COALESCE(e.es_proveedor, 0) = 1
         GROUP BY e.cuit, proveedor, centro_costo
-        HAVING cant_facturas > 0
-           AND (
-                ROUND(saldo_neto, 2) >= 0.01
-                OR cant_pagos = 0
-                OR (ultima_pendiente IS NOT NULL AND (ultima_pago IS NULL OR ultima_pendiente >= ultima_pago))
-           )
+        HAVING ROUND(saldo_neto, 2) >= 0.01
         ORDER BY proveedor ASC;
     """, (*_TIPOS_PAGO, *_TIPOS_PAGO, *_TIPOS_PAGO, empresa_id))
     rows = []
@@ -4192,6 +5979,283 @@ def obtener_saldos_proveedores():
         rows.append(d)
     conn.close()
     return rows
+
+
+@app.get("/api/saldos_clientes")
+def obtener_saldos_clientes():
+    """Clientes a cobrar (solo es_cliente=1).
+    Convención: venta/cargo → Debe; cobro/recibo → Haber.
+    Saldo a cobrar = Debe − Haber > 0 (el cliente nos debe).
+    """
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT e.cuit,
+               COALESCE(e.nombre_fantasia, e.razon_social) AS cliente,
+               COALESCE(e.centro_costo, '1') AS centro_costo,
+               ROUND(COALESCE(SUM(cc.debe - cc.haber), 0.0), 2) AS saldo_neto,
+               COUNT(cc.id) AS cant_movimientos,
+               COALESCE(MAX(cc.fecha), '-') AS ultima_operacion
+        FROM entidades e
+        INNER JOIN cuentas_corrientes cc
+            ON REPLACE(cc.entidad_id, '-', '') = REPLACE(e.cuit, '-', '')
+           AND COALESCE(cc.empresa_id, 1) = ?
+        WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
+          AND COALESCE(e.es_cuenta_bancaria, 0) = 0
+          AND COALESCE(e.es_cliente, 0) = 1
+        GROUP BY e.cuit, cliente, centro_costo
+        HAVING ROUND(saldo_neto, 2) >= 0.01
+        ORDER BY cliente COLLATE NOCASE ASC;
+        """,
+        (empresa_id,),
+    )
+    rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        saldo = round(float(d.get("saldo_neto") or 0), 2)
+        if saldo < 0.01:
+            continue
+        d["saldo_a_cobrar"] = saldo
+        d["ultima_factura"] = d.get("ultima_operacion") or "-"
+        rows.append(d)
+    conn.close()
+    return rows
+
+
+class CobroClienteModel(BaseModel):
+    cuit: str
+    fecha: str
+    monto: float
+    forma_pago: str = "Transferencia"
+    observaciones: Optional[str] = ""
+    usuario_registro: str = "Administrador"
+    nro_recibo: Optional[str] = ""
+
+
+@app.post("/api/cobros")
+def registrar_cobro_cliente(data: CobroClienteModel):
+    """Registra un cobro a cliente (Recibo): HABER en cta cte. No usa órdenes de pago."""
+    empresa_id = get_empresa_activa_id()
+    cuit_clean = "".join(ch for ch in str(data.cuit or "") if ch.isdigit())
+    monto = round(float(data.monto or 0), 2)
+    if not cuit_clean or monto <= 0:
+        raise HTTPException(400, "CUIT y monto son obligatorios.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT cuit, COALESCE(nombre_fantasia, razon_social) AS nombre,
+               COALESCE(es_cliente, 0) AS es_cliente
+        FROM entidades
+        WHERE REPLACE(cuit, '-', '') = ?
+        LIMIT 1;
+        """,
+        (cuit_clean,),
+    )
+    ent = cursor.fetchone()
+    if not ent:
+        conn.close()
+        raise HTTPException(404, "Cliente no encontrado en el padrón.")
+    if int(ent["es_cliente"] or 0) != 1:
+        conn.close()
+        raise HTTPException(
+            400,
+            "La entidad no está marcada como Cliente. Marcála en Proveedores/Clientes antes de cobrar.",
+        )
+
+    nro = (data.nro_recibo or "").strip()
+    if not nro:
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM cuentas_corrientes
+            WHERE COALESCE(empresa_id, 1) = ?
+              AND UPPER(COALESCE(tipo_comprobante, '')) LIKE '%RECIBO%';
+            """,
+            (empresa_id,),
+        )
+        n = int(cursor.fetchone()[0] or 0) + 1
+        nro = f"RC-{n:08d}"
+
+    fecha = (data.fecha or "")[:10]
+    obs = (data.observaciones or "").strip()
+    cursor.execute(
+        """
+        INSERT INTO cuentas_corrientes (
+            entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque,
+            fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id,
+            observaciones
+        ) VALUES (?, 'Recibo', ?, ?, '', ?, ?, ?, 0, 0, ?, ?, 'Cobrado', ?, ?, ?);
+        """,
+        (
+            ent["cuit"], nro, data.forma_pago or "Transferencia",
+            fecha, fecha, monto, monto, monto,
+            data.usuario_registro or "Administrador", empresa_id,
+            obs or f"Cobro cliente {ent['nombre']}",
+        ),
+    )
+    cc_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {
+        "status": "success",
+        "message": f"Cobro registrado (Recibo {nro}).",
+        "cc_id": cc_id,
+        "nro_recibo": nro,
+        "saldo_impactado_haber": monto,
+    }
+
+
+class FacturaVentaModel(BaseModel):
+    cuit: str
+    tipo_comprobante: str = "Factura A"
+    numero_comprobante: str
+    fecha: str
+    vencimiento: Optional[str] = None
+    neto: float
+    iva: float = 0.0
+    alicuota_percepcion: float = 0.0  # ej. 1.75 = 1.75%
+    percepcion_iibb: float = 0.0
+    total: float = 0.0
+    usuario_registro: str = "Administrador"
+    observaciones: Optional[str] = ""
+
+
+@app.post("/api/facturas_venta")
+def emitir_factura_venta(data: FacturaVentaModel):
+    """Factura de venta a cliente + percepción IIBB (si la empresa es agente)."""
+    empresa_id = get_empresa_activa_id()
+    cuit_clean = "".join(ch for ch in str(data.cuit or "") if ch.isdigit())
+    neto = round(float(data.neto or 0), 2)
+    iva = round(float(data.iva or 0), 2)
+    perc = round(float(data.percepcion_iibb or 0), 2)
+    alic = float(data.alicuota_percepcion or 0)
+    if alic > 1:  # vino como porcentaje 1.75
+        alic = alic / 100.0
+    total = round(float(data.total or 0), 2)
+    if total <= 0:
+        total = round(neto + iva + perc, 2)
+    if not cuit_clean or neto <= 0 or total <= 0:
+        raise HTTPException(400, "CUIT, neto y total son obligatorios.")
+    nro = (data.numero_comprobante or "").strip()
+    if not nro:
+        raise HTTPException(400, "Indicá el número de comprobante.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT cuit, razon_social, nombre_fantasia, domicilio, localidad,
+               COALESCE(es_cliente, 0) AS es_cliente, COALESCE(centro_costo, '1') AS centro_costo
+        FROM entidades WHERE REPLACE(cuit, '-', '') = ? LIMIT 1;
+        """,
+        (cuit_clean,),
+    )
+    ent = cursor.fetchone()
+    if not ent:
+        conn.close()
+        raise HTTPException(404, "Cliente no encontrado. Dale de alta en el padrón como Cliente.")
+    if int(ent["es_cliente"] or 0) != 1:
+        conn.close()
+        raise HTTPException(400, "La entidad no está marcada como Cliente.")
+
+    cursor.execute("SELECT * FROM configuracion_empresa WHERE id = 1;")
+    cfg = cursor.fetchone()
+    es_agente_perc = True
+    if cfg is not None:
+        es_agente_perc = bool(int(cfg["agente_percepcion_iibb"] or 0))
+    if not es_agente_perc:
+        perc = 0.0
+        total = round(neto + iva, 2)
+
+    # Cliente S/P: no percepción
+    cc = str(ent["centro_costo"] or "1").upper()
+    nom = f"{ent['razon_social'] or ''} {ent['nombre_fantasia'] or ''}".upper()
+    if cc in ("SP", "S/P") or "(S/P)" in nom or nom.endswith(" S/P"):
+        perc = 0.0
+        total = round(neto + iva, 2)
+
+    fecha = (data.fecha or "")[:10]
+    venc = (data.vencimiento or fecha)[:10]
+    tipo = (data.tipo_comprobante or "Factura A").strip()
+
+    cursor.execute(
+        """
+        INSERT INTO cuentas_corrientes (
+            entidad_id, tipo_comprobante, numero_comprobante, fecha, vencimiento,
+            neto, iva, debe, haber, total, estado, usuario_registro, empresa_id, observaciones
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'Pendiente', ?, ?, ?);
+        """,
+        (
+            ent["cuit"], tipo, nro, fecha, venc,
+            neto, iva, total, total,
+            data.usuario_registro or "Administrador", empresa_id,
+            (data.observaciones or "").strip() or f"Venta {tipo} {nro}",
+        ),
+    )
+    cc_id = cursor.lastrowid
+
+    asiento_id = None
+    try:
+        asiento_id = asiento_para_factura_venta(
+            cursor,
+            fecha=fecha,
+            tipo_comprobante=tipo,
+            numero_comprobante=nro,
+            cuit_cliente=ent["cuit"],
+            neto=neto,
+            iva=iva,
+            percepcion_iibb=perc,
+            total=total,
+            empresa_id=empresa_id,
+            origen_id=cc_id,
+        )
+        if asiento_id:
+            try:
+                cursor.execute("UPDATE cuentas_corrientes SET asiento_id = ? WHERE id = ?;", (asiento_id, cc_id))
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"AVISO asiento venta: {exc}")
+
+    cert_perc = None
+    if perc > 0.01:
+        anio = fecha[:4] if len(fecha) >= 4 else "2026"
+        sec = obtener_siguiente_certificado_db("PERC_IIBB", 1000) + 1
+        cert_perc = f"{anio}-P{sec}"
+        razon = ent["razon_social"] or ent["nombre_fantasia"] or "Cliente"
+        cursor.execute(
+            """
+            INSERT INTO retenciones_sicore
+                (fecha, razon_social, cuit, base_imponible, regimen, importe_retenido, nro_comprobante, tipo_retencion)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'PERCEPCION_IIBB');
+            """,
+            (fecha, razon, ent["cuit"], neto, f"ARBA-PERC {(alic * 100):.2f}%", perc, cert_perc),
+        )
+        # Renglón informativo en CC (opcional — la perc ya está en el total de la factura).
+        # No duplicamos haber/debe: solo el certificado.
+
+    conn.commit()
+    conn.close()
+    return {
+        "status": "success",
+        "message": "Factura de venta registrada.",
+        "cc_id": cc_id,
+        "asiento_id": asiento_id,
+        "total": total,
+        "percepcion_iibb": perc,
+        "alicuota_percepcion": alic,
+        "cert_percepcion": cert_perc,
+        "cliente": {
+            "razon_social": ent["nombre_fantasia"] or ent["razon_social"],
+            "cuit": ent["cuit"],
+            "domicilio": ent["domicilio"] or "",
+            "localidad": ent["localidad"] or "",
+        },
+    }
+
 
 @app.get("/api/proveedores/consulta")
 def consultar_padron_proveedores(q: str = ""):
@@ -4220,10 +6284,7 @@ def consultar_padron_proveedores(q: str = ""):
            AND COALESCE(cc.empresa_id, 1) = ?
         WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
           AND COALESCE(e.es_cuenta_bancaria, 0) = 0
-          AND (
-                COALESCE(e.es_proveedor, 1) = 1
-                OR COALESCE(e.es_cliente, 0) = 0
-          )
+          AND COALESCE(e.es_proveedor, 0) = 1
           AND (
                 COALESCE(e.razon_social, '') LIKE ?
                 OR COALESCE(e.nombre_fantasia, '') LIKE ?
@@ -4246,9 +6307,62 @@ def consultar_padron_proveedores(q: str = ""):
     conn.close()
     return rows
 
+
+@app.get("/api/clientes/consulta")
+def consultar_padron_clientes(q: str = ""):
+    """Busca clientes (es_cliente=1) en el padrón, con o sin saldo."""
+    empresa_id = get_empresa_activa_id()
+    texto = (q or "").strip()
+    if len(texto) < 2:
+        return []
+    conn = get_db()
+    cursor = conn.cursor()
+    like = f"%{texto}%"
+    digitos = "".join(ch for ch in texto if ch.isdigit())
+    cursor.execute(
+        """
+        SELECT e.cuit,
+               COALESCE(e.nombre_fantasia, e.razon_social) AS cliente,
+               COALESCE(e.centro_costo, '1') AS centro_costo,
+               ROUND(COALESCE(SUM(cc.debe - cc.haber), 0.0), 2) AS saldo_neto,
+               COALESCE(MAX(cc.fecha), '-') AS ultima_operacion,
+               COUNT(cc.id) AS cant_movimientos
+        FROM entidades e
+        LEFT JOIN cuentas_corrientes cc
+            ON REPLACE(cc.entidad_id, '-', '') = REPLACE(e.cuit, '-', '')
+           AND COALESCE(cc.empresa_id, 1) = ?
+        WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
+          AND COALESCE(e.es_cuenta_bancaria, 0) = 0
+          AND COALESCE(e.es_cliente, 0) = 1
+          AND (
+                COALESCE(e.razon_social, '') LIKE ?
+                OR COALESCE(e.nombre_fantasia, '') LIKE ?
+                OR REPLACE(COALESCE(e.cuit, ''), '-', '') LIKE ?
+          )
+        GROUP BY e.cuit, cliente, centro_costo
+        ORDER BY cliente COLLATE NOCASE
+        LIMIT 40;
+        """,
+        (empresa_id, like, like, f"%{digitos}%" if digitos else like),
+    )
+    rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        saldo = round(float(d.get("saldo_neto") or 0), 2)
+        d["saldo_a_cobrar"] = saldo if saldo > 0 else 0.0
+        d["desde_padron"] = True
+        rows.append(d)
+    conn.close()
+    return rows
+
+
 @app.get("/api/comprobantes_pendientes/{cuit}")
 def obtener_comprobantes_pendientes(cuit: str):
-    """Facturas / ND / cargos pendientes de un proveedor para armar la OP."""
+    """Facturas / ND / cargos pendientes de un proveedor para armar la OP.
+
+    Solo incluye estado Pendiente (o vacío). Nunca reinyecta facturas ya Pagadas:
+    eso inflaba el neto de la OP con histórico cancelado.
+    """
     empresa_id = get_empresa_activa_id()
     conn = get_db()
     cursor = conn.cursor()
@@ -4268,29 +6382,10 @@ def obtener_comprobantes_pendientes(cuit: str):
           AND COALESCE(empresa_id, 1) = ?
           AND COALESCE(debe, 0) > 0.01
           AND COALESCE(tipo_comprobante, '') NOT IN ({placeholders})
-          AND COALESCE(estado, 'Pendiente') IN ('Pendiente', 'pendiente', '')
+          AND UPPER(TRIM(COALESCE(estado, 'Pendiente'))) IN ('PENDIENTE', '')
         ORDER BY fecha ASC, id ASC;
     """, (cuit_clean, empresa_id, *_TIPOS_PAGO))
     rows = [dict(r) for r in cursor.fetchall()]
-    # Si el legado no marcó estado Pendiente, devolver cargos sin pago asociado por neto de cuenta
-    if not rows:
-        cursor.execute(f"""
-            SELECT id,
-                   fecha,
-                   tipo_comprobante,
-                   numero_comprobante AS nro_comprobante,
-                   COALESCE(neto, 0) AS neto,
-                   COALESCE(iva, 0) AS iva,
-                   COALESCE(NULLIF(total, 0), debe, 0) AS total,
-                   estado
-            FROM cuentas_corrientes
-            WHERE REPLACE(entidad_id, '-', '') = ?
-              AND COALESCE(empresa_id, 1) = ?
-              AND COALESCE(debe, 0) > 0.01
-              AND COALESCE(tipo_comprobante, '') NOT IN ({placeholders})
-            ORDER BY fecha ASC, id ASC;
-        """, (cuit_clean, empresa_id, *_TIPOS_PAGO))
-        rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
 
@@ -4335,7 +6430,27 @@ def _es_cuenta_ars(nro: str, banco: str = "") -> bool:
 
 
 def _saldo_caja_efectivo(cursor, empresa_id: int, hasta: str) -> float:
-    """Saldo entidad CAJA / efectivo en cuentas corrientes."""
+    """Saldo de caja chica.
+    Preferencia: tabla caja_movimientos (módulo Tesorería → Caja).
+    Si aún no hay movimientos, cae al saldo histórico de la entidad CAJA en cta cte.
+    """
+    hasta = (hasta or "9999-12-31")[:10]
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS n,
+               COALESCE(SUM(CASE WHEN LOWER(tipo)='ingreso' THEN monto
+                                 WHEN LOWER(tipo)='egreso' THEN -monto
+                                 ELSE 0 END), 0) AS saldo
+        FROM caja_movimientos
+        WHERE COALESCE(empresa_id, 1) = ?
+          AND COALESCE(fecha, '') <= ?;
+        """,
+        (empresa_id, hasta),
+    )
+    row = cursor.fetchone()
+    if row and int(row["n"] or 0) > 0:
+        return float(row["saldo"] or 0)
+
     cursor.execute(
         """
         SELECT COALESCE(SUM(cc.debe - cc.haber), 0) AS saldo
@@ -4348,7 +6463,7 @@ def _saldo_caja_efectivo(cursor, empresa_id: int, hasta: str) -> float:
           )
           AND COALESCE(cc.fecha, '') <= ?;
         """,
-        (empresa_id, (hasta or "9999-12-31")[:10]),
+        (empresa_id, hasta),
     )
     row = cursor.fetchone()
     return float(row["saldo"] or 0) if row else 0.0
@@ -4449,7 +6564,304 @@ def _lineas_disponibilidades_financiero(cursor, empresa_id: int, fecha: str) -> 
     if pf > 0.01:
         _add_disp("Plazos fijos", pf, "", "Colocaciones a plazo")
 
+    cursor.execute(
+        """
+        SELECT COALESCE(SUM(monto), 0) AS total, COUNT(*) AS n
+        FROM cartera_cheques
+        WHERE COALESCE(empresa_id, 1) = ?
+          AND LOWER(TRIM(COALESCE(estado,''))) IN ('en cartera', 'en carteras')
+          AND UPPER(TRIM(COALESCE(tipo,''))) NOT IN ('EMITIDO');
+        """,
+        (empresa_id,),
+    )
+    row_ch = cursor.fetchone()
+    cheques = float(row_ch["total"] or 0) if row_ch else 0.0
+    if cheques > 0.01:
+        n = int(row_ch["n"] or 0) if row_ch else 0
+        _add_disp("Cheques en cartera", cheques, "", f"{n} cheque(s) aún disponibles")
+
     return out
+
+
+
+def _fecha_iso_ff(fecha: Optional[str]) -> str:
+    """Normaliza fecha a YYYY-MM-DD (acepta ISO o DD/MM/AAAA)."""
+    return _fecha_iso_contable((fecha or "").strip())
+
+
+def _lineas_facturas_cc_financiero(cursor, empresa_id: int, desde: str, hasta: str) -> List[dict]:
+    """
+    Facturas/cargos pendientes en cta cte (Campo+), por vencimiento.
+    No filtra fechas en SQL: muchas filas legacy/nuevas vienen en DD/MM/AAAA
+    y fallan un BETWEEN contra ISO.
+    """
+    placeholders = ",".join("?" for _ in _TIPOS_NO_FACTURA)
+    cursor.execute(
+        f"""
+        SELECT cc.vencimiento, cc.fecha, cc.tipo_comprobante, cc.numero_comprobante,
+               COALESCE(NULLIF(cc.total,0), cc.debe, 0) AS monto,
+               cc.entidad_id,
+               COALESCE(e.nombre_fantasia, e.razon_social, cc.entidad_id) AS proveedor
+        FROM cuentas_corrientes cc
+        LEFT JOIN entidades e
+          ON REPLACE(e.cuit,'-','') = REPLACE(cc.entidad_id,'-','')
+        WHERE COALESCE(cc.empresa_id, 1) = ?
+          AND COALESCE(cc.debe, 0) > 0.01
+          AND COALESCE(cc.tipo_comprobante, '') NOT IN ({placeholders})
+          AND COALESCE(cc.estado, 'Pendiente') IN ('Pendiente', 'pendiente', '')
+          AND COALESCE(e.es_cuenta_bancaria, 0) = 0
+          AND COALESCE(e.es_cuenta_ajuste, 0) = 0
+        ORDER BY cc.id;
+        """,
+        (empresa_id, *_TIPOS_NO_FACTURA),
+    )
+    out: List[dict] = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        fecha = _fecha_iso_ff(d.get("vencimiento") or d.get("fecha") or "")
+        if not fecha or fecha < desde or fecha > hasta:
+            continue
+        monto = round(float(d.get("monto") or 0), 2)
+        if monto < 0.01:
+            continue
+        tipo = d.get("tipo_comprobante") or "Comprobante"
+        nro = d.get("numero_comprobante") or ""
+        prov = (d.get("proveedor") or d.get("entidad_id") or "").strip()
+        out.append({
+            "fecha": fecha,
+            "detalle": prov,
+            "forma_pago": "Cta Cte",
+            "cta_cte": "",
+            "nro_cuota": "",
+            "tipo_cambio": 0,
+            "plazo": "30 días",
+            "capital": monto,
+            "intereses": 0,
+            "impuestos": 0,
+            "cargos": 0,
+            "subtotal": monto,
+            "monto_ars": monto,
+            "monto_usd": 0,
+            "varios": f"{tipo} {nro}".strip(),
+            "origen": "Proveedor a pagar",
+            "fuente": "factura",
+            "moneda": "ARS",
+            "es_disponibilidad": False,
+        })
+    return out
+
+
+def _merge_facturas_cc(lineas: List[dict], facturas: List[dict]) -> List[dict]:
+    """Agrega facturas CC evitando duplicar mismo proveedor+fecha+importe."""
+    existing = {
+        (
+            (L.get("detalle") or "").strip().lower(),
+            (L.get("fecha") or "")[:10],
+            round(float(L.get("subtotal") or L.get("monto_ars") or 0), 2),
+        )
+        for L in lineas
+        if not L.get("es_disponibilidad") and not L.get("es_cierre_mes")
+    }
+    for L in facturas:
+        key = (
+            (L.get("detalle") or "").strip().lower(),
+            (L.get("fecha") or "")[:10],
+            round(float(L.get("subtotal") or 0), 2),
+        )
+        if key in existing:
+            continue
+        lineas.append(L)
+        existing.add(key)
+    return lineas
+
+
+def _lineas_cheques_emitidos_financiero(
+    cursor, empresa_id: int, desde: str, hasta: str, tc: float = 0.0
+) -> List[dict]:
+    """
+    Cheques emitidos pendientes: el financiero usa fecha_pago (= vencimiento / pago del cheque),
+    no la fecha de emisión.
+    """
+    cursor.execute(
+        """
+        SELECT nro_cheque, banco, fecha_pago, fecha_emision, monto, moneda,
+               COALESCE(librador, titular, '') AS quien, observaciones
+        FROM cartera_cheques
+        WHERE COALESCE(empresa_id, 1) = ?
+          AND (
+                UPPER(COALESCE(tipo,'')) LIKE '%EMIT%'
+             OR UPPER(COALESCE(estado,'')) LIKE '%EMIT%'
+          )
+          AND UPPER(COALESCE(estado,'')) NOT IN (
+                'DEBITADO', 'ANULADO', 'COBRADO', 'ENTREGADO PROVEEDOR', 'ENTREGADO'
+          )
+        ORDER BY id;
+        """,
+        (empresa_id,),
+    )
+    out: List[dict] = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        # Prioridad: vencimiento/pago del cheque (NO emisión)
+        fecha = _fecha_iso_ff(d.get("fecha_pago") or "") or _fecha_iso_ff(d.get("fecha_emision") or "")
+        if not fecha or fecha < desde or fecha > hasta:
+            continue
+        mon = float(d.get("monto") or 0)
+        if abs(mon) < 0.01:
+            continue
+        moneda = (d.get("moneda") or "ARS").upper()
+        det = f"{d.get('quien') or d.get('banco') or 'Cheque emitido'}".strip()
+        cta = str(d.get("nro_cheque") or "").strip()
+        if moneda == "USD":
+            ars = mon * tc if tc > 0 else 0.0
+            usd = mon
+        else:
+            ars = mon
+            usd = 0.0
+        if abs(ars) < 0.01 and abs(usd) < 0.01:
+            continue
+        out.append({
+            "fecha": fecha,
+            "detalle": det,
+            "forma_pago": "Cheques Empresa",
+            "cta_cte": cta,
+            "nro_cuota": "",
+            "tipo_cambio": tc if moneda == "USD" else 0,
+            "plazo": "",
+            "capital": round(ars, 2),
+            "intereses": 0,
+            "impuestos": 0,
+            "cargos": 0,
+            "subtotal": round(ars, 2),
+            "monto_ars": round(ars, 2),
+            "monto_usd": round(usd, 2),
+            "varios": f"Ch. {cta} · vto/pago {fecha}",
+            "origen": "Cheques Empresa",
+            "fuente": "cheque_emitido",
+            "moneda": moneda,
+            "es_disponibilidad": False,
+        })
+    return out
+
+
+def _merge_cheques_ff(lineas: List[dict], cheques: List[dict]) -> List[dict]:
+    """Evita duplicar cheque por nro + fecha de pago + importe."""
+    existing = {
+        (
+            (L.get("cta_cte") or "").strip(),
+            (L.get("fecha") or "")[:10],
+            round(float(L.get("subtotal") or L.get("monto_ars") or 0), 2),
+        )
+        for L in lineas
+        if (L.get("fuente") == "cheque_emitido" or "cheque" in (L.get("forma_pago") or "").lower())
+        and not L.get("es_disponibilidad")
+    }
+    # también por detalle+fecha+monto por si Access no trae nro
+    existing_det = {
+        (
+            (L.get("detalle") or "").strip().lower(),
+            (L.get("fecha") or "")[:10],
+            round(float(L.get("subtotal") or L.get("monto_ars") or 0), 2),
+        )
+        for L in lineas
+        if not L.get("es_disponibilidad") and not L.get("es_cierre_mes")
+    }
+    for L in cheques:
+        key_nro = (
+            (L.get("cta_cte") or "").strip(),
+            (L.get("fecha") or "")[:10],
+            round(float(L.get("subtotal") or 0), 2),
+        )
+        key_det = (
+            (L.get("detalle") or "").strip().lower(),
+            (L.get("fecha") or "")[:10],
+            round(float(L.get("subtotal") or 0), 2),
+        )
+        if (key_nro[0] and key_nro in existing) or key_det in existing_det:
+            continue
+        lineas.append(L)
+        if key_nro[0]:
+            existing.add(key_nro)
+        existing_det.add(key_det)
+    return lineas
+
+
+IDC_DEB_CRED_PCT = 0.012
+_MESES_ES_FF = (
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+)
+
+
+def _cierre_mes_rows(mes_key: str, pagar_mes: float, acum: float) -> List[dict]:
+    """Filas de cierre: total mes + 1.2% IDC (el IDC suma al acumulado)."""
+    pagar_mes = round(float(pagar_mes or 0), 2)
+    if pagar_mes < 0.005 or not mes_key or len(mes_key) < 7:
+        return []
+    y, m = int(mes_key[:4]), int(mes_key[5:7])
+    label = f"{_MESES_ES_FF[m - 1]}/{y}"
+    # último día del mes (orden visual al final del bloque)
+    if m == 12:
+        fecha_cierre = f"{y}-12-31"
+    else:
+        from calendar import monthrange
+        fecha_cierre = f"{y}-{m:02d}-{monthrange(y, m)[1]:02d}"
+    idc = round(pagar_mes * IDC_DEB_CRED_PCT, 2)
+    rows = [
+        {
+            "fecha": fecha_cierre,
+            "detalle": f"Total a Pagar mes {label}",
+            "forma_pago": "",
+            "cta_cte": "",
+            "nro_cuota": "",
+            "tipo_cambio": 0,
+            "plazo": "",
+            "capital": 0,
+            "intereses": 0,
+            "impuestos": 0,
+            "cargos": 0,
+            "subtotal": pagar_mes,
+            "monto_ars": 0.0,  # no recontar en totales
+            "monto_usd": 0,
+            "varios": "Cierre mensual",
+            "origen": "Cierre",
+            "fuente": "cierre_mes",
+            "moneda": "ARS",
+            "es_disponibilidad": False,
+            "es_cierre_mes": True,
+            "es_idc": False,
+            "totales": round(acum, 2),
+            "acumulado": round(acum, 2),
+            "mes_label": label,
+        },
+        {
+            "fecha": fecha_cierre,
+            "detalle": f"Imp. Déb/Créd 1,2% · {label}",
+            "forma_pago": "",
+            "cta_cte": "",
+            "nro_cuota": "",
+            "tipo_cambio": 0,
+            "plazo": "",
+            "capital": 0,
+            "intereses": 0,
+            "impuestos": idc,
+            "cargos": 0,
+            "subtotal": idc,
+            "monto_ars": idc,
+            "monto_usd": 0,
+            "varios": "Impuesto a los débitos y créditos",
+            "origen": "Cierre",
+            "fuente": "imp_deb_cred",
+            "moneda": "ARS",
+            "es_disponibilidad": False,
+            "es_cierre_mes": True,
+            "es_idc": True,
+            "totales": round(acum + idc, 2),
+            "acumulado": round(acum + idc, 2),
+            "mes_label": label,
+        },
+    ]
+    return rows
 
 
 def _fmt_cuota_api(v) -> str:
@@ -4537,10 +6949,10 @@ def api_flujo_proyectado(
             forma = (d.get("forma_pago") or "").strip()
             detalle = (d.get("detalle") or "").strip()
             dl = detalle.lower()
-            # Si inyectamos saldos live, omitir snapshots Access de "Saldo Banco…"
-            # (se mantienen cheques en cartera, FCI/Caja proyectados pendientes).
+            # Saldos live reemplazan el snapshot Access (banco y cheques en cartera).
+            # Un cheque ya entregado a proveedor no vuelve a sumar.
             if incluir_disponibilidades and es_disp:
-                if dl.startswith("saldo ") and "cheques en cartera" not in dl:
+                if dl.startswith("saldo ") or "cheques en cartera" in dl:
                     continue
             fuente_key = "otro"
             fl = forma.lower()
@@ -4611,35 +7023,8 @@ def api_flujo_proyectado(
                 "es_disponibilidad": es_disp,
             })
 
-        cur.execute(
-            """
-            SELECT nro_cheque, banco, fecha_pago, fecha_emision, monto, moneda,
-                   COALESCE(librador, titular, '') AS quien, observaciones
-            FROM cartera_cheques
-            WHERE COALESCE(empresa_id, 1) = ?
-              AND (
-                    UPPER(COALESCE(tipo,'')) LIKE '%EMIT%'
-                 OR UPPER(COALESCE(estado,'')) LIKE '%EMIT%'
-              )
-              AND UPPER(COALESCE(estado,'')) NOT IN ('DEBITADO', 'ANULADO', 'COBRADO')
-            ORDER BY COALESCE(fecha_pago, fecha_emision);
-            """,
-            (empresa_id,),
-        )
-        for r in cur.fetchall():
-            d = dict(r)
-            fecha = d.get("fecha_pago") or d.get("fecha_emision") or desde
-            mon = float(d.get("monto") or 0)
-            moneda = (d.get("moneda") or "ARS").upper()
-            det = f"{d.get('quien') or d.get('banco') or 'Cheque emitido'}".strip()
-            cta = str(d.get("nro_cheque") or "")
-            if moneda == "USD":
-                ars = mon * tc if tc > 0 else 0.0
-                _add(fecha, det, "Cheques Empresa", ars, mon, "cheque_emitido", "USD",
-                     forma_pago="Cheques Empresa", cta_cte=cta, capital=ars)
-            else:
-                _add(fecha, det, "Cheques Empresa", mon, 0, "cheque_emitido", "ARS",
-                     forma_pago="Cheques Empresa", cta_cte=cta, capital=mon)
+        # Cheques emitidos se unifican más abajo (_lineas_cheques_emitidos_financiero)
+        # usando fecha_pago = vencimiento (no emisión).
 
         cur.execute(
             """
@@ -4675,37 +7060,8 @@ def api_flujo_proyectado(
                      forma_pago="Crédito", nro_cuota=str(d.get("nro_cuota") or ""),
                      capital=ars)
 
-        placeholders = ",".join("?" for _ in _TIPOS_NO_FACTURA)
-        cur.execute(
-            f"""
-            SELECT cc.vencimiento, cc.fecha, cc.tipo_comprobante, cc.numero_comprobante,
-                   COALESCE(NULLIF(cc.total,0), cc.debe, 0) AS monto,
-                   cc.entidad_id,
-                   COALESCE(e.nombre_fantasia, e.razon_social, cc.entidad_id) AS proveedor
-            FROM cuentas_corrientes cc
-            LEFT JOIN entidades e
-              ON REPLACE(e.cuit,'-','') = REPLACE(cc.entidad_id,'-','')
-            WHERE COALESCE(cc.empresa_id, 1) = ?
-              AND COALESCE(cc.debe, 0) > 0.01
-              AND COALESCE(cc.tipo_comprobante, '') NOT IN ({placeholders})
-              AND COALESCE(cc.estado, 'Pendiente') IN ('Pendiente', 'pendiente', '')
-              AND COALESCE(NULLIF(cc.vencimiento,''), cc.fecha, '') BETWEEN ? AND ?
-              AND COALESCE(e.es_cuenta_bancaria, 0) = 0
-              AND COALESCE(e.es_cuenta_ajuste, 0) = 0
-            ORDER BY COALESCE(NULLIF(cc.vencimiento,''), cc.fecha), cc.id;
-            """,
-            (empresa_id, *_TIPOS_NO_FACTURA, desde, hasta),
-        )
-        for r in cur.fetchall():
-            d = dict(r)
-            fecha = d.get("vencimiento") or d.get("fecha") or desde
-            tipo = d.get("tipo_comprobante") or "Comprobante"
-            nro = d.get("numero_comprobante") or ""
-            prov = d.get("proveedor") or d.get("entidad_id") or ""
-            det = f"{prov}".strip()
-            varios = f"{tipo} {nro}".strip()
-            _add(fecha, det, "Proveedor a pagar", float(d.get("monto") or 0), 0, "factura", "ARS",
-                 forma_pago="", varios=varios, capital=float(d.get("monto") or 0))
+        # Facturas CC se unifican más abajo (_lineas_facturas_cc_financiero)
+        # para soportar vencimientos DD/MM/AAAA (ej. carga +30 días).
 
         # Alquileres (mismo criterio anterior)
         cur.execute(
@@ -4822,31 +7178,90 @@ def api_flujo_proyectado(
     except Exception:
         pass
 
+    # Facturas CC Campo+ (Access + live): vto automático 30 días, fechas DD/MM, etc.
+    fact_cc = _lineas_facturas_cc_financiero(cur, empresa_id, desde, hasta)
+    lineas = _merge_facturas_cc(lineas, fact_cc)
+    # Cheques emitidos Campo+: financiero = fecha de vencimiento/pago (no emisión)
+    chq_ff = _lineas_cheques_emitidos_financiero(cur, empresa_id, desde, hasta, tc)
+    lineas = _merge_cheques_ff(lineas, chq_ff)
+
     conn.close()
 
-    filtradas = [L for L in lineas if desde <= (L["fecha"] or "")[:10] <= hasta]
-    filtradas.sort(key=lambda x: (x["fecha"], 0 if x.get("es_disponibilidad") else 1, x.get("detalle") or ""))
+    for L in lineas:
+        L["fecha"] = _fecha_iso_ff(L.get("fecha") or "") or desde
 
-    acum = 0.0
+    filtradas = [L for L in lineas if desde <= (L["fecha"] or "")[:10] <= hasta]
+    filtradas.sort(key=lambda x: (
+        x["fecha"],
+        0 if x.get("es_disponibilidad") else 1,
+        0 if x.get("es_cierre_mes") else 1,
+        x.get("detalle") or "",
+    ))
+
     total_ars = 0.0
     total_pagar = 0.0
     total_disp = 0.0
     total_usd = 0.0
+    total_idc = 0.0
     por_fuente: dict = {}
     out = []
+    mes_key = None
+    pagar_mes = 0.0
+    acum_mes = 0.0
+    cierres_mensuales: List[dict] = []
+
+    def _flush_cierre():
+        nonlocal pagar_mes, acum_mes, total_idc, total_ars, total_pagar, mes_key
+        rows = _cierre_mes_rows(mes_key or "", pagar_mes, pagar_mes)
+        if not rows:
+            pagar_mes = 0.0
+            acum_mes = 0.0
+            return
+        # El total del mes es solo ese período, no el acumulado desde el inicio del rango.
+        out.append(rows[0])
+        idc_row = rows[1]
+        idc = float(idc_row["monto_ars"])
+        total_ars += idc
+        total_pagar += idc
+        total_idc += idc
+        idc_row["totales"] = round(pagar_mes + idc, 2)
+        idc_row["acumulado"] = round(pagar_mes + idc, 2)
+        out.append(idc_row)
+        por_fuente["imp_deb_cred"] = por_fuente.get("imp_deb_cred", 0.0) + idc
+        cierres_mensuales.append({
+            "mes": mes_key,
+            "mes_label": idc_row.get("mes_label"),
+            "total_a_pagar": round(pagar_mes, 2),
+            "imp_deb_cred": idc,
+            "total_con_imp": round(pagar_mes + idc, 2),
+        })
+        pagar_mes = 0.0
+        acum_mes = 0.0
+
     for L in filtradas:
+        if not L.get("es_disponibilidad"):
+            fk = (L.get("fecha") or "")[:7]
+            if mes_key is not None and fk and fk != mes_key:
+                _flush_cierre()
+            if fk:
+                mes_key = fk
+            if float(L.get("monto_ars") or 0) > 0:
+                pagar_mes += float(L["monto_ars"])
+                acum_mes += float(L["monto_ars"])
+
         total_ars += L["monto_ars"]
         total_usd += L.get("monto_usd") or 0
         if L.get("es_disponibilidad") or L["monto_ars"] < 0:
             total_disp += L["monto_ars"]
         else:
             total_pagar += L["monto_ars"]
-        acum += L["monto_ars"]
         L2 = dict(L)
-        L2["totales"] = round(acum, 2)
-        L2["acumulado"] = round(acum, 2)
+        L2["totales"] = round(acum_mes, 2)
+        L2["acumulado"] = round(acum_mes, 2)
         out.append(L2)
         por_fuente[L["fuente"]] = por_fuente.get(L["fuente"], 0.0) + L["monto_ars"]
+
+    _flush_cierre()
 
     kilos = 0.0
     if pizarra_soja > 0:
@@ -4859,17 +7274,16 @@ def api_flujo_proyectado(
     mes_label = ""
     try:
         d0 = _date.fromisoformat(desde)
-        meses = ("enero", "febrero", "marzo", "abril", "mayo", "junio",
-                 "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
-        mes_label = f"{meses[d0.month - 1]}/{d0.year}"
+        mes_label = f"{_MESES_ES_FF[d0.month - 1]}/{d0.year}"
     except Exception:
         mes_label = desde
 
     nota = (
         "Solo pendientes (sin fecha debitado/conciliados). "
-        "Fecha = vto/pago. Disponibilidades a la fecha Desde: saldos a la vista, caja, FCI y plazos fijos."
+        "Fecha = vto/pago. Disponibilidades a la fecha Desde: saldos a la vista, caja, FCI y plazos fijos. "
+        "Incluye facturas CC Campo+. Cierre mensual + 1,2% imp. débitos/créditos."
         if origen_datos == "access"
-        else "Proyección live: cheques/créditos/facturas + disponibilidades a la fecha Desde."
+        else "Proyección live: cheques/créditos/facturas + disponibilidades. Cierre mensual + 1,2% IDC."
     )
 
     return {
@@ -4883,14 +7297,17 @@ def api_flujo_proyectado(
         "total_ars": round(total_ars, 2),
         "total_a_pagar": round(total_pagar, 2),
         "total_disponibilidades": round(total_disp, 2),
+        "total_imp_deb_cred": round(total_idc, 2),
         "total_usd": round(total_usd, 2),
         "equivalente_kg": kilos,
         "por_fuente": {k: round(v, 2) for k, v in por_fuente.items()},
         "cantidad": len(out),
         "mes_label": mes_label,
+        "cierres_mensuales": cierres_mensuales,
         "lineas": out,
         "nota": nota,
         "filas_access": n_access,
+        "facturas_cc_agregadas": len(fact_cc),
     }
 
 
@@ -4954,21 +7371,36 @@ def dashboard_kpis():
     compromisos_neto = round(max(0.0, compromisos - fci_activo), 2)
 
     alquileres_kg = 0.0
+    campania_activa = ""
     cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='contratos_alquiler';"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='campanias_agro';"
     )
     if cursor.fetchone():
-        cursor.execute("PRAGMA table_info(contratos_alquiler);")
-        cols = {col[1] for col in cursor.fetchall()}
-        if "empresa_id" in cols and "kilos" in cols:
-            cursor.execute(
-                "SELECT COALESCE(SUM(kilos), 0.0) AS kg FROM contratos_alquiler WHERE empresa_id = ?;",
-                (empresa_id,),
-            )
-            alquileres_kg = float(cursor.fetchone()["kg"] or 0)
-        elif "kilos" in cols:
-            cursor.execute("SELECT COALESCE(SUM(kilos), 0.0) AS kg FROM contratos_alquiler;")
-            alquileres_kg = float(cursor.fetchone()["kg"] or 0)
+        cursor.execute(
+            "SELECT codigo FROM campanias_agro WHERE activa = 1 ORDER BY codigo DESC LIMIT 1;"
+        )
+        row_camp = cursor.fetchone()
+        campania_activa = (row_camp["codigo"] if row_camp else "") or ""
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='contratos_alquileres';"
+    )
+    if cursor.fetchone():
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(
+                CASE
+                    WHEN COALESCE(kilos_totales, 0) > 0 THEN kilos_totales
+                    ELSE COALESCE(tn_totales, 0) * 1000
+                END
+            ), 0.0) AS kg
+            FROM contratos_alquileres
+            WHERE COALESCE(empresa_id, 1) = ?
+              AND (? = '' OR campania_codigo = ?)
+              AND UPPER(TRIM(COALESCE(grano, ''))) LIKE 'SOJA%';
+            """,
+            (empresa_id, campania_activa, campania_activa),
+        )
+        alquileres_kg = float(cursor.fetchone()["kg"] or 0)
 
     conn.close()
     return {
@@ -4979,6 +7411,7 @@ def dashboard_kpis():
         "acuerdos_bancarios_ars": acuerdos,
         "deuda_usd": deuda_usd,
         "alquileres_kg": alquileres_kg,
+        "campania_activa": campania_activa,
     }
 
 @app.get("/api/ordenes_pago")
@@ -4999,7 +7432,11 @@ def listar_ordenes_pago():
 # --- GESTIÓN DE EMPRESAS (fuente: tabla empresas) ---
 
 @app.get("/api/empresas")
-def listar_empresas():
+def listar_empresas(request: Request):
+    from plataforma import _token_from_headers
+
+    if not _token_from_headers({k.lower(): v for k, v in request.headers.items()}):
+        raise HTTPException(status_code=401, detail="Tenés que iniciar sesión")
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM empresas ORDER BY razon_social COLLATE NOCASE ASC;")
@@ -5019,7 +7456,12 @@ def obtener_empresa(empresa_id: int):
     return _row_to_empresa(row)
 
 @app.post("/api/empresas")
-def crear_empresa(data: EmpresaItemModel):
+def crear_empresa(data: EmpresaItemModel, request: Request):
+    from plataforma import _token_from_headers, exigir_cupo_empresa
+
+    if not _token_from_headers({k.lower(): v for k, v in request.headers.items()}):
+        raise HTTPException(status_code=401, detail="Tenés que iniciar sesión")
+    exigir_cupo_empresa(DB_PATH)
     conn = get_db()
     cursor = conn.cursor()
     tenant = (data.tenant_id or "").strip().lower()
@@ -5161,6 +7603,7 @@ def emitir_orden_pago(data: OrdenPagoModel):
         es_sp = cc == "SP" or "(S/P)" in nom or " S/P" in nom
     ret_iibb = 0.0 if es_sp else float(data.retencion_iibb or 0)
     ret_sicore = 0.0 if es_sp else float(data.retencion_sicore or 0)
+    solo_ret = bool(getattr(data, "solo_retenciones", False)) and not es_sp
 
     # Perfil empresa: si no es agente, no registra esa retención
     cursor.execute("SELECT * FROM configuracion_empresa WHERE id = 1;")
@@ -5171,25 +7614,105 @@ def emitir_orden_pago(data: OrdenPagoModel):
         if not int(cfg["agente_retencion_ganancias"] or 0):
             ret_sicore = 0.0
 
+    if solo_ret and (ret_sicore + ret_iibb) < 0.01:
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail="OP solo retenciones: no hay importe de retención a aplicar.",
+        )
+
+    # Si es solo retenciones, el "total_pagado" de la OP es únicamente lo retenido
+    total_op = float(data.total_pagado or 0)
+    if solo_ret:
+        total_op = ret_sicore + ret_iibb
+
+    base_imp = float(data.base_imponible or 0)
+    if base_imp < 0.01:
+        base_imp = total_op if total_op > 0.01 else (ret_sicore + ret_iibb)
+
     cursor.execute("SELECT COUNT(*) FROM ordenes_pago WHERE COALESCE(empresa_id, 1) = ?;", (empresa_id,))
     count = cursor.fetchone()[0] + 1
     anio_op = data.fecha[:4] if (data.fecha and len(data.fecha) >= 4) else "2026"
     nro_op = f"OP-{anio_op}-{count:05d}"
-    
+
+    forma = (data.forma_pago or "Transferencia").strip()
+    es_cheque = "cheque" in forma.lower()
+    vto_cheque = (data.fecha_vto_cheque or "").strip()[:10]
+    venc_pago = vto_cheque if (es_cheque and vto_cheque) else data.fecha
+    obs = (data.observaciones or "").strip()
+    if solo_ret:
+        forma = "Solo retenciones"
+        if "solo retencion" not in obs.lower():
+            obs = (obs + " | OP solo retenciones (sin pago efectivo/cheque/transferencia)").strip(" |")
+
     cursor.execute("""
         INSERT INTO ordenes_pago (nro_orden, cuit, fecha, total_pagado, retencion_iibb, retencion_sicore, forma_pago, observaciones, usuario_registro, empresa_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-    """, (nro_op, data.cuit, data.fecha, data.total_pagado, ret_iibb, ret_sicore, data.forma_pago, data.observaciones, data.usuario_registro, empresa_id))
-    
-    monto_pago_efectivo = data.total_pagado - (ret_sicore + ret_iibb)
-    if monto_pago_efectivo < 0:
-        monto_pago_efectivo = data.total_pagado
+    """, (nro_op, data.cuit, data.fecha, total_op, ret_iibb, ret_sicore, forma, obs, data.usuario_registro, empresa_id))
 
-    cursor.execute("""
-        INSERT INTO cuentas_corrientes (entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque, fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id)
-        VALUES (?, 'Orden de Pago', ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 'Pagado', ?, ?);
-    """, (data.cuit, nro_op, data.forma_pago, data.nro_cheque, data.fecha, data.fecha, monto_pago_efectivo, monto_pago_efectivo, data.usuario_registro, empresa_id))
-    
+    monto_pago_efectivo = 0.0 if solo_ret else (total_op - (ret_sicore + ret_iibb))
+    if monto_pago_efectivo < 0:
+        monto_pago_efectivo = 0.0 if solo_ret else total_op
+
+    # Solo impacta HABER de pago si hubo transferencia/cheque/efectivo
+    if monto_pago_efectivo > 0.01:
+        cursor.execute("""
+            INSERT INTO cuentas_corrientes (entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque, fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id)
+            VALUES (?, 'Orden de Pago', ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 'Pagado', ?, ?);
+        """, (data.cuit, nro_op, forma, data.nro_cheque, data.fecha, venc_pago, monto_pago_efectivo, monto_pago_efectivo, data.usuario_registro, empresa_id))
+        if es_cheque and (data.nro_cheque or "").strip():
+            cursor.execute(
+                """
+                INSERT INTO cartera_cheques (
+                    tipo, nro_cheque, banco, librador, fecha_emision, fecha_pago,
+                    monto, moneda, estado, empresa_id, proveedor_cuit
+                ) VALUES ('Emitido', ?, '', ?, ?, ?, ?, 'ARS', 'Emitido', ?, ?);
+                """,
+                (
+                    (data.nro_cheque or "").strip(),
+                    (ent["razon_social"] if ent else "") or "",
+                    data.fecha,
+                    venc_pago,
+                    monto_pago_efectivo,
+                    empresa_id,
+                    cuit_clean,
+                ),
+            )
+        for cid in (data.cheques_cartera or []):
+            cursor.execute(
+                """
+                SELECT id, estado, nro_cheque FROM cartera_cheques
+                WHERE id = ? AND COALESCE(empresa_id, 1) = ?;
+                """,
+                (int(cid), empresa_id),
+            )
+            ch = cursor.fetchone()
+            if not ch:
+                conn.rollback()
+                conn.close()
+                raise HTTPException(400, "Un cheque de cartera ya no está disponible.")
+            est = (ch["estado"] or "").strip().lower()
+            if est not in ("en cartera", "en carteras"):
+                conn.rollback()
+                conn.close()
+                raise HTTPException(400, f"El cheque {ch['nro_cheque']} no está en cartera ({ch['estado']}).")
+            cursor.execute(
+                """
+                UPDATE cartera_cheques
+                SET estado = 'Entregado proveedor', proveedor_cuit = ?,
+                    observaciones = TRIM(COALESCE(observaciones,'') || ?)
+                WHERE id = ?;
+                """,
+                (cuit_clean, f" | OP {nro_op}", int(cid)),
+            )
+    elif solo_ret:
+        # Renglón informativo de OP (haber 0) para trazabilidad / reimpresión
+        cursor.execute("""
+            INSERT INTO cuentas_corrientes (entidad_id, tipo_comprobante, numero_comprobante, forma_pago, nro_cheque, fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id, observaciones)
+            VALUES (?, 'Orden de Pago', ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'Retenciones', ?, ?, ?);
+        """, (data.cuit, nro_op, forma, data.nro_cheque, data.fecha, data.fecha, data.usuario_registro, empresa_id,
+              "Solo retenciones — pago pendiente de cargar"))
+
     razon = ent["razon_social"] if ent else "Proveedor Registrado"
 
     cert_sicore_nro = None
@@ -5206,7 +7729,7 @@ def emitir_orden_pago(data: OrdenPagoModel):
         cursor.execute("""
             INSERT INTO retenciones_sicore (fecha, razon_social, cuit, base_imponible, regimen, importe_retenido, nro_comprobante, tipo_retencion)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'SICORE');
-        """, (data.fecha, razon, data.cuit, data.total_pagado, reg_sic, ret_sicore, cert_sicore_nro))
+        """, (data.fecha, razon, data.cuit, base_imp, reg_sic, ret_sicore, cert_sicore_nro))
 
         cursor.execute("""
             INSERT INTO cuentas_corrientes (entidad_id, tipo_comprobante, numero_comprobante, forma_pago, fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id)
@@ -5216,19 +7739,25 @@ def emitir_orden_pago(data: OrdenPagoModel):
     if ret_iibb > 0:
         sec_iibb = obtener_siguiente_certificado_db("IIBB", 2961) + 1
         cert_iibb_nro = f"{anio_op}-{sec_iibb}"
-        
+        alic_raw = float(getattr(data, "alicuota_iibb", None) or 0)
+        if alic_raw > 1:  # vino como 1.75
+            alic_raw = alic_raw / 100.0
+        if alic_raw < 0.0000001 and base_imp > 0.01:
+            alic_raw = ret_iibb / base_imp
+        regimen_iibb = f"ARBA {alic_raw * 100:.2f}%" if alic_raw > 0 else "ARBA"
+
         cursor.execute("""
             INSERT INTO retenciones_sicore (fecha, razon_social, cuit, base_imponible, regimen, importe_retenido, nro_comprobante, tipo_retencion)
-            VALUES (?, ?, ?, ?, 'ARBA', ?, ?, 'IIBB');
-        """, (data.fecha, razon, data.cuit, data.total_pagado, ret_iibb, cert_iibb_nro))
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'IIBB');
+        """, (data.fecha, razon, data.cuit, base_imp, regimen_iibb, ret_iibb, cert_iibb_nro))
 
         cursor.execute("""
             INSERT INTO cuentas_corrientes (entidad_id, tipo_comprobante, numero_comprobante, forma_pago, fecha, vencimiento, neto, iva, debe, haber, total, estado, usuario_registro, empresa_id)
             VALUES (?, 'Retención IIBB', ?, 'Retención ARBA', ?, ?, 0, 0, 0, ?, ?, 'Aplicado', ?, ?);
         """, (data.cuit, cert_iibb_nro, data.fecha, data.fecha, ret_iibb, ret_iibb, data.usuario_registro, empresa_id))
 
-    # Marcar facturas/ND/cargos Pendientes como Pagado (FIFO) — incluye Movimiento Debe
-    restante = float(data.total_pagado or 0)
+    # Marcar facturas como Pagado solo cuando hay pago efectivo (no en solo-retenciones)
+    restante = 0.0 if solo_ret else float(total_op or 0)
     if restante > 0.01:
         placeholders = ",".join("?" for _ in _TIPOS_PAGO)
         cursor.execute(f"""
@@ -5253,20 +7782,26 @@ def emitir_orden_pago(data: OrdenPagoModel):
 
     conn.commit()
     conn.close()
-    
+
+    msg = (
+        "Orden de Pago S/P registrada (sin retenciones)."
+        if es_sp
+        else (
+            "OP solo retenciones: certificados aplicados en cta cte. Las facturas siguen pendientes hasta cargar el pago."
+            if solo_ret
+            else "Orden de Pago registrada con éxito."
+        )
+    )
     return {
-        "status": "success", 
-        "nro_orden": nro_op, 
+        "status": "success",
+        "nro_orden": nro_op,
         "cert_sicore": cert_sicore_nro,
         "cert_iibb": cert_iibb_nro,
         "es_sp": es_sp,
+        "solo_retenciones": solo_ret,
         "retencion_iibb": ret_iibb,
         "retencion_sicore": ret_sicore,
-        "message": (
-            "Orden de Pago S/P registrada (sin retenciones)."
-            if es_sp
-            else "Orden de Pago registrada con éxito."
-        ),
+        "message": msg,
     }
 
 # Backfill Id Access / prestamos (despues de definir helpers; no duplica movimientos)
@@ -5305,6 +7840,7 @@ try:
 except Exception as _e_aud:
     print(f"AVISO init audit: {_e_aud}")
 
+from plataforma import TenantDBMiddleware, init_plataforma_schema, register_plataforma_routes
 from saas_auth import init_saas_schema, register_saas_routes
 try:
     _c_saas = get_db()
@@ -5314,10 +7850,24 @@ try:
 except Exception as _e_saas:
     print(f"AVISO init saas: {_e_saas}")
 register_saas_routes(app, get_db, get_empresa_activa_id)
+try:
+    _c_plat = get_db()
+    init_plataforma_schema(_c_plat.cursor(), DB_PATH)
+    _c_plat.commit()
+    _c_plat.close()
+except Exception as _e_plat:
+    print(f"AVISO init plataforma: {_e_plat}")
+register_plataforma_routes(app, DB_PATH)
 app.add_middleware(AuditMiddleware, get_db=get_db, get_empresa_activa_id=get_empresa_activa_id)
+app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
 
-app.mount("/", StaticFiles(directory=".", html=True), name="static")
+_data_dir = os.environ.get("CAMPO_DATA_DIR", "").strip()
+if _data_dir:
+    _logos = os.path.join(_data_dir, "logos")
+    os.makedirs(_logos, exist_ok=True)
+    app.mount("/logos", StaticFiles(directory=_logos), name="logos")
+
+app.mount("/", StaticFiles(directory=BASE_DIR, html=True), name="static")
 
 if __name__ == "__main__":
-    _port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run("main:app", host="0.0.0.0", port=_port, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -6,7 +6,8 @@
     <title>CAmpo+ - Gestión de Usuarios y Permisos</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/campoplus-auth.js"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 
@@ -17,11 +18,13 @@
                 <p class="text-xs text-slate-500 mt-1">Login de acceso + operadores para firmar altas (trazabilidad).</p>
             </div>
             <div class="flex gap-2">
+                <a href="Usuarios.html" class="bg-slate-800 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-900">Usuarios / Firmas</a>
                 <a href="AuditLog.html" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-4 py-2 rounded-md text-sm font-medium hover:bg-emerald-100">Ver log</a>
-                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300"><- Dashboard</a>
             </div>
         </div>
 
+        <div id="cupoUsuarios" class="hidden mb-4 text-sm bg-slate-50 border border-slate-200 rounded-lg px-4 py-3"></div>
         <div class="bg-slate-50 border p-6 rounded-xl mb-8">
             <h3 class="text-lg font-bold text-slate-800 mb-4" id="formTitle">Alta de Nuevo Usuario</h3>
             <form id="formUsuario" class="grid grid-cols-1 md:grid-cols-3 gap-4" onsubmit="return guardarUsuario(event)">
@@ -100,8 +103,8 @@
                 const activo = Number(u.activo) === 1;
                 return `<tr class="hover:bg-slate-50">
                     <td class="p-3 font-medium text-slate-800">${esc(u.nombre)}</td>
-                    <td class="p-3 font-mono text-xs text-slate-600">${esc(u.login || '—')}</td>
-                    <td class="p-3 text-slate-600">${esc(u.email || '—')}</td>
+                    <td class="p-3 font-mono text-xs text-slate-600">${esc(u.login || ' - ')}</td>
+                    <td class="p-3 text-slate-600">${esc(u.email || ' - ')}</td>
                     <td class="p-3 font-semibold text-emerald-700">${esc(u.rol || '')}</td>
                     <td class="p-3 text-center">
                         <span class="${activo ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'} text-xs px-2 py-0.5 rounded-full font-medium">
@@ -207,8 +210,28 @@
             await cargarUsuarios();
         }
 
+        async function mostrarCupoUsuarios() {
+            const box = document.getElementById('cupoUsuarios');
+            const res = await fetch('/api/plataforma/mi-cupo');
+            if (!res.ok) return;
+            const c = await res.json();
+            box.classList.remove('hidden');
+            const precio = c.precio_usuario_extra ? (' Cada usuario extra: $ ' + Number(c.precio_usuario_extra).toLocaleString('es-AR') + '.') : '';
+            box.innerHTML = `<b>${c.nombre}</b>: ${c.usuarios_usados} de ${c.usuarios_max} usuarios (${c.usuarios_incluidos} incluidos).${precio} ` +
+                (c.puede_crear_usuario ? '' : '<button type="button" class="ml-2 underline font-bold" onclick="pedirUsuario()">Pedir un usuario extra</button>');
+        }
+        async function pedirUsuario() {
+            const detalle = prompt('Nombre de la persona que necesitás sumar') || '';
+            const res = await fetch('/api/plataforma/solicitudes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tipo: 'usuario', detalle }),
+            });
+            alert(res.ok ? 'Pedido enviado al administrador de Campo+.' : 'No se pudo enviar el pedido.');
+        }
         window.onload = async function () {
             await CampoAuth.requireAuth({ redirect: 'Usuarios.html' });
+            mostrarCupoUsuarios();
             await cargarUsuarios();
         };
     </script>

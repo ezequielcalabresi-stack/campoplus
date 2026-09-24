@@ -15,8 +15,57 @@
         .cert-section-title { background: #f1f5f9; border-top: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 4px 8px; font-weight: bold; font-size: 11px; margin-top: 15px; margin-bottom: 10px; text-transform: uppercase; }
         .cert-field { margin-bottom: 8px; font-size: 12px; }
         .cert-field span { font-weight: bold; }
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            html, body {
+                background: #fff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            body * { visibility: hidden !important; }
+            #areaImpresionCertificados,
+            #areaImpresionCertificados * { visibility: visible !important; }
+            #areaImpresionCertificados {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+            }
+            .modal, .modal-dialog, .modal-content, .modal-body {
+                position: static !important;
+                transform: none !important;
+                width: 100% !important;
+                max-width: none !important;
+                height: auto !important;
+                overflow: visible !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: #fff !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .modal-backdrop, .modal-header, .btn, .no-print { display: none !important; }
+            .certificado-container {
+                box-shadow: none !important;
+                page-break-after: always;
+                break-after: page;
+                margin: 0 0 8mm 0 !important;
+            }
+            .certificado-container:last-child {
+                page-break-after: auto;
+                break-after: auto;
+            }
+            .certificado-oculto-print { display: none !important; }
+        }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="container my-4" style="max-width: 1300px;">
@@ -25,8 +74,8 @@
                 <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Órdenes de Pago, Cuenta Corriente y Retenciones</small></h4>
             </div>
             <div class="d-flex gap-2">
-                <a href="cuentacorriente.html" id="btnVolverCtaCte" class="btn btn-outline-secondary btn-sm fw-bold">← Volver a Cta Cte Proveedor</a>
-                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">← Volver al Dashboard</a>
+                <a href="cuentacorriente.html" id="btnVolverCtaCte" class="btn btn-outline-secondary btn-sm fw-bold">Volver a Cta Cte Proveedor</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">Volver al Dashboard</a>
             </div>
         </div>
 
@@ -47,7 +96,7 @@
                     <select class="form-select" id="selectRegimen" onchange="recalcularTotales()">
                         <option value="078">078 - Enajenación de bienes muebles y de cambio (2%)</option>
                         <option value="094">094 - Locaciones de obra y/o servicios (2%)</option>
-                        <option value="032">032 - Bienes Inmuebles Rurales (incluye leasing) · RG 830 · 6%</option>
+                        <option value="032">032 - Bienes Inmuebles Rurales (incluye leasing) - RG 830 - 6%</option>
                         <option value="119">119 - Profesiones liberales / oficios (escala)</option>
                         <option value="116">116 - Honorarios director / síndico / fiduciario (escala)</option>
                         <option value="025">025 - Comisiones y auxiliares de comercio (escala)</option>
@@ -62,8 +111,13 @@
 
             <!-- SELECCIÓN DE MEDIOS DE PAGO Y BANCO AUTOMÁTICO -->
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <h5 class="fw-bold mb-0 text-dark">💳 Selección de Medios de Pago (Valores / Bancos)</h5>
+                <h5 class="fw-bold mb-0 text-dark">Selección de Medios de Pago (Valores / Bancos)</h5>
                 <button class="btn btn-outline-dark btn-sm fw-bold" onclick="agregarMedioPago()">+ Agregar Medio de Pago</button>
+            </div>
+            <div class="alert alert-secondary py-2 px-3 small mb-2">
+                <strong>Flujo práctico:</strong> si borrás todos los medios (o dejás importe $0), la OP aplica
+                <em>solo las retenciones</em> en la cta cte del proveedor. Las facturas siguen pendientes hasta que
+                cargues el cheque / transferencia / efectivo después del home banking.
             </div>
             <div class="table-responsive mb-4">
                 <table class="table table-bordered align-middle">
@@ -72,6 +126,7 @@
                             <th>Forma de Pago</th>
                             <th>Cuenta Cte / Banco Asociado</th>
                             <th>Nº de Cheque / Ref.</th>
+                            <th>Vto. cheque</th>
                             <th class="text-end" style="width: 160px;">Importe ($)</th>
                             <th class="text-center" style="width: 80px;">Acción</th>
                         </tr>
@@ -79,9 +134,10 @@
                     <tbody id="tablaMediosPago">
                         <tr>
                             <td>
-                                <select class="form-select form-select-sm">
+                                <select class="form-select form-select-sm select-forma-pago" onchange="toggleVtoCheque(this)">
                                     <option value="Transferencia Bancaria">Transferencia Bancaria</option>
                                     <option value="Cheque Propio">Cheque Propio</option>
+                                    <option value="Cheque de cartera">Cheque de cartera</option>
                                     <option value="Efectivo">Efectivo</option>
                                 </select>
                             </td>
@@ -89,9 +145,11 @@
                                 <select class="form-select form-select-sm select-cta-banco" onchange="autoSeleccionarBanco(this)">
                                     <option value="">Seleccione Cuenta Cte...</option>
                                 </select>
+                                <select class="form-select form-select-sm select-cheque-cartera" style="display:none" onchange="onChequeCartera(this)"></select>
                             </td>
-                            <td><input type="text" class="form-control form-control-sm font-monospace" placeholder="S/N o Nro Cheque"></td>
-                            <td><input type="number" step="0.01" class="form-control form-control-sm font-monospace text-end input-monto-pago" value="0.00" oninput="recalcularTotales()"></td>
+                            <td><input type="text" class="form-control form-control-sm font-monospace input-nro-cheque" placeholder="S/N o Nro Cheque"></td>
+                            <td><input type="date" class="form-control form-control-sm input-vto-cheque" title="Vencimiento del cheque" style="display:none"></td>
+                            <td><input type="text" class="form-control form-control-sm font-monospace text-end input-monto-pago money-input" data-money inputmode="decimal" value="0,00" oninput="this.dataset.tocado='1'; recalcularTotales()"></td>
                             <td class="text-center"><button class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove(); recalcularTotales();">X</button></td>
                         </tr>
                     </tbody>
@@ -99,7 +157,23 @@
             </div>
 
             <!-- COMPROBANTES PENDIENTES -->
-            <h5 class="fw-bold mb-3 text-dark">📄 Comprobantes Pendientes en Cuenta Corriente</h5>
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">Comprobantes Pendientes en Cuenta Corriente</h5>
+                    <p class="small text-muted mb-0">
+                        Desmarcá lo que no entra en esta OP. Usá <strong>Quitar</strong> (×) o <strong>Limpiar desmarcadas</strong> para sacarlas de esta vista y dejar solo lo que vas a pagar.
+                        <span class="text-success fw-semibold">No se borran de la cta cte</span> — solo dejan de figurar en esta orden.
+                    </p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm fw-bold" onclick="limpiarDesmarcadasDeVista()" title="Saca de la lista las desmarcadas. No toca la base.">
+                        Limpiar desmarcadas de esta OP
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm fw-bold" onclick="cargarComprobantes(cuitActual)" title="Vuelve a traer todos los pendientes de cta cte">
+                        Recargar lista
+                    </button>
+                </div>
+            </div>
             <div class="table-responsive mb-4">
                 <table class="table table-hover align-middle">
                     <thead>
@@ -110,10 +184,11 @@
                             <th class="text-end">Neto ($)</th>
                             <th class="text-end">IVA ($)</th>
                             <th class="text-end">Total Comprobante ($)</th>
+                            <th class="text-center" style="width: 52px;" title="Quitar de esta vista (no borra cta cte)">Vista</th>
                         </tr>
                     </thead>
                     <tbody id="tablaComprobantes">
-                        <tr><td colspan="6" class="text-center py-3 text-muted">Seleccione un proveedor para ver sus facturas pendientes.</td></tr>
+                        <tr><td colspan="7" class="text-center py-3 text-muted">Seleccione un proveedor para ver sus facturas pendientes.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -127,7 +202,7 @@
                 <div class="col-md-7">
                     <div class="small fw-bold text-muted mb-1 d-flex justify-content-between align-items-center">
                         <span>CÁLCULO AUTOMÁTICO DE RETENCIONES (CONSULTA PADRÓN ARBA)</span>
-                        <button class="btn btn-outline-primary btn-sm py-0 px-2 fw-bold" id="btnConsultarArba" onclick="consultarPadronArba()">🔍 Consultar Padrón ARBA</button>
+                        <button class="btn btn-outline-primary btn-sm py-0 px-2 fw-bold" id="btnConsultarArba" onclick="consultarPadronArba()">Consultar Padrón ARBA</button>
                     </div>
                     <div class="d-flex justify-content-between py-1 border-bottom">
                         <span>Retención Ganancias (SICORE - RG 830):</span>
@@ -149,7 +224,7 @@
             </div>
 
             <div class="text-center">
-                <button class="btn btn-success fw-bold px-5 py-2 fs-5" onclick="emitirOrdenPago()">✓ Emitir Orden de Pago y Generar Certificados PDF</button>
+                <button class="btn btn-success fw-bold px-5 py-2 fs-5" onclick="emitirOrdenPago()">Emitir Orden de Pago y Generar Certificados PDF</button>
             </div>
         </div>
     </div>
@@ -161,12 +236,14 @@
                 <div class="modal-header bg-dark text-white py-2">
                     <h5 class="modal-title fs-6 fw-bold">Certificados Oficiales de Retención (SICORE / ARBA)</h5>
                     <div class="d-flex gap-2">
-                        <button type="button" onclick="window.print()" class="btn btn-light btn-sm fw-bold">🖨️ Imprimir / Descargar Certificados PDF</button>
+                        <button type="button" onclick="imprimirCertificados()" class="btn btn-light btn-sm fw-bold no-print">Imprimir / Guardar PDF</button>
+                        <button type="button" onclick="imprimirCertificado('sicore')" class="btn btn-outline-light btn-sm fw-bold no-print">Solo SICORE</button>
+                        <button type="button" onclick="imprimirCertificado('iibb')" class="btn btn-outline-light btn-sm fw-bold no-print" id="btnPrintIibb">Solo IIBB</button>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="irACtaCte()"></button>
                     </div>
                 </div>
-                <div class="modal-body p-4 bg-secondary bg-opacity-10">
-                    <div class="certificado-container mb-4">
+                <div class="modal-body p-4 bg-secondary bg-opacity-10" id="areaImpresionCertificados">
+                    <div id="certBloqueSicore" class="certificado-container mb-4">
                         <div class="cert-header d-flex justify-content-between align-items-center">
                             <div>
                                 <h3 class="fw-bold mb-1">SI.CO.RE. - Sistema de Control de Retenciones</h3>
@@ -179,13 +256,17 @@
                         </div>
                         <div class="cert-section-title">A. - Datos del Agente de Retención</div>
                         <div class="row cert-field">
-                            <div class="col-md-8">Denominación: <span>SILO CHICO S.A.</span></div>
-                            <div class="col-md-4">C.U.I.T. N°: <span>30-717802868</span></div>
+                            <div class="col-md-8">Denominación: <span id="certAgenteNombreSicore">--</span></div>
+                            <div class="col-md-4">C.U.I.T. N°: <span id="certAgenteCuitSicore">--</span></div>
+                            <div class="col-md-8">Domicilio: <span id="certAgenteDomSicore">--</span></div>
+                            <div class="col-md-4">Localidad: <span id="certAgenteLocSicore">--</span></div>
                         </div>
                         <div class="cert-section-title">B. - Datos del Sujeto Retenido</div>
                         <div class="row cert-field">
                             <div class="col-md-8">Denominación: <span id="certProvNombre">--</span></div>
                             <div class="col-md-4">C.U.I.T. N°: <span id="certProvCuit">--</span></div>
+                            <div class="col-md-8">Domicilio: <span id="certProvDomSicore">--</span></div>
+                            <div class="col-md-4">Localidad: <span id="certProvLocSicore">--</span></div>
                         </div>
                         <div class="cert-section-title">C. - Determinación de la Retención de Ganancias (SICORE)</div>
                         <div class="table-responsive mt-2">
@@ -208,26 +289,62 @@
                         </div>
                     </div>
 
-                    <!-- CERTIFICADO ARBA IIBB -->
-                    <div class="certificado-container">
-                        <div class="cert-header d-flex justify-content-between align-items-center">
+                    <!-- CERTIFICADO ARBA IIBB (modelo retención) -->
+                    <div id="certBloqueIibb" class="certificado-container">
+                        <div class="cert-header d-flex justify-content-between align-items-start">
                             <div>
                                 <h3 class="fw-bold mb-1">ARBA - AGENCIA DE RECAUDACIÓN PROV. BS. AS.</h3>
-                                <p class="text-muted mb-0 small">Régimen General de Retención de IIBB (Disp. Normativa B 43/96)</p>
+                                <p class="text-muted mb-0 small">Certificado de Retención de Ingresos Brutos</p>
+                                <p class="text-muted mb-0 small">Régimen General de Retencion / Disp. Normativa Serie B Nº 1/04 y mods. (ex B 43/96)</p>
                             </div>
                             <div class="text-end">
                                 <span class="d-block fw-bold fs-6">Certificado IIBB Nº: <span id="certNroIibb">--</span></span>
-                                <span class="text-muted small">Fecha: <span class="certFechaVal">--</span></span>
+                                <span class="text-muted small">Fecha de retención: <span class="certFechaVal">--</span></span>
+                                <span class="text-muted small d-block">Orden de pago: <span id="certOpNroIibb">--</span></span>
                             </div>
                         </div>
-                        <div class="cert-section-title">Determinación de la Retención de Ingresos Brutos</div>
+
+                        <div class="cert-section-title">A. - Agente de retención</div>
+                        <div class="row cert-field">
+                            <div class="col-md-8">Denominación: <span id="certAgenteNombreIibb">--</span></div>
+                            <div class="col-md-4">C.U.I.T. N°: <span id="certAgenteCuitIibb">--</span></div>
+                            <div class="col-md-8">Domicilio: <span id="certAgenteDomIibb">--</span></div>
+                            <div class="col-md-4">Localidad: <span id="certAgenteLocIibb">--</span></div>
+                        </div>
+
+                        <div class="cert-section-title">B. - Sujeto retenido</div>
+                        <div class="row cert-field">
+                            <div class="col-md-8">Denominación: <span id="certProvNombreIibb">--</span></div>
+                            <div class="col-md-4">C.U.I.T. N°: <span id="certProvCuitIibb">--</span></div>
+                            <div class="col-md-8">Domicilio: <span id="certProvDomIibb">--</span></div>
+                            <div class="col-md-4">Localidad: <span id="certProvLocIibb">--</span></div>
+                        </div>
+
+                        <div class="cert-section-title">C. - Comprobantes que originan la retención</div>
+                        <div class="table-responsive mt-1 mb-2">
+                            <table class="table table-sm table-bordered mb-0" style="font-size: 11px;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Tipo / Nº</th>
+                                        <th class="text-end">Neto ($)</th>
+                                        <th class="text-end">Total ($)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="certComprobantesIibb">
+                                    <tr><td colspan="4" class="text-muted text-center">--</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="cert-section-title">D. - Determinación de la retención de IIBB</div>
                         <div class="table-responsive mt-2">
                             <table class="table table-bordered text-center font-monospace mb-0" style="font-size: 12px;">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Base Imponible Total</th>
-                                        <th>Alícuota Padrón ARBA</th>
-                                        <th>Importe Retenido IIBB</th>
+                                        <th>Base imponible</th>
+                                        <th>Alícuota padrón ARBA</th>
+                                        <th>Importe retenido</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -239,6 +356,10 @@
                                 </tbody>
                             </table>
                         </div>
+                        <p class="small text-muted mt-3 mb-0" style="font-size:10px;">
+                            La presente retención se practica conforme al padrón de agentes de recaudación de ARBA vigente
+                            para el período. El sujeto retenido podrá computar el importe contra el impuesto a los Ingresos Brutos.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -258,6 +379,71 @@
             agente_retencion_ganancias: 1,
             agente_percepcion_iibb: 1
         };
+        let empresaConfig = { razon_social: 'SILO CHICO S.A.', cuit: '30717802868', domicilio: '', localidad: 'Chivilcoy' };
+
+        function moneyAR(n) {
+            return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function setTxt(id, val) {
+            const el = document.getElementById(id);
+            if (el) el.innerText = val || '--';
+        }
+
+        function llenarDatosAgenteCertificados() {
+            const nom = empresaConfig.razon_social || 'SILO CHICO S.A.';
+            const cuit = empresaConfig.cuit || '30717802868';
+            const dom = empresaConfig.domicilio || 'S/D';
+            const loc = empresaConfig.localidad || 'Chivilcoy';
+            ['Sicore', 'Iibb'].forEach(suf => {
+                // SICORE uses certAgenteNombreSicore; IIBB uses certAgenteNombreIibb
+            });
+            setTxt('certAgenteNombreSicore', nom);
+            setTxt('certAgenteCuitSicore', cuit);
+            setTxt('certAgenteDomSicore', dom);
+            setTxt('certAgenteLocSicore', loc);
+            setTxt('certAgenteNombreIibb', nom);
+            setTxt('certAgenteCuitIibb', cuit);
+            setTxt('certAgenteDomIibb', dom);
+            setTxt('certAgenteLocIibb', loc);
+        }
+
+        function llenarSujetoCertificados(ent, nombreFallback, cuitFallback) {
+            const nom = ent ? (ent.nombre_fantasia || ent.razon_social) : nombreFallback;
+            const cuit = ent ? ent.cuit : cuitFallback;
+            const dom = ent && ent.domicilio ? ent.domicilio : 'S/D';
+            const loc = ent && ent.localidad ? ent.localidad : 'S/D';
+            setTxt('certProvNombre', nom);
+            setTxt('certProvCuit', cuit);
+            setTxt('certProvDomSicore', dom);
+            setTxt('certProvLocSicore', loc);
+            setTxt('certProvNombreIibb', nom);
+            setTxt('certProvCuitIibb', cuit);
+            setTxt('certProvDomIibb', dom);
+            setTxt('certProvLocIibb', loc);
+        }
+
+        function llenarComprobantesCertIibb() {
+            const tb = document.getElementById('certComprobantesIibb');
+            if (!tb) return;
+            let rows = [];
+            document.querySelectorAll('.chk-comprobante:checked').forEach(chk => {
+                const idx = chk.getAttribute('data-idx');
+                const c = comprobantesCache[idx];
+                if (!c) return;
+                const fecha = c.fecha || '';
+                let f = fecha;
+                const m = String(fecha).match(/^(\d{4})-(\d{2})-(\d{2})/);
+                if (m) f = m[3] + '/' + m[2] + '/' + m[1];
+                rows.push(`<tr>
+                    <td>${f}</td>
+                    <td>${(c.tipo_comprobante || 'Factura')} ${c.nro_comprobante || ''}</td>
+                    <td class="text-end">${moneyAR(c.neto || 0)}</td>
+                    <td class="text-end">${moneyAR(c.total || 0)}</td>
+                </tr>`);
+            });
+            tb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4" class="text-center text-muted">Sin comprobantes seleccionados</td></tr>';
+        }
 
         function entidadEsSP(ent) {
             if (!ent) return false;
@@ -272,24 +458,20 @@
             const selReg = document.getElementById('selectRegimen');
             const btnArba = document.getElementById('btnConsultarArba');
 
+            // La leyenda fiscal solo se muestra si el proveedor es S/P
+            if (banEmp) {
+                banEmp.classList.add('d-none');
+                banEmp.innerHTML = '';
+            }
+
             if (proveedorEsSP) {
-                banSP.classList.remove('d-none');
+                if (banSP) banSP.classList.remove('d-none');
                 selReg.disabled = true;
                 btnArba.disabled = true;
             } else {
-                banSP.classList.add('d-none');
+                if (banSP) banSP.classList.add('d-none');
                 selReg.disabled = !perfilEmpresa.agente_retencion_ganancias;
                 btnArba.disabled = !perfilEmpresa.agente_retencion_iibb;
-            }
-
-            const bits = [];
-            if (perfilEmpresa.agente_retencion_iibb) bits.push('Ret. IIBB');
-            if (perfilEmpresa.agente_retencion_ganancias) bits.push('SICORE');
-            if (bits.length) {
-                banEmp.classList.remove('d-none');
-                banEmp.innerHTML = `<strong>Perfil empresa:</strong> agente de ${bits.join(' · ')} en pagos. Las percepciones IIBB aplican en ventas, no en OP. Proveedores S/P quedan exentos.`;
-            } else {
-                banEmp.classList.add('d-none');
             }
         }
 
@@ -338,21 +520,29 @@
             actualizarBotonVolver();
 
             try {
-                const [resEnt, resCtas, resSaldos, resCfg] = await Promise.all([
+                const [resEnt, resCtas, resSaldos, resCfg, resChq] = await Promise.all([
                     fetch('/api/entidades').catch(() => null),
                     fetch('/api/ctas_ctes_bancarias').catch(() => null),
                     fetch('/api/saldos_proveedores').catch(() => null),
-                    fetch('/api/configuracion').catch(() => null)
+                    fetch('/api/configuracion').catch(() => null),
+                    fetch('/api/bancos/cheques?estado=disponibles').catch(() => null)
                 ]);
 
                 if (resEnt && resEnt.ok) entidadesCache = await resEnt.json();
                 if (resCtas && resCtas.ok) ctasBancariasCache = await resCtas.json();
+                if (resChq && resChq.ok) chequesCartera = await resChq.json();
                 if (resCfg && resCfg.ok) {
                     const cfg = await resCfg.json();
                     perfilEmpresa = {
                         agente_retencion_iibb: cfg.agente_retencion_iibb !== 0 && cfg.agente_retencion_iibb !== false ? 1 : 0,
                         agente_retencion_ganancias: cfg.agente_retencion_ganancias !== 0 && cfg.agente_retencion_ganancias !== false ? 1 : 0,
                         agente_percepcion_iibb: cfg.agente_percepcion_iibb !== 0 && cfg.agente_percepcion_iibb !== false ? 1 : 0
+                    };
+                    empresaConfig = {
+                        razon_social: cfg.razon_social || 'SILO CHICO S.A.',
+                        cuit: cfg.cuit || '30717802868',
+                        domicilio: cfg.domicilio || '',
+                        localidad: cfg.localidad || 'Chivilcoy'
                     };
                 }
                 actualizarUIPerfilYProveedor();
@@ -383,13 +573,14 @@
                     let nombre = e.nombre_fantasia || e.razon_social;
                     let cuitLimpio = String(e.cuit).replace(/\D/g, '');
                     let saldoInfo = saldosPagar.find(s => String(s.cuit || '').replace(/\D/g, '') === cuitLimpio);
-                    let extra = saldoInfo ? ` · a pagar $ ${Number(saldoInfo.saldo_a_pagar || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}` : '';
+                    let extra = saldoInfo ? ` - a pagar $ ${Number(saldoInfo.saldo_a_pagar || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}` : '';
                     let tagSP = entidadEsSP(e) ? ' [S/P]' : '';
                     html += `<option value="${cuitLimpio}">${nombre}${tagSP} (CUIT: ${e.cuit})${extra}</option>`;
                 });
                 sel.innerHTML = html;
 
                 popularSelectsCtasBancarias();
+                popularChequesCartera();
 
                 if (cuitActual) {
                     sel.value = cuitActual;
@@ -413,6 +604,68 @@
             document.querySelectorAll('.select-cta-banco').forEach(sel => sel.innerHTML = optionsHtml);
         }
 
+        let chequesCartera = [];
+
+        function htmlChequesCartera() {
+            const opts = (chequesCartera || []).map(c => {
+                const vto = String(c.fecha_pago || '').slice(0, 10);
+                const quien = c.librador || c.cliente_nombre || c.banco || '';
+                const monto = Number(c.monto || 0);
+                return `<option value="${c.id}" data-nro="${c.nro_cheque || ''}" data-vto="${vto}" data-monto="${monto}">Ch. ${c.nro_cheque || ''} · ${quien} · $ ${monto.toLocaleString('es-AR', {minimumFractionDigits: 2})} · vto ${vto || 's/f'}</option>`;
+            }).join('');
+            return `<option value="">Elegí un cheque en cartera...</option>${opts}`;
+        }
+
+        function popularChequesCartera() {
+            const html = htmlChequesCartera();
+            document.querySelectorAll('.select-cheque-cartera').forEach(sel => {
+                const prev = sel.value;
+                sel.innerHTML = html;
+                if (prev) sel.value = prev;
+            });
+        }
+
+        function toggleVtoCheque(sel) {
+            const tr = sel.closest('tr');
+            const vto = tr.querySelector('.input-vto-cheque');
+            const nro = tr.querySelector('.input-nro-cheque');
+            const banco = tr.querySelector('.select-cta-banco');
+            const cartera = tr.querySelector('.select-cheque-cartera');
+            const monto = tr.querySelector('.input-monto-pago');
+            const esPropio = sel.value === 'Cheque Propio';
+            const esCartera = sel.value === 'Cheque de cartera';
+            if (vto) {
+                vto.style.display = (esPropio || esCartera) ? '' : 'none';
+                vto.readOnly = esCartera;
+                if (!esPropio && !esCartera) vto.value = '';
+            }
+            if (nro) nro.style.display = esCartera ? 'none' : '';
+            if (banco) banco.style.display = esCartera ? 'none' : '';
+            if (cartera) {
+                cartera.style.display = esCartera ? '' : 'none';
+                if (esCartera && !cartera.options.length) popularChequesCartera();
+            }
+            if (monto) monto.readOnly = esCartera;
+            if (!esCartera && cartera) cartera.value = '';
+        }
+
+        function onChequeCartera(sel) {
+            const opt = sel.selectedOptions[0];
+            const tr = sel.closest('tr');
+            if (!opt || !opt.value) return;
+            const nro = tr.querySelector('.input-nro-cheque');
+            const vto = tr.querySelector('.input-vto-cheque');
+            const monto = tr.querySelector('.input-monto-pago');
+            if (nro) nro.value = opt.dataset.nro || '';
+            if (vto) vto.value = opt.dataset.vto || '';
+            if (monto) {
+                monto.dataset.tocado = '1';
+                monto.readOnly = true;
+                monto.value = CampoMoney.format(Number(opt.dataset.monto || 0));
+            }
+            recalcularTotales();
+        }
+
         function autoSeleccionarBanco(selectEl) {
             let opt = selectEl.options[selectEl.selectedIndex];
             let banco = opt.getAttribute('data-banco') || '';
@@ -426,9 +679,10 @@
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>
-                    <select class="form-select form-select-sm">
+                    <select class="form-select form-select-sm select-forma-pago" onchange="toggleVtoCheque(this)">
                         <option value="Transferencia Bancaria">Transferencia Bancaria</option>
                         <option value="Cheque Propio">Cheque Propio</option>
+                        <option value="Cheque de cartera">Cheque de cartera</option>
                         <option value="Efectivo">Efectivo</option>
                     </select>
                 </td>
@@ -436,13 +690,16 @@
                     <select class="form-select form-select-sm select-cta-banco" onchange="autoSeleccionarBanco(this)">
                         <option value="">Seleccione Cuenta Cte...</option>
                     </select>
+                    <select class="form-select form-select-sm select-cheque-cartera" style="display:none" onchange="onChequeCartera(this)"></select>
                 </td>
-                <td><input type="text" class="form-control form-control-sm font-monospace" placeholder="S/N o Nro Cheque"></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm font-monospace text-end input-monto-pago" value="0.00" oninput="recalcularTotales()"></td>
+                <td><input type="text" class="form-control form-control-sm font-monospace input-nro-cheque" placeholder="S/N o Nro Cheque"></td>
+                <td><input type="date" class="form-control form-control-sm input-vto-cheque" title="Vencimiento del cheque" style="display:none"></td>
+                <td><input type="text" class="form-control form-control-sm font-monospace text-end input-monto-pago money-input" data-money inputmode="decimal" value="0,00" oninput="this.dataset.tocado='1'; recalcularTotales()"></td>
                 <td class="text-center"><button class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove(); recalcularTotales();">X</button></td>
             `;
             tbody.appendChild(tr);
             popularSelectsCtasBancarias();
+            popularChequesCartera();
         }
 
         async function seleccionarProveedorCambio(cuit) {
@@ -455,7 +712,7 @@
                 alicuotaArbaActual = 0.0;
                 proveedorEsSP = false;
                 actualizarUIPerfilYProveedor();
-                document.getElementById('tablaComprobantes').innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">Seleccione un proveedor para ver sus facturas pendientes.</td></tr>`;
+                document.getElementById('tablaComprobantes').innerHTML = `<tr><td colspan="7" class="text-center py-3 text-muted">Seleccione un proveedor para ver sus facturas pendientes.</td></tr>`;
                 recalcularTotales();
                 return;
             }
@@ -463,7 +720,7 @@
             let ent = entidadesCache.find(x => String(x.cuit).replace(/\D/g, '') === cuitActual);
             document.getElementById('inputCuit').value = ent ? ent.cuit : cuitActual;
             proveedorEsSP = entidadEsSP(ent);
-            // Arrendador / propietario de inmueble → SICORE 032 de antemano (RG 830)
+            // Arrendador / propietario de inmueble / SICORE 032 de antemano (RG 830)
             const selReg = document.getElementById('selectRegimen');
             if (ent && (ent.regimen_sicore || ent.es_propietario_inmueble)) {
                 const reg = String(ent.regimen_sicore || '032').padStart(3, '0');
@@ -487,7 +744,7 @@
 
         async function consultarPadronArba(silencioso = false) {
             if (!cuitActual) {
-                if (!silencioso) alert("⚠️ Seleccione un proveedor primero.");
+                if (!silencioso) alert("Seleccione un proveedor primero.");
                 return;
             }
             if (proveedorEsSP) {
@@ -505,7 +762,7 @@
                         : 0.0;
                     document.getElementById('lblAlicuotaArba').innerText = `Alícuota Ret: ${(alicuotaArbaActual * 100).toFixed(2)}%`;
                     if (!silencioso) {
-                        alert(`✅ Padrón ARBA — Retención IIBB: ${(alicuotaArbaActual * 100).toFixed(2)}%\n(Las percepciones aplican en ventas, no en OP.)`);
+                        alert(`Padrón ARBA - Retención IIBB: ${(alicuotaArbaActual * 100).toFixed(2)}%\n(Las percepciones aplican en ventas, no en OP.)`);
                     }
                 }
                 recalcularTotales();
@@ -514,35 +771,84 @@
             }
         }
 
+        function fmtFechaComp(valor) {
+            const s = String(valor || '').trim();
+            if (!s) return '--';
+            let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m) return m[3] + '/' + m[2] + '/' + m[1];
+            m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+            if (m) return m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') + '/' + m[3];
+            return s;
+        }
+
         async function cargarComprobantes(cuit) {
             try {
                 const res = await fetch(`/api/comprobantes_pendientes/${cuit}`);
                 if (!res.ok) throw new Error("Error en respuesta API");
                 comprobantesCache = await res.json();
-                
-                let html = '';
-                if (comprobantesCache.length === 0) {
-                    html = `<tr><td colspan="6" class="text-center py-3 text-muted">Sin comprobantes pendientes para este proveedor.</td></tr>`;
-                } else {
-                    comprobantesCache.forEach((c, idx) => {
-                        html += `
-                            <tr>
-                                <td class="text-center"><input type="checkbox" class="form-check-input chk-comprobante" data-idx="${idx}" onchange="recalcularTotales()" checked></td>
-                                <td class="font-monospace">${c.fecha || '--'}</td>
-                                <td class="fw-bold">${c.tipo_comprobante || 'Factura'} ${c.nro_comprobante ? '- ' + c.nro_comprobante : ''}</td>
-                                <td class="text-end font-monospace">$ ${parseFloat(c.neto || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-                                <td class="text-end font-monospace">$ ${parseFloat(c.iva || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-                                <td class="text-end font-monospace fw-bold text-primary">$ ${parseFloat(c.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-                            </tr>
-                        `;
-                    });
-                }
-                document.getElementById('tablaComprobantes').innerHTML = html;
-                recalcularTotales();
+                renderComprobantesVista(true);
             } catch (e) {
                 console.error("Error al cargar comprobantes:", e);
-                document.getElementById('tablaComprobantes').innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">No se pudieron cargar los comprobantes.</td></tr>`;
+                document.getElementById('tablaComprobantes').innerHTML = `<tr><td colspan="7" class="text-center py-3 text-muted">No se pudieron cargar los comprobantes.</td></tr>`;
             }
+        }
+
+        /** Dibuja la lista de esta OP. No llama DELETE ni toca cta cte. */
+        function renderComprobantesVista(marcarTodos) {
+            const tb = document.getElementById('tablaComprobantes');
+            if (!comprobantesCache.length) {
+                tb.innerHTML = `<tr><td colspan="7" class="text-center py-3 text-muted">Sin comprobantes en esta vista de OP. Usá Recargar lista si necesitás ver pendientes de cta cte.</td></tr>`;
+                recalcularTotales();
+                return;
+            }
+            let html = '';
+            comprobantesCache.forEach((c, idx) => {
+                const checked = marcarTodos === false ? '' : 'checked';
+                html += `
+                    <tr>
+                        <td class="text-center"><input type="checkbox" class="form-check-input chk-comprobante" data-idx="${idx}" onchange="recalcularTotales()" ${checked}></td>
+                        <td class="font-monospace">${fmtFechaComp(c.fecha)}</td>
+                        <td class="fw-bold">${c.tipo_comprobante || 'Factura'} ${c.nro_comprobante ? '- ' + c.nro_comprobante : ''}</td>
+                        <td class="text-end font-monospace">$ ${parseFloat(c.neto || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                        <td class="text-end font-monospace">$ ${parseFloat(c.iva || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                        <td class="text-end font-monospace fw-bold text-primary">$ ${parseFloat(c.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-link text-secondary text-decoration-none p-0 lh-1"
+                                style="font-size:1.25rem;min-width:1.5rem;"
+                                title="Quitar de esta vista de OP (NO borra la factura de cta cte)"
+                                aria-label="Quitar de esta vista"
+                                onclick="quitarDeVistaOP(${idx})">&times;</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            tb.innerHTML = html;
+            recalcularTotales();
+        }
+
+        /** Saca una factura de la vista de esta OP. No elimina de la base / cta cte. */
+        function quitarDeVistaOP(idx) {
+            const i = parseInt(idx, 10);
+            if (!Number.isFinite(i) || i < 0 || i >= comprobantesCache.length) return;
+            comprobantesCache.splice(i, 1);
+            renderComprobantesVista(true);
+        }
+
+        /** Deja en la vista solo las marcadas Sel. Las desmarcadas salen de la lista de esta OP; siguen en cta cte. */
+        function limpiarDesmarcadasDeVista() {
+            const keep = [];
+            document.querySelectorAll('.chk-comprobante').forEach(chk => {
+                if (!chk.checked) return;
+                const i = parseInt(chk.getAttribute('data-idx'), 10);
+                if (Number.isFinite(i) && comprobantesCache[i]) keep.push(comprobantesCache[i]);
+            });
+            const quitadas = comprobantesCache.length - keep.length;
+            if (quitadas <= 0) {
+                alert('No hay facturas desmarcadas. Desmarcá Sel en las que no van a esta OP y volvé a pulsar Limpiar.');
+                return;
+            }
+            comprobantesCache = keep;
+            renderComprobantesVista(true);
         }
 
         function recalcularTotales() {
@@ -568,7 +874,7 @@
             if (!proveedorEsSP) {
                 if (perfilEmpresa.agente_retencion_ganancias) {
                     let regimen = document.getElementById('selectRegimen').value;
-                    // Mínimos / alícuotas simplificados (RG 830) — se refinan con tabla de regímenes
+                    // Mínimos / alícuotas simplificados (RG 830) - se refinan con tabla de regímenes
                     let minNoImponible = (regimen === '094') ? 67170
                         : (regimen === '032' || regimen === '031' || regimen === '030') ? 11200
                         : (regimen === '116' || regimen === '119' || regimen === '025') ? 0
@@ -592,45 +898,112 @@
             document.getElementById('lblRetIibb').innerText = `$ ${retIibb.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             document.getElementById('lblTotalNeto').innerText = `$ ${netoPagar.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
-            // Autocompletar primer medio de pago con el neto si está en 0
+            const filasMedios = document.querySelectorAll('#tablaMediosPago tr');
             const primerMonto = document.querySelector('.input-monto-pago');
-            if (primerMonto && (parseFloat(primerMonto.value) || 0) < 0.01 && netoPagar > 0.01) {
-                primerMonto.value = netoPagar.toFixed(2);
+            if (filasMedios.length && primerMonto && CampoMoney.parse(primerMonto.value) < 0.01 && netoPagar > 0.01 && !primerMonto.dataset.tocado) {
+                primerMonto.value = CampoMoney.format(netoPagar);
             }
         }
 
         function parseMontoLabel(txt) {
-            return parseFloat(String(txt || '0').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+            return CampoMoney.parse(txt);
+        }
+
+        function imprimirCertificados() {
+            document.getElementById('certBloqueSicore')?.classList.remove('certificado-oculto-print');
+            document.getElementById('certBloqueIibb')?.classList.remove('certificado-oculto-print');
+            window.print();
+        }
+        function imprimirCertificado(tipo) {
+            const sic = document.getElementById('certBloqueSicore');
+            const iibb = document.getElementById('certBloqueIibb');
+            if (sic) sic.classList.toggle('certificado-oculto-print', tipo !== 'sicore');
+            if (iibb) iibb.classList.toggle('certificado-oculto-print', tipo !== 'iibb');
+            window.print();
+            setTimeout(() => {
+                if (sic) sic.classList.remove('certificado-oculto-print');
+                if (iibb) iibb.classList.remove('certificado-oculto-print');
+            }, 500);
         }
 
         async function emitirOrdenPago() {
-            if (!cuitActual) return alert("⚠️ Debe seleccionar un proveedor.");
+
+            if (!cuitActual) return alert("Debe seleccionar un proveedor.");
             
             let totalPago = 0;
-            document.querySelectorAll('.input-monto-pago').forEach(inp => {
-                totalPago += parseFloat(inp.value || 0);
+            const medios = [];
+            document.querySelectorAll('#tablaMediosPago tr').forEach(tr => {
+                const monto = CampoMoney.parse(tr.querySelector('.input-monto-pago')?.value);
+                if (!(monto > 0.01)) return;
+                totalPago += monto;
+                medios.push({
+                    forma: tr.querySelector('.select-forma-pago')?.value || 'Transferencia Bancaria',
+                    nro: (tr.querySelector('.input-nro-cheque')?.value || '').trim(),
+                    vto: tr.querySelector('.input-vto-cheque')?.value || '',
+                    chequeId: parseInt(tr.querySelector('.select-cheque-cartera')?.value || '0', 10) || null,
+                    monto
+                });
             });
-            if (totalPago < 0.01) {
-                // Si no cargaron medios, usar el neto calculado
-                totalPago = parseMontoLabel(document.getElementById('lblTotalNeto').innerText);
+            const cheque = medios.find(m => m.forma === 'Cheque Propio');
+            const deCartera = medios.filter(m => m.forma === 'Cheque de cartera');
+            if (cheque && !cheque.vto) {
+                return alert('En cheque propio indicá la fecha de vencimiento. Esa fecha entra en la cuenta corriente y en el financiero.');
             }
-            if (totalPago < 0.01) return alert("⚠️ Indique el importe a pagar.");
+            if (deCartera.some(m => !m.chequeId)) {
+                return alert('Elegí el cheque de cartera que vas a entregar como pago.');
+            }
 
             let ent = entidadesCache.find(x => String(x.cuit).replace(/\D/g, '') === cuitActual);
             let nombreProv = ent ? (ent.nombre_fantasia || ent.razon_social) : cuitActual;
 
             let valRetGan = proveedorEsSP ? 0 : parseMontoLabel(document.getElementById('lblRetGanancias').innerText);
             let valRetArba = proveedorEsSP ? 0 : parseMontoLabel(document.getElementById('lblRetIibb').innerText);
+            const totalRet = valRetGan + valRetArba;
+            const soloRetenciones = totalPago < 0.01 && totalRet > 0.01 && !proveedorEsSP;
+
+            if (totalPago < 0.01 && totalRet < 0.01) {
+                return alert("Indique un medio de pago o genere retenciones para emitir la OP.");
+            }
+            if (soloRetenciones) {
+                const ok = confirm(
+                    "No hay medios de pago cargados.\n\n" +
+                    "Se emitirá la OP aplicando SOLO las retenciones en la cta cte del proveedor\n" +
+                    "(SICORE $ " + valRetGan.toLocaleString('es-AR', {minimumFractionDigits: 2}) +
+                    " + IIBB $ " + valRetArba.toLocaleString('es-AR', {minimumFractionDigits: 2}) + ").\n\n" +
+                    "Las facturas quedan pendientes hasta que cargues el pago (cheque / transferencia) después."
+                );
+                if (!ok) return;
+            }
+
+            let baseImp = 0;
+            document.querySelectorAll('.chk-comprobante:checked').forEach(chk => {
+                let idx = chk.getAttribute('data-idx');
+                let comp = comprobantesCache[idx];
+                if (comp) {
+                    let neto = parseFloat(comp.neto || 0);
+                    let total = parseFloat(comp.total || 0);
+                    baseImp += neto > 0.01 ? neto : total;
+                }
+            });
 
             let payload = {
                 cuit: cuitActual,
                 fecha: document.getElementById('inputFecha').value,
-                total_pagado: totalPago + valRetGan + valRetArba,
+                total_pagado: soloRetenciones ? totalRet : (totalPago + valRetGan + valRetArba),
                 retencion_iibb: valRetArba,
                 retencion_sicore: valRetGan,
                 regimen_sicore: document.getElementById('selectRegimen').value || '078',
-                forma_pago: "Transferencia",
-                observaciones: proveedorEsSP ? "OP proveedor S/P (sin retenciones)" : "Emisión de OP con certificados"
+                forma_pago: soloRetenciones ? "Solo retenciones" : (cheque ? "Cheque Propio" : (deCartera[0]?.forma || medios[0]?.forma || "Transferencia")),
+                nro_cheque: cheque ? cheque.nro : (deCartera[0]?.nro || medios[0]?.nro || ""),
+                fecha_vto_cheque: cheque ? cheque.vto : (deCartera[0]?.vto || ""),
+                cheques_cartera: deCartera.map(m => m.chequeId),
+                solo_retenciones: soloRetenciones,
+                base_imponible: baseImp,
+                alicuota_iibb: alicuotaArbaActual,
+                observaciones: proveedorEsSP
+                    ? "OP proveedor S/P (sin retenciones)"
+                    : (soloRetenciones ? "OP solo retenciones (pago pendiente)" : "Emisión de OP con certificados"),
+                usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar'
             };
 
             try {
@@ -644,23 +1017,30 @@
                 
                 if (data.status === "success") {
                     if (data.es_sp || proveedorEsSP || (!data.cert_sicore && !data.cert_iibb && valRetGan < 0.01 && valRetArba < 0.01)) {
-                        alert(`✅ ${data.message || 'OP emitida'}\nNº ${data.nro_orden || ''}`);
+                        alert(`${data.message || 'OP emitida'}\nNº ${data.nro_orden || ''}`);
                         irACtaCte();
                         return;
                     }
 
-                    document.getElementById('certProvNombre').innerText = nombreProv;
-                    document.getElementById('certProvCuit').innerText = ent ? ent.cuit : cuitActual;
                     actualizarFechasCertificados();
+                    llenarDatosAgenteCertificados();
+                    llenarSujetoCertificados(ent, nombreProv, cuitActual);
+                    llenarComprobantesCertIibb();
 
                     const nroSicore = data.cert_sicore || await obtenerSiguienteNumeroCertificado('sicore', '2074');
                     const nroIibb = data.cert_iibb || await obtenerSiguienteNumeroCertificado('iibb', '2962');
 
-                    document.getElementById('certNroSicore').innerText = nroSicore;
-                    document.getElementById('certNroIibb').innerText = nroIibb;
+                    setTxt('certNroSicore', nroSicore);
+                    setTxt('certNroIibb', nroIibb);
+                    setTxt('certOpNroIibb', data.nro_orden || '--');
 
-                    document.getElementById('certBaseGanancias').innerText = document.getElementById('lblRetGanancias').innerText;
-                    document.getElementById('certImporteGanancias').innerText = document.getElementById('lblRetGanancias').innerText;
+                    const regSel = document.getElementById('selectRegimen');
+                    const regTxt = regSel ? (regSel.selectedOptions[0]?.textContent || regSel.value) : '';
+                    setTxt('certBaseGanancias', document.getElementById('lblRetGanancias').innerText);
+                    // mostrar régimen en celda de alícuota SICORE
+                    const celReg = document.querySelector('#certBloqueSicore tbody td:nth-child(2)');
+                    if (celReg) celReg.textContent = regTxt || 'Régimen SICORE';
+                    setTxt('certImporteGanancias', document.getElementById('lblRetGanancias').innerText);
 
                     let totalNetoBase = 0;
                     document.querySelectorAll('.chk-comprobante:checked').forEach(chk => {
@@ -673,9 +1053,19 @@
                         }
                     });
 
-                    document.getElementById('certBaseArba').innerText = "$ " + totalNetoBase.toLocaleString('es-AR', {minimumFractionDigits: 2});
-                    document.getElementById('certAlicuotaArbaPdf').innerText = `${(alicuotaArbaActual * 100).toFixed(2)}%`;
-                    document.getElementById('certImporteArba').innerText = document.getElementById('lblRetIibb').innerText;
+                    setTxt('certBaseArba', moneyAR(totalNetoBase));
+                    setTxt('certAlicuotaArbaPdf', `${(alicuotaArbaActual * 100).toFixed(2)}%`);
+                    setTxt('certImporteArba', document.getElementById('lblRetIibb').innerText);
+
+                    const bloqueIibb = document.getElementById('certBloqueIibb');
+                    if (bloqueIibb) {
+                        const showIibb = valRetArba > 0.01;
+                        bloqueIibb.classList.toggle('d-none', !showIibb);
+                        const btnI = document.getElementById('btnPrintIibb');
+                        if (btnI) btnI.classList.toggle('d-none', !showIibb);
+                    }
+                    const bloqueSic = document.getElementById('certBloqueSicore');
+                    if (bloqueSic) bloqueSic.classList.toggle('d-none', valRetGan < 0.01);
 
                     const modal = new bootstrap.Modal(document.getElementById('modalCertificadoRetencion'));
                     modal.show();

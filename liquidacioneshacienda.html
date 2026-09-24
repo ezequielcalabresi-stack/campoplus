@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,9 @@
     <title>CAmpo+ - Liquidaciones de Hacienda</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/campoplus-auth.js"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 
@@ -14,11 +16,11 @@
         <div class="flex justify-between items-center mb-6 border-b pb-4">
             <div>
                 <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Liquidación de Hacienda</span></h2>
-                <p class="text-xs text-slate-500 mt-1">Formulario limpio · tropas · imputación de ingresos a Gestión</p>
+                <p class="text-xs text-slate-500 mt-1">Formulario limpio - tropas - imputación de ingresos a Gestión</p>
             </div>
             <div class="flex gap-2">
                 <a href="Gestion.html" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 rounded-md text-sm font-medium">Gestión</a>
-                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">Dashboard</a>
             </div>
         </div>
 
@@ -27,7 +29,7 @@
                 <div>
                     <label class="block text-sm font-medium text-slate-700">Consignatario / Feria</label>
                     <select id="entidad" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
-                        <option value="">— Seleccionar —</option>
+                        <option value=""> -  Seleccionar - </option>
                     </select>
                 </div>
                 <div>
@@ -73,26 +75,26 @@
                     <h3 class="text-md font-semibold text-slate-700">Comisiones y gastos</h3>
                     <div>
                         <label class="block text-xs text-slate-600">Comisión ($)</label>
-                        <input id="comision" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                        <input id="comision" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-600">Fondo de garantía ($)</label>
-                        <input id="fondo" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                        <input id="fondo" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-600">IVA ($)</label>
-                        <input id="iva" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-emerald-700">
+                        <input id="iva" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00">
                     </div>
                 </div>
                 <div class="border rounded-lg p-4 bg-white space-y-3">
                     <h3 class="text-md font-semibold text-slate-700">Retenciones</h3>
                     <div>
                         <label class="block text-xs text-slate-600">Retención IIBB ($)</label>
-                        <input id="retIibb" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                        <input id="retIibb" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-600">Retención Ganancias ($)</label>
-                        <input id="retGan" type="number" step="0.01" value="" placeholder="0" class="mt-1 w-full border rounded p-2 text-right text-red-600">
+                        <input id="retGan" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-600">Guía / DT-E</label>
@@ -105,7 +107,7 @@
             <div class="border-2 border-emerald-200 rounded-lg p-4 bg-emerald-50/40">
                 <div class="flex justify-between items-center mb-3">
                     <div>
-                        <h3 class="text-md font-bold text-emerald-900">Imputación de cuentas — Ingresos (Gestión)</h3>
+                        <h3 class="text-md font-bold text-emerald-900">Imputación de cuentas - Ingresos (Gestión)</h3>
                         <p class="text-xs text-emerald-800/80">Actividad + cuenta de venta + neto. Alimenta el panorama de Gestión.</p>
                     </div>
                     <div class="flex gap-2">
@@ -130,7 +132,7 @@
 
             <div class="bg-rose-50 border border-rose-200 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-3">
                 <div class="text-xs text-rose-900">
-                    Cabezas: <strong id="sumCabezas">0</strong> · Kilos: <strong id="sumKilos">0</strong> · Bruto tropas: <strong id="sumBruto">$ 0</strong>
+                    Cabezas: <strong id="sumCabezas">0</strong> - Kilos: <strong id="sumKilos">0</strong> - Bruto tropas: <strong id="sumBruto">$ 0</strong>
                 </div>
                 <div class="text-right">
                     <span class="text-xs font-bold text-emerald-800 uppercase block">Neto estimado</span>
@@ -149,7 +151,7 @@
         let actividades = [];
         let entidades = [];
 
-        function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
+        function num(v) { return CampoMoney.parse(v); }
         function fmt(n) { return '$ ' + num(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
         function tropaRow() {
@@ -159,7 +161,7 @@
                 <td class="p-1 text-center"><input type="number" class="t-cab border rounded p-1 w-16 text-xs text-center" oninput="recalc()" /></td>
                 <td class="p-1"><input class="t-cat border rounded p-1 w-full text-xs" /></td>
                 <td class="p-1"><input type="number" step="0.01" class="t-kg border rounded p-1 w-24 text-xs text-right" oninput="recalc()" /></td>
-                <td class="p-1"><input type="number" step="0.01" class="t-px border rounded p-1 w-24 text-xs text-right" oninput="recalc()" /></td>
+                <td class="p-1"><input type="text" class="t-px border rounded p-1 w-24 text-xs text-right money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()" /></td>
                 <td class="p-1 text-right"><span class="t-sub font-bold text-xs">$ 0</span></td>
                 <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove();recalc()">×</button></td>
             </tr>`;
@@ -167,21 +169,23 @@
 
         function addTropa() {
             document.getElementById('tbTropas').insertAdjacentHTML('beforeend', tropaRow());
+            CampoMoney.bind(document.getElementById('tbTropas'));
         }
 
         function impRow() {
-            const optsAct = '<option value="">— Actividad —</option>' +
+            const optsAct = '<option value=""> -  Actividad - </option>' +
                 actividades.map(a => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('');
             return `<tr class="imp">
                 <td class="p-1"><select class="i-act border rounded p-1.5 w-full text-sm" onchange="onActChange(this)">${optsAct}</select></td>
-                <td class="p-1"><select class="i-cta border rounded p-1.5 w-full text-sm"><option value="">— Cuenta ingreso —</option></select></td>
-                <td class="p-1"><input type="number" step="0.01" class="i-neto border rounded p-1.5 w-full text-right" placeholder="0" oninput="recalc()" /></td>
+                <td class="p-1"><select class="i-cta border rounded p-1.5 w-full text-sm"><option value=""> -  Cuenta ingreso - </option></select></td>
+                <td class="p-1"><input type="text" class="i-neto border rounded p-1.5 w-full text-right money-input" data-money inputmode="decimal" value="0,00" placeholder="0" oninput="recalc()" /></td>
                 <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove()">×</button></td>
             </tr>`;
         }
 
         function addImp() {
             document.getElementById('tbImp').insertAdjacentHTML('beforeend', impRow());
+            CampoMoney.bind(document.getElementById('tbImp'));
         }
 
         function esc(s) {
@@ -192,7 +196,7 @@
             const tr = sel.closest('tr');
             const ctaSel = tr.querySelector('.i-cta');
             const actId = sel.value;
-            ctaSel.innerHTML = '<option value="">— Cuenta ingreso —</option>';
+            ctaSel.innerHTML = '<option value=""> -  Cuenta ingreso - </option>';
             if (!actId) return;
             let ctas = await fetch('/api/actividades/' + actId + '/cuentas?tipo=INGRESO').then(r => r.json());
             if (!ctas.length) {
@@ -223,11 +227,11 @@
             document.getElementById('sumKilos').textContent = kg.toLocaleString('es-AR');
             document.getElementById('sumBruto').textContent = fmt(bruto);
             const neto = bruto
-                - num(document.getElementById('comision').value)
-                - num(document.getElementById('fondo').value)
+ - num(document.getElementById('comision').value)
+ - num(document.getElementById('fondo').value)
                 + num(document.getElementById('iva').value)
-                - num(document.getElementById('retIibb').value)
-                - num(document.getElementById('retGan').value);
+ - num(document.getElementById('retIibb').value)
+ - num(document.getElementById('retGan').value);
             document.getElementById('netoEst').textContent = fmt(neto);
             // Si hay un solo renglón de imputación vacío de neto, sugerir bruto de tropas
             const nets = document.querySelectorAll('#tbImp .i-neto');

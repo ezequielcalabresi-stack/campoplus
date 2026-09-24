@@ -15,6 +15,7 @@
                 linear-gradient(160deg, #0f172a 0%, #1e293b 45%, #0f766e 140%);
         }
     </style>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="font-sans text-slate-100 flex items-center justify-center p-4">
     <div class="w-full max-w-md">
@@ -46,12 +47,12 @@
                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Contraseña</label>
                     <input id="password" type="password" autocomplete="current-password" required
                            class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                           placeholder="••••••••">
+                           placeholder="--------">
                 </div>
                 <div>
                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Empresa <span class="font-normal text-slate-400">(opcional)</span></label>
                     <select id="empresaId" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
-                        <option value="">— Usar empresa del usuario / activa —</option>
+                        <option value=""> -  Usar empresa del usuario / activa - </option>
                     </select>
                 </div>
                 <button type="submit" id="btnLogin"
@@ -92,7 +93,7 @@
             err.classList.add('hidden');
             const btn = document.getElementById('btnLogin');
             btn.disabled = true;
-            btn.textContent = 'Validando…';
+            btn.textContent = 'Validando...';
             try {
                 const usuario = document.getElementById('usuario').value.trim();
                 const password = document.getElementById('password').value;

@@ -266,14 +266,20 @@ class UsuarioUpdate(BaseModel):
 def register_audit_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: Callable) -> None:
     @app.get("/api/usuarios")
     def listar_usuarios(solo_activos: int = 1):
-        conn = get_db()
+        import main as _main
+        from plataforma import cuenta_id_actual, master_connect
+
+        cid = cuenta_id_actual() or 1
+        conn = master_connect(_main.DB_PATH)
         cur = conn.cursor()
+        where = ["COALESCE(cuenta_id, 1) = ?"]
+        params = [cid]
         if solo_activos:
-            cur.execute(
-                "SELECT * FROM usuarios_sistema WHERE activo = 1 ORDER BY nombre COLLATE NOCASE;"
-            )
-        else:
-            cur.execute("SELECT * FROM usuarios_sistema ORDER BY nombre COLLATE NOCASE;")
+            where.append("activo = 1")
+        cur.execute(
+            f"SELECT * FROM usuarios_sistema WHERE {' AND '.join(where)} ORDER BY nombre COLLATE NOCASE;",
+            params,
+        )
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
@@ -320,7 +326,10 @@ def register_audit_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id:
 
     @app.put("/api/usuarios/{uid}")
     def actualizar_usuario(uid: int, data: UsuarioUpdate, request: Request):
-        conn = get_db()
+        import main as _main
+        from plataforma import master_connect
+
+        conn = master_connect(_main.DB_PATH)
         cur = conn.cursor()
         cur.execute("SELECT * FROM usuarios_sistema WHERE id = ?;", (uid,))
         row = cur.fetchone()

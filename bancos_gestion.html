@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -11,7 +11,8 @@
         .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 10px; }
         .table tbody td { padding: 10px; vertical-align: middle; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="container my-4" style="max-width: 1400px;">
@@ -20,8 +21,8 @@
                 <h4 class="fw-bold mb-0 text-slate-800">CAmpo+ <small class="text-muted fs-6 fw-normal">| Módulo de Gestión, Cuentas Bancarias y Conciliación</small></h4>
             </div>
             <div class="d-flex gap-2">
-                <a href="cuentacorriente.html" class="btn btn-outline-secondary btn-sm fw-bold">← Volver a Cuentas Corrientes</a>
-                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">← Volver al Dashboard</a>
+                <a href="cuentacorriente.html" class="btn btn-outline-secondary btn-sm fw-bold">Volver a Cuentas Corrientes</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600;">Volver al Dashboard</a>
             </div>
         </div>
 
@@ -52,7 +53,7 @@
 
         <!-- PANEL DE CALIFICACIONES Y ACUERDOS BANCARIOS -->
         <div class="main-card" id="panelCalificaciones" style="display:none;">
-            <h5 class="fw-bold text-dark mb-3">📊 Calificaciones y Acuerdos de la Cuenta Seleccionada</h5>
+            <h5 class="fw-bold text-dark mb-3">Calificaciones y Acuerdos de la Cuenta Seleccionada</h5>
             <div class="row g-3 text-center" id="cardsCalificaciones">
                 <!-- Inyectado dinámicamente -->
             </div>
@@ -61,7 +62,7 @@
         <!-- MOVIMIENTOS BANCARIOS Y CONCILIACIÓN -->
         <div class="main-card">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="fw-bold mb-0">📋 Movimientos, Extracto y Conciliación Bancaria</h5>
+                <h5 class="fw-bold mb-0">Movimientos, Extracto y Conciliación Bancaria</h5>
                 <div class="d-flex gap-2">
                     <span class="badge bg-success align-self-center p-2">Estado: Conciliado al Día</span>
                 </div>
@@ -256,7 +257,7 @@
                 const result = await res.json();
                 if (!res.ok) throw new Error(result.detail || "Error al guardar el movimiento.");
 
-                alert("✅ Movimiento bancario / conciliación registrado con éxito.");
+                alert("Movimiento bancario / conciliación registrado con éxito.");
                 
                 // Limpiar formulario y cerrar modal
                 document.getElementById('opConcepto').value = '';
@@ -269,12 +270,12 @@
                 cargarMovimientosBanco(cuentaSeleccionadaActual.banco);
 
             } catch (err) {
-                alert("🚨 Error al guardar movimiento: " + err.message);
+                alert("Error al guardar movimiento: " + err.message);
             }
         }
 
         function auditarMovimiento(id, tipo, numero) {
-            alert(`🔍 Auditoría de Movimiento ID #${id}\nTipo: ${tipo}\nComprobante: ${numero}\nEstado: Sincronizado e Integrado en la Contabilidad Central.`);
+            alert(`Auditoría de Movimiento ID #${id}\nTipo: ${tipo}\nComprobante: ${numero}\nEstado: Sincronizado e Integrado en la Contabilidad Central.`);
         }
 
         window.onload = inicializarBancos;

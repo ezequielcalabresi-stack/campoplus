@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAmpo+ - Carga de Compras, Cuenta Corriente y Asiento Contable (Centralizado)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 
@@ -13,12 +14,12 @@
         <!-- Cabecera -->
         <div class="flex justify-between items-center mb-6 border-b pb-4">
             <div>
-                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Ingreso de Facturas (Backend Centralizado)</span></h2>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Ingreso de Facturas y Notas de Crédito</span></h2>
                 <p id="estado-db" class="text-xs text-amber-600 mt-1">Conectando al servidor API FastAPI...</p>
             </div>
             <div class="flex items-center gap-3">
                 <div class="bg-slate-50 border p-2 rounded-md flex items-center gap-2">
-                    <span class="text-xs font-bold text-slate-600">👤 Operador:</span>
+                    <span class="text-xs font-bold text-slate-600">Operador:</span>
                     <select id="selectUsuario" class="text-xs font-semibold text-slate-800 bg-transparent border-none focus:ring-0">
                         <option value="Raul Ezequiel Calabresi">Raul Ezequiel Calabresi</option>
                         <option value="Administración CAmpo+">Administración CAmpo+</option>
@@ -26,7 +27,7 @@
                     </select>
                 </div>
                 <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
-                    ← Volver al Dashboard
+                    Volver al Dashboard
                 </a>
             </div>
         </div>
@@ -35,8 +36,8 @@
         <div id="modalNuevoProveedor" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 space-y-4 border border-slate-200">
                 <div class="flex justify-between items-center border-b pb-3">
-                    <h3 class="text-base font-bold text-slate-800">➕ Legajo Fiscal Express: Alta de Nuevo Proveedor</h3>
-                    <button type="button" onclick="toggleModalProveedor()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+                    <h3 class="text-base font-bold text-slate-800">Legajo Fiscal Express: Alta de Nuevo Proveedor</h3>
+                    <button type="button" onclick="toggleModalProveedor()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">?</button>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -99,7 +100,7 @@
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <label class="block text-sm font-medium text-slate-700">Proveedor</label>
-                        <button type="button" onclick="toggleModalProveedor()" class="text-[11px] text-blue-600 font-bold hover:underline">＋ Nuevo Proveedor</button>
+                        <button type="button" onclick="toggleModalProveedor()" class="text-[11px] text-blue-600 font-bold hover:underline">+ Nuevo Proveedor</button>
                     </div>
                     <select id="selectProveedor" required onchange="actualizarCondicionProveedor()" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium text-xs">
                         <option value="">-- Seleccione un Proveedor --</option>
@@ -108,12 +109,17 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700">Tipo de Comprobante</label>
-                    <select id="tipoComprobante" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-xs">
+                    <select id="tipoComprobante" onchange="onCambioTipoComprobante()" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-xs">
                         <option value="Factura A">Factura A</option>
                         <option value="Factura B">Factura B</option>
-                        <option value="Nota de Débito A">Nota de Débito A</option>
                         <option value="Factura C">Factura C</option>
+                        <option value="Nota de Débito A">Nota de Débito A</option>
+                        <option value="Nota de Débito B">Nota de Débito B</option>
+                        <option value="Nota de Crédito A">Nota de Crédito A</option>
+                        <option value="Nota de Crédito B">Nota de Crédito B</option>
+                        <option value="Nota de Crédito C">Nota de Crédito C</option>
                     </select>
+                    <span id="lblTipoCompHint" class="text-[10px] text-slate-500 mt-1 block">Factura / ND > cargo (DEBE). NC > credito que baja el saldo (HABER).</span>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700">Punto de Vta. y Nro. (Ej: 2-20)</label>
@@ -177,14 +183,14 @@
                 <div class="bg-white rounded-xl shadow-2xl max-w-xl w-full p-6 space-y-4 border border-slate-200">
                     <div class="flex justify-between items-center border-b pb-3">
                         <h3 id="modalDetalleTitulo" class="text-base font-bold text-slate-800">Detalle para márgenes brutos</h3>
-                        <button type="button" onclick="cerrarModalDetalle()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+                        <button type="button" onclick="cerrarModalDetalle()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">?</button>
                     </div>
                     <div class="grid grid-cols-2 gap-3 text-xs">
                         <div class="col-span-2">
                             <label class="font-medium text-slate-700" id="lblItemDetalle">Producto / Servicio</label>
                             <div class="flex gap-2 mt-1">
                                 <select id="detItem" class="flex-1 border rounded p-2 bg-white" onchange="onCambioItemDetalle()"></select>
-                                <input id="detItemNuevo" class="flex-1 border rounded p-2 hidden" placeholder="Nombre nuevo…">
+                                <input id="detItemNuevo" class="flex-1 border rounded p-2 hidden" placeholder="Nombre nuevo...">
                             </div>
                             <button type="button" id="btnToggleNuevoItem" onclick="toggleNuevoItem()" class="mt-1 text-[11px] text-emerald-700 font-semibold hover:underline">+ Agregar producto/servicio</button>
                         </div>
@@ -261,8 +267,8 @@
             </div>
 
             <div class="flex justify-end pt-2">
-                <button type="submit" class="bg-emerald-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-emerald-700 font-bold transition-all text-sm">
-                    💾 Guardar Factura y Generar Asiento Contable
+                <button type="submit" id="btnGuardarComp" class="bg-emerald-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-emerald-700 font-bold transition-all text-sm">
+                    Guardar comprobante y generar asiento
                 </button>
             </div>
         </form>
@@ -276,7 +282,7 @@
                 const res = await fetch('/api/entidades');
                 if (!res.ok) throw new Error("No se pudo conectar con el servidor API.");
                 
-                document.getElementById('estado-db').innerText = "✅ Conectado al backend central FastAPI en tiempo real.";
+                document.getElementById('estado-db').innerText = "Conectado al backend central FastAPI en tiempo real.";
                 document.getElementById('estado-db').className = "text-xs text-emerald-600 mt-1 font-medium";
 
                 await poblarSelectProveedores();
@@ -302,7 +308,7 @@
 
             } catch (error) {
                 console.error(error);
-                document.getElementById('estado-db').innerText = "⚠️ Error: Asegúrese de ejecutar 'python main.py'.";
+                document.getElementById('estado-db').innerText = "Error: Asegúrese de ejecutar 'python main.py'.";
             }
         }
 
@@ -399,7 +405,7 @@
                 conDecimal = true;
             } else if (lastDot >= 0) {
                 const parts = v.split('.');
-                // Un solo punto y ≤2 dígitos después → decimal (40280.17)
+                // Un solo punto y =2 dígitos después → decimal (40280.17)
                 // Varios puntos o >2 dígitos → miles (4.028.017)
                 if (parts.length === 2 && parts[1].length <= 2) {
                     entero = parts[0].replace(/[.,]/g, '');
@@ -578,9 +584,9 @@
 
                 toggleModalProveedor();
                 await poblarSelectProveedores(cuit);
-                alert("✅ ¡Proveedor guardado y sincronizado con éxito!");
+                alert("¡Proveedor guardado y sincronizado con éxito!");
             } catch (e) {
-                alert("🚨 Error al guardar el proveedor: " + e.message);
+                alert("Error al guardar el proveedor: " + e.message);
             }
         }
 
@@ -622,7 +628,7 @@
         }
 
         function optionsActividades(selectedId) {
-            let html = '<option value="">— Actividad —</option>';
+            let html = '<option value=""> -  Actividad - </option>';
             sortAlpha(actividadesCache || [], 'nombre').forEach(a => {
                 html += `<option value="${a.id}" ${String(a.id)===String(selectedId)?'selected':''}>${escHtml(a.nombre)}</option>`;
             });
@@ -630,7 +636,7 @@
         }
 
         function optionsCuentas(actividadId, selectedCtaId) {
-            let html = '<option value="">— Cta a imputar —</option>';
+            let html = '<option value=""> -  Cta a imputar - </option>';
             const act = (actividadesCache || []).find(a => String(a.id) === String(actividadId));
             if (!act) return html;
             sortAlpha(act.cuentas || [], 'nombre').forEach(c => {
@@ -683,12 +689,12 @@
 
             const items = sortAlpha(modo === 'insumo' ? productosCache : laboreosCache, 'nombre');
             const sel = document.getElementById('detItem');
-            sel.innerHTML = '<option value="">— Seleccionar —</option>' +
+            sel.innerHTML = '<option value=""> -  Seleccionar - </option>' +
                 items.map(i => `<option value="${i.id}" data-unidad="${escHtml(i.unidad||'')}">${escHtml(i.nombre)}</option>`).join('');
 
             const camp = document.getElementById('detCampania');
             const camps = sortAlpha(campaniasCache || [], c => c.codigo || c.nombre || '');
-            camp.innerHTML = '<option value="">— Campaña —</option>' +
+            camp.innerHTML = '<option value=""> -  Campaña - </option>' +
                 camps.map(c => `<option value="${escHtml(c.codigo || c.nombre || c.id)}">${escHtml(c.codigo || c.nombre || ('#'+c.id))}</option>`).join('');
 
             // Prefill desde fila si ya había detalle
@@ -783,7 +789,7 @@
             neto.value = total.toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
             // Badge en destino
             const dest = filaDetalleActual.querySelector('.inp-destino');
-            dest.title = `${itemNombre} · ${cant} ${unidad} · $${pu}`;
+            dest.title = `${itemNombre} - ${cant} ${unidad} - $${pu}`;
             calcularTotales();
             cerrarModalDetalle();
         }
@@ -833,7 +839,7 @@
             let tbody = document.getElementById('tablaRenglones');
             let tr = document.createElement('tr');
             tr.innerHTML = `
-                <td class="p-3"><input type="text" required placeholder="Descripción amplia del gasto / artículo…" class="inp-desc border rounded p-1.5 w-full text-xs min-w-[14rem]"></td>
+                <td class="p-3"><input type="text" required placeholder="Descripción amplia del gasto / artículo..." class="inp-desc border rounded p-1.5 w-full text-xs min-w-[14rem]"></td>
                 <td class="p-3">
                     <select class="inp-destino border rounded p-1 text-xs bg-white font-medium text-emerald-800" onchange="onCambioDestino(this)">
                         <option value="Gasto General / Estructura" selected>Gasto General / Estructura</option>
@@ -999,12 +1005,36 @@
             }
         }
 
+        function esNotaCredito(tipo) {
+            const t = String(tipo || '').toUpperCase();
+            return t.includes('NOTA DE CRÉDITO') || t.includes('NOTA DE CREDITO') || t.startsWith('NC ');
+        }
+
+        function onCambioTipoComprobante() {
+            const tipo = document.getElementById('tipoComprobante').value;
+            const hint = document.getElementById('lblTipoCompHint');
+            const sel = document.getElementById('tipoComprobante');
+            if (esNotaCredito(tipo)) {
+                hint.textContent = 'NC del proveedor > HABER en cta cte / asiento inverso / egreso de almacén si hay insumos (devolución).';
+                hint.className = 'text-[10px] text-amber-700 font-semibold mt-1 block';
+                sel.classList.add('border-amber-400', 'bg-amber-50');
+                const btn = document.getElementById('btnGuardarComp');
+                if (btn) btn.textContent = 'Guardar Nota de Crédito';
+            } else {
+                hint.textContent = 'Factura / ND > cargo (DEBE). NC > credito que baja el saldo (HABER).';
+                hint.className = 'text-[10px] text-slate-500 mt-1 block';
+                sel.classList.remove('border-amber-400', 'bg-amber-50');
+                const btn = document.getElementById('btnGuardarComp');
+                if (btn) btn.textContent = 'Guardar comprobante y generar asiento';
+            }
+        }
+
         async function guardarFacturaYAsiento(event) {
             event.preventDefault();
 
             let cuit = document.getElementById('selectProveedor').value;
             if (!cuit) {
-                alert("🚨 ERROR DE VALIDACIÓN:\n\nDebe seleccionar un proveedor antes de guardar la factura.");
+                alert("ERROR DE VALIDACIÓN:\n\nDebe seleccionar un proveedor antes de guardar la factura.");
                 document.getElementById('selectProveedor').focus();
                 return;
             }
@@ -1015,7 +1045,7 @@
             formatearFechaInteligente(inputVenc);
 
             if (!validarFechaEstricta(inputEmision.value) || !validarFechaEstricta(inputVenc.value)) {
-                alert("🚨 ERROR DE VALIDACIÓN:\n\nUna o ambas fechas (Emisión o Vencimiento) son inválidas. Por favor corríjalas.");
+                alert("ERROR DE VALIDACIÓN:\n\nUna o ambas fechas (Emisión o Vencimiento) son inválidas. Por favor corríjalas.");
                 return;
             }
 
@@ -1041,7 +1071,7 @@
             let totalFactura = totalNeto + totalIva + iibb + otras;
 
             if (totalNeto <= 0 || totalFactura <= 0) {
-                alert("🚨 ERROR DE VALIDACIÓN CONTABLE:\n\nEl Subtotal Neto y el Total de la Factura deben ser mayores a $ 0,00.");
+                alert("ERROR DE VALIDACIÓN:\n\nEl Subtotal Neto y el Total del comprobante deben ser mayores a $ 0,00.");
                 return;
             }
 
@@ -1050,6 +1080,7 @@
             let fecha = inputEmision.value.trim();
             let venc = inputVenc.value.trim();
             let usuario = (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || document.getElementById('selectUsuario').value;
+            const esNc = esNotaCredito(tipo);
 
             const filas = Array.from(document.querySelectorAll('#tablaRenglones tr'));
             const renglones = [];
@@ -1057,7 +1088,7 @@
                 const actSel = tr.querySelector('.inp-actividad');
                 const ctaSel = tr.querySelector('.inp-cuenta');
                 if (!actSel.value || !ctaSel.value) {
-                    alert("🚨 Cada renglón debe tener Actividad y Cuenta a imputar.");
+                    alert("Cada renglón debe tener Actividad y Cuenta a imputar.");
                     return;
                 }
                 const actOpt = actSel.options[actSel.selectedIndex];
@@ -1088,24 +1119,40 @@
                 });
             }
 
-            let conceptoAsiento = `Factura Compra ${tipo} Nro ${nro}`;
+            let conceptoAsiento = `${esNc ? 'Nota de Crédito' : 'Factura Compra'} ${tipo} Nro ${nro}`;
             let ref = `CC-${cuit}-${nro}`;
 
-            let asientos = [
-                { concepto: conceptoAsiento, cuenta: '1.1.03 Insumos y Existencias', debe: totalNeto, haber: 0, referencia: ref }
-            ];
-
-            if (iva21 > 0) {
-                asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.01 IVA Crédito Fiscal 21%', debe: iva21, haber: 0, referencia: ref });
+            let asientos;
+            if (esNc) {
+                // NC compra: Deudor Proveedores / Acreedor existencias e IVA CF
+                asientos = [
+                    { concepto: conceptoAsiento, cuenta: '2.1.01 Proveedores Varios', debe: totalFactura, haber: 0, referencia: ref }
+                ];
+                if (iva21 > 0) {
+                    asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.01 IVA Crédito Fiscal 21%', debe: 0, haber: iva21, referencia: ref });
+                }
+                if (iva105 > 0) {
+                    asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.03 IVA Crédito Fiscal 10.5%', debe: 0, haber: iva105, referencia: ref });
+                }
+                if (iibb > 0) {
+                    asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.02 Percepciones IIBB A Pagar', debe: 0, haber: iibb, referencia: ref });
+                }
+                asientos.push({ concepto: conceptoAsiento, cuenta: '1.1.03 Insumos y Existencias', debe: 0, haber: totalNeto, referencia: ref });
+            } else {
+                asientos = [
+                    { concepto: conceptoAsiento, cuenta: '1.1.03 Insumos y Existencias', debe: totalNeto, haber: 0, referencia: ref }
+                ];
+                if (iva21 > 0) {
+                    asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.01 IVA Crédito Fiscal 21%', debe: iva21, haber: 0, referencia: ref });
+                }
+                if (iva105 > 0) {
+                    asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.03 IVA Crédito Fiscal 10.5%', debe: iva105, haber: 0, referencia: ref });
+                }
+                if (iibb > 0) {
+                    asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.02 Percepciones IIBB A Pagar', debe: iibb, haber: 0, referencia: ref });
+                }
+                asientos.push({ concepto: conceptoAsiento, cuenta: '2.1.01 Proveedores Varios', debe: 0, haber: totalFactura, referencia: ref });
             }
-            if (iva105 > 0) {
-                asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.03 IVA Crédito Fiscal 10.5%', debe: iva105, haber: 0, referencia: ref });
-            }
-            if (iibb > 0) {
-                asientos.push({ concepto: conceptoAsiento, cuenta: '1.2.02 Percepciones IIBB A Pagar', debe: iibb, haber: 0, referencia: ref });
-            }
-
-            asientos.push({ concepto: conceptoAsiento, cuenta: '2.1.01 Proveedores Varios', debe: 0, haber: totalFactura, referencia: ref });
 
             let payload = {
                 cuit: cuit,
@@ -1132,13 +1179,13 @@
                 const result = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(result.detail || "Error al registrar la factura en el servidor.");
+                    throw new Error(result.detail || "Error al registrar el comprobante en el servidor.");
                 }
 
-                alert(`✅ ¡Factura guardada y contabilizada centralizadamente en FastAPI!\n\nOperador: ${usuario}`);
+                alert(`¡${esNc ? 'Nota de Crédito' : 'Factura'} guardada!\n\nOperador: ${usuario}`);
                 limpiarFormularioFactura();
             } catch (e) {
-                alert("🚨 Error de guardado: " + e.message);
+                alert("Error de guardado: " + e.message);
             }
         }
 

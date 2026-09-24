@@ -48,6 +48,10 @@ PLAN_CUENTAS_BASE = [
     ("1.1.01", "Caja y Bancos", "Activo"),
     ("1.1.02", "Cuentas a Cobrar / Créditos", "Activo"),
     ("1.1.03", "Inversiones Temporarias (FCI)", "Activo"),
+    ("1.1.04", "Insumos y Existencias", "Activo"),
+    ("1.2.01", "IVA Crédito Fiscal 21%", "Activo"),
+    ("1.2.02", "Percepciones IIBB", "Activo"),
+    ("1.2.03", "IVA Crédito Fiscal 10.5%", "Activo"),
     ("2.1.01", "Proveedores Varios", "Pasivo"),
     ("2.1.02", "Deudas Financieras", "Pasivo"),
     ("2.1.03", "Cargas Fiscales y Sociales", "Pasivo"),
@@ -147,6 +151,211 @@ def _id_cuenta(cursor, codigo: str) -> int:
     if not row:
         raise ValueError(f"Cuenta contable inexistente: {codigo}")
     return int(row["id"] if isinstance(row, sqlite3.Row) else row[0])
+
+
+def _asegurar_cuenta(cursor, codigo: str, nombre: str, tipo: str = "Activo") -> int:
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO plan_de_cuentas (codigo_cuenta, nombre_cuenta, tipo_cuenta)
+        VALUES (?, ?, ?);
+        """,
+        (codigo, nombre, tipo),
+    )
+    return _id_cuenta(cursor, codigo)
+
+
+def _fecha_iso_contable(fecha: str) -> str:
+    """Acepta YYYY-MM-DD o DD/MM/AAAA → ISO."""
+    f = (fecha or "").strip()
+    if len(f) >= 10 and f[2] == "/" and f[5] == "/":
+        d, m, y = f[:10].split("/")
+        return f"{y}-{m}-{d}"
+    return f[:10]
+
+
+def asiento_para_comprobante_compra(
+    cursor,
+    *,
+    fecha: str,
+    tipo_comprobante: str,
+    numero_comprobante: str,
+    cuit_proveedor: str,
+    neto: float,
+    iva: float = 0.0,
+    iva_21: float = 0.0,
+    iva_105: float = 0.0,
+    percepcion_iibb: float = 0.0,
+    total: float = 0.0,
+    es_nota_credito: bool = False,
+    empresa_id: int = 1,
+    origen_id: Optional[int] = None,
+) -> Optional[int]:
+    """
+    Asiento de factura/ND de compra, o el INVERSO para Nota de Crédito.
+
+    Factura/ND:
+      Debe  Insumos/Existencias (neto) + IVA CF + Perc. IIBB
+      Haber Proveedores (total)
+
+    Nota de Crédito (inverso — productos devueltos / crédito en cta cte):
+      Debe  Proveedores (total)
+      Haber Insumos/Existencias + IVA CF + Perc. IIBB
+    """
+    init_contabilidad(cursor)
+
+    # Proveedor S/P: solo gestión, sin partida oficial
+    if proveedor_omite_asiento_oficial(cursor, cuit_proveedor):
+        return None
+    # También por CUIT exacto
+    cuit_clean = "".join(ch for ch in str(cuit_proveedor or "") if ch.isdigit())
+    if cuit_clean:
+        cursor.execute(
+            "SELECT centro_costo FROM entidades WHERE REPLACE(cuit,'-','') = ? LIMIT 1;",
+            (cuit_clean,),
+        )
+        row = cursor.fetchone()
+        if row:
+            cc = (row["centro_costo"] if isinstance(row, sqlite3.Row) else row[0]) or "1"
+            if str(cc).strip().upper() in ("SP", "S/P"):
+                return None
+
+    neto = round(float(neto or 0), 2)
+    total = round(float(total or 0), 2)
+    iva = round(float(iva or 0), 2)
+    iibb = round(float(percepcion_iibb or 0), 2)
+    iva21 = round(float(iva_21 or 0), 2)
+    iva105 = round(float(iva_105 or 0), 2)
+    if iva21 <= 0 and iva105 <= 0 and iva > 0:
+        iva21 = iva  # si no discriminan, todo al 21%
+
+    if total <= 0 and neto <= 0:
+        return None
+
+    # Si total no viene, armarlo
+    if total <= 0:
+        total = round(neto + iva21 + iva105 + iibb, 2)
+
+    cta_insumos = _asegurar_cuenta(cursor, "1.1.04", "Insumos y Existencias", "Activo")
+    cta_iva21 = _asegurar_cuenta(cursor, "1.2.01", "IVA Crédito Fiscal 21%", "Activo")
+    cta_iibb = _asegurar_cuenta(cursor, "1.2.02", "Percepciones IIBB", "Activo")
+    cta_iva105 = _asegurar_cuenta(cursor, "1.2.03", "IVA Crédito Fiscal 10.5%", "Activo")
+    cta_prov = _asegurar_cuenta(cursor, "2.1.01", "Proveedores Varios", "Pasivo")
+
+    etiqueta = "Nota de Crédito" if es_nota_credito else "Factura/ND compra"
+    concepto = f"{etiqueta} {tipo_comprobante} {numero_comprobante}".strip()
+    fecha_iso = _fecha_iso_contable(fecha)
+
+    lineas: List[Dict[str, Any]] = []
+    if es_nota_credito:
+        # Inverso: Deudor Proveedores / Acreedor existencias e impuestos
+        lineas.append({"cuenta_id": cta_prov, "debe": total, "haber": 0, "concepto_linea": concepto})
+        if neto > 0:
+            lineas.append({"cuenta_id": cta_insumos, "debe": 0, "haber": neto, "concepto_linea": "Devolución insumos / gasto"})
+        if iva21 > 0:
+            lineas.append({"cuenta_id": cta_iva21, "debe": 0, "haber": iva21, "concepto_linea": "Reverso IVA CF 21%"})
+        if iva105 > 0:
+            lineas.append({"cuenta_id": cta_iva105, "debe": 0, "haber": iva105, "concepto_linea": "Reverso IVA CF 10.5%"})
+        if iibb > 0:
+            lineas.append({"cuenta_id": cta_iibb, "debe": 0, "haber": iibb, "concepto_linea": "Reverso Perc. IIBB"})
+    else:
+        if neto > 0:
+            lineas.append({"cuenta_id": cta_insumos, "debe": neto, "haber": 0, "concepto_linea": "Insumos / gasto"})
+        if iva21 > 0:
+            lineas.append({"cuenta_id": cta_iva21, "debe": iva21, "haber": 0, "concepto_linea": "IVA CF 21%"})
+        if iva105 > 0:
+            lineas.append({"cuenta_id": cta_iva105, "debe": iva105, "haber": 0, "concepto_linea": "IVA CF 10.5%"})
+        if iibb > 0:
+            lineas.append({"cuenta_id": cta_iibb, "debe": iibb, "haber": 0, "concepto_linea": "Perc. IIBB"})
+        lineas.append({"cuenta_id": cta_prov, "debe": 0, "haber": total, "concepto_linea": concepto})
+
+    # Ajuste de redondeo: diferencia a Proveedores
+    td = round(sum(float(l.get("debe") or 0) for l in lineas), 2)
+    th = round(sum(float(l.get("haber") or 0) for l in lineas), 2)
+    diff = round(td - th, 2)
+    if abs(diff) > 0.001 and abs(diff) <= 0.05:
+        if es_nota_credito:
+            # ajustar haber de insumos o debe de proveedores
+            lineas[0]["debe"] = round(float(lineas[0]["debe"]) - diff, 2)
+        else:
+            lineas[-1]["haber"] = round(float(lineas[-1]["haber"]) + diff, 2)
+
+    return crear_asiento(
+        cursor,
+        fecha=fecha_iso,
+        concepto=concepto,
+        lineas=lineas,
+        empresa_id=empresa_id,
+        origen_modulo="compras_nc" if es_nota_credito else "compras",
+        origen_id=origen_id,
+        referencia=f"{tipo_comprobante} {numero_comprobante}".strip(),
+        centro_costo="1",
+    )
+
+
+def asiento_para_factura_venta(
+    cursor,
+    fecha: str,
+    tipo_comprobante: str,
+    numero_comprobante: str,
+    cuit_cliente: str,
+    neto: float,
+    iva: float = 0.0,
+    percepcion_iibb: float = 0.0,
+    total: float = 0.0,
+    empresa_id: int = 1,
+    origen_id: Optional[int] = None,
+) -> Optional[int]:
+    """
+    Factura de venta (Silo Chico agente de percepción IIBB):
+      Debe  Clientes (total = neto + IVA + perc)
+      Haber Ventas (neto)
+      Haber IVA Débito Fiscal (iva)
+      Haber Percepciones IIBB a Pagar (perc)
+    """
+    init_contabilidad(cursor)
+    neto = round(float(neto or 0), 2)
+    iva = round(float(iva or 0), 2)
+    perc = round(float(percepcion_iibb or 0), 2)
+    total = round(float(total or 0), 2)
+    if total <= 0:
+        total = round(neto + iva + perc, 2)
+    if total <= 0:
+        return None
+
+    cta_cli = _asegurar_cuenta(cursor, "1.1.02", "Clientes", "Activo")
+    cta_vta = _asegurar_cuenta(cursor, "4.1.01", "Ventas", "Ingreso")
+    cta_iva = _asegurar_cuenta(cursor, "2.1.02", "IVA Débito Fiscal", "Pasivo")
+    cta_perc = _asegurar_cuenta(cursor, "2.1.05", "Percepciones IIBB a Pagar", "Pasivo")
+
+    concepto = f"Venta {tipo_comprobante} {numero_comprobante}".strip()
+    fecha_iso = _fecha_iso_contable(fecha)
+    lineas: List[Dict[str, Any]] = [
+        {"cuenta_id": cta_cli, "debe": total, "haber": 0, "concepto_linea": concepto},
+    ]
+    if neto > 0:
+        lineas.append({"cuenta_id": cta_vta, "debe": 0, "haber": neto, "concepto_linea": "Ventas"})
+    if iva > 0:
+        lineas.append({"cuenta_id": cta_iva, "debe": 0, "haber": iva, "concepto_linea": "IVA DF"})
+    if perc > 0:
+        lineas.append({"cuenta_id": cta_perc, "debe": 0, "haber": perc, "concepto_linea": "Perc. IIBB ventas"})
+
+    td = round(sum(float(l.get("debe") or 0) for l in lineas), 2)
+    th = round(sum(float(l.get("haber") or 0) for l in lineas), 2)
+    diff = round(td - th, 2)
+    if abs(diff) > 0.001 and abs(diff) <= 0.05:
+        lineas[0]["debe"] = round(float(lineas[0]["debe"]) - diff, 2)
+
+    return crear_asiento(
+        cursor,
+        fecha=fecha_iso,
+        concepto=concepto,
+        lineas=lineas,
+        empresa_id=empresa_id,
+        origen_modulo="ventas",
+        origen_id=origen_id,
+        referencia=f"{tipo_comprobante} {numero_comprobante}".strip(),
+        centro_costo="1",
+    )
 
 
 def asegurar_cuenta_banco(cursor, cuenta_bancaria: Dict[str, Any]) -> int:
@@ -283,6 +492,46 @@ def eliminar_cascada_movimiento_banco(cursor, id_mov: int) -> Dict[str, Any]:
         "movimientos_eliminados": [id_mov],
         "asiento_eliminado": None,
     }
+
+
+def asiento_para_alquiler(
+    cursor,
+    *,
+    fecha: str,
+    locador: str,
+    importe: float,
+    detalle: str,
+    empresa_id: int = 1,
+    origen_id: Optional[int] = None,
+) -> Optional[int]:
+    """
+    Liquidación / venta de cuota de alquiler.
+    Debe Alquileres, Haber Proveedores.
+    Arrendador S/P: no genera partida oficial.
+    """
+    init_contabilidad(cursor)
+    monto = round(float(importe or 0), 2)
+    if monto <= 0:
+        return None
+    if proveedor_omite_asiento_oficial(cursor, locador):
+        return None
+    cta_gasto = _asegurar_cuenta(cursor, "5.1.01", "Alquileres", "Resultado")
+    cta_prov = _asegurar_cuenta(cursor, "2.1.01", "Proveedores Varios", "Pasivo")
+    concepto = (detalle or f"Alquiler {locador}").strip()
+    return crear_asiento(
+        cursor,
+        fecha=_fecha_iso_contable(fecha),
+        concepto=concepto[:180],
+        lineas=[
+            {"cuenta_id": cta_gasto, "debe": monto, "haber": 0, "concepto_linea": concepto[:120]},
+            {"cuenta_id": cta_prov, "debe": 0, "haber": monto, "concepto_linea": locador[:120]},
+        ],
+        empresa_id=empresa_id,
+        origen_modulo="alquileres",
+        origen_id=origen_id,
+        referencia=locador[:80],
+        centro_costo="1",
+    )
 
 
 def proveedor_omite_asiento_oficial(cursor, proveedor: str) -> bool:
@@ -442,10 +691,10 @@ def asiento_para_movimiento_banco(
     ]
     if imp_chq > 0:
         lineas.append(
-            {"cuenta_id": cta_imp, "debe": imp_chq, "haber": 0, "concepto_linea": "Impuesto al cheque 6‰+6‰"}
+            {"cuenta_id": cta_imp, "debe": imp_chq, "haber": 0, "concepto_linea": "Impuesto débitos/créditos 6‰"}
         )
         lineas.append(
-            {"cuenta_id": cta_banco, "debe": 0, "haber": imp_chq, "concepto_linea": "Impuesto al cheque 6‰+6‰"}
+            {"cuenta_id": cta_banco, "debe": 0, "haber": imp_chq, "concepto_linea": "Impuesto débitos/créditos 6‰"}
         )
 
     return crear_asiento(

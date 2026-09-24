@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -21,16 +21,18 @@
         .rotacion-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #065f46; font-size: 12px; font-weight: 600; margin-right: 4px; }
         table.table td, table.table th { vertical-align: middle; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
 <div class="container my-4" style="max-width: 1180px;">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
         <div>
-            <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Márgenes brutos · Campaña</small></h4>
-            <p class="hint mb-0">1) Cargar campos y lotes → 2) Contratos de arrendamiento → 3) Planificar con antecesor y rotación.</p>
+            <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Márgenes brutos - Campaña</small></h4>
+            <p class="hint mb-0">1) Cargar campos y lotes | 2) Contratos de arrendamiento | 3) Planificar con antecesor y rotación.</p>
         </div>
-        <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">← Dashboard</a>
+        <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">Dashboard</a>
     </div>
 
     <ul class="nav nav-pills gap-1 mb-3" id="tabsAgro">
@@ -71,7 +73,7 @@
                         </tr>
                     </thead>
                     <tbody id="tablaCamposBody">
-                        <tr><td colspan="7" class="text-center text-muted py-4">Cargando…</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted py-4">Cargando...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -90,7 +92,7 @@
                     <button class="btn btn-outline-dark btn-sm fw-bold w-100" onclick="abrirModalCampania()">+ Nueva campaña</button>
                 </div>
                 <div class="col-md-3">
-                    <button class="btn btn-teal btn-sm fw-bold w-100" style="background:#0f766e;color:#fff;" onclick="generarPlan()">Generar plan (antecesor → rotación)</button>
+                    <button class="btn btn-teal btn-sm fw-bold w-100" style="background:#0f766e;color:#fff;" onclick="generarPlan()">Generar plan (antecesor > rotación)</button>
                 </div>
                 <div class="col-md-3">
                     <button class="btn btn-dark btn-sm fw-bold w-100" onclick="guardarPlan()">Guardar cambios manuales</button>
@@ -160,12 +162,12 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small fw-bold">Referencia / dirección</label>
-                        <input id="campoDir" class="form-control" placeholder="Paraje, partido…">
+                        <input id="campoDir" class="form-control" placeholder="Paraje, partido...">
                     </div>
                 </div>
 
                 <div id="boxArrendador" class="border rounded p-3 mt-3 bg-warning-subtle" style="display:none;">
-                    <h6 class="fw-bold">Arrendador (pasa a proveedor · propietario de inmueble → SICORE 032)</h6>
+                    <h6 class="fw-bold">Arrendador (pasa a proveedor - propietario de inmueble / SICORE 032)</h6>
                     <p class="hint mb-2">Al guardarlo queda como proveedor con régimen <strong>032</strong> (RG 830 / anexo) para alquileres de inmuebles.</p>
                     <div class="row g-2">
                         <div class="col-md-3"><label class="small fw-bold">CUIT *</label><input id="arrCuit" class="form-control font-mono" maxlength="13"></div>
@@ -191,17 +193,17 @@
                         </div>
                         <div class="col-md-2" id="divKilosHa"><label class="small fw-bold">Kg / ha</label><input type="number" step="0.01" id="arrKgHa" class="form-control font-mono" value="0"></div>
                         <div class="col-md-2" id="divPctBase"><label class="small fw-bold">% base titular</label><input type="number" step="0.01" id="arrPct" class="form-control font-mono" value="25"></div>
-                        <div class="col-md-2" id="divMonto" style="display:none;"><label class="small fw-bold">Monto $</label><input type="number" step="0.01" id="arrMonto" class="form-control font-mono" value="0"></div>
+                        <div class="col-md-2" id="divMonto" style="display:none;"><label class="small fw-bold">Monto $</label><input type="text" id="arrMonto" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00"></div>
                     </div>
                     <div id="boxEscalas" class="mt-3" style="display:none;">
                         <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="small fw-bold">Escalas por rendimiento (tn/ha → % titular) — personalizable</span>
+                            <span class="small fw-bold">Escalas por rendimiento (tn/ha > % titular) - personalizable</span>
                             <button type="button" class="btn btn-outline-dark btn-sm py-0" onclick="agregarEscala()">+ Escala</button>
                         </div>
                         <table class="table table-sm mb-0"><thead><tr><th>tn/ha</th><th>%</th><th></th></tr></thead>
                             <tbody id="tbodyEscalas"></tbody>
                         </table>
-                        <p class="hint mb-0 mt-1">Ej: 2,5 tn → 25% · 3,0 tn → 28% · 4,0 tn → 30%</p>
+                        <p class="hint mb-0 mt-1">Ej: 2,5 tn > 25% | 3,0 tn > 28% | 4,0 tn > 30%</p>
                     </div>
                 </div>
 
@@ -248,7 +250,7 @@
             <div class="modal-body">
                 <label class="form-label small fw-bold">Código (ej. 26-27)</label>
                 <input id="campCodigo" class="form-control mb-2 font-mono" placeholder="26-27">
-                <p class="hint mb-2">Últimos 2 dígitos de cada año: junio 2026 → mayo 2027 = <strong>26-27</strong>.</p>
+                <p class="hint mb-2">Últimos 2 dígitos de cada año: junio 2026 > mayo 2027 = <strong>26-27</strong>.</p>
                 <label class="form-label small fw-bold">Nombre</label>
                 <input id="campNombre" class="form-control" placeholder="Campaña 26-27">
             </div>
@@ -264,7 +266,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const CULTIVOS = ['Trigo', 'Soja 2ª', 'Maíz', 'Soja 1ª'];
-let mapCampo = null, markerCampo = null, markerLote = null;
+let mapCampo = null, markerCampo = null;
+let markersLotes = [];
 let loteFilaActiva = null;
 let planCache = [];
 let cultivosOptsHtml = CULTIVOS.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -299,8 +302,8 @@ async function cargarCampos() {
             <td class="fw-bold">${c.nombre}</td>
             <td class="text-end font-mono">${Number(c.superficie_total||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
             <td class="text-center">${c.cant_lotes||0}</td>
-            <td class="small">${c.tipo==='arrendado' ? (c.arrendador_razon || c.arrendador_cuit || '—') : '—'}</td>
-            <td class="text-center">${c.lat != null ? '📍' : '—'}</td>
+            <td class="small">${c.tipo==='arrendado' ? (c.arrendador_razon || c.arrendador_cuit || ' - ') : ' - '}</td>
+            <td class="text-center">${c.lat != null ? 'Sí' : ' - '}</td>
             <td class="text-center">
                 <button class="btn btn-outline-dark btn-sm py-0" onclick="verCampo(${c.id})">Ver / editar</button>
             </td>
@@ -367,10 +370,70 @@ function agregarFilaLote(data) {
         <td><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-has" value="${data?.superficie_base||0}"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lat" value="${data?.lat??''}"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lng" value="${data?.lng??''}"></td>
-        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove()">×</button></td>`;
-    tr.addEventListener('focusin', () => { loteFilaActiva = tr; });
+        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="quitarFilaLote(this)">×</button></td>`;
+    tr.addEventListener('focusin', () => resaltarLote(tr));
+    tr.querySelectorAll('.lote-lat, .lote-lng, .lote-nom, .lote-cod').forEach(inp => {
+        inp.addEventListener('change', () => refrescarMarcadoresLotes(false));
+    });
     document.getElementById('tbodyLotesNuevos').appendChild(tr);
+}
+
+function quitarFilaLote(btn) {
+    const tr = btn.closest('tr');
+    if (loteFilaActiva === tr) loteFilaActiva = null;
+    tr.remove();
+    refrescarMarcadoresLotes(false);
+}
+
+function iconoLote(activo, etiqueta) {
+    const bg = activo ? '#b91c1c' : '#1d4ed8';
+    const txt = String(etiqueta || 'Lote').slice(0, 6);
+    return L.divIcon({
+        className: '',
+        html: `<div style="transform:${activo ? 'scale(1.2)' : 'scale(1)'};transform-origin:bottom center;background:${bg};color:#fff;border:2px solid #fff;border-radius:10px 10px 10px 2px;padding:1px 6px;font:700 11px/16px system-ui,sans-serif;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.4)">${txt}</div>`,
+        iconSize: [52, 22],
+        iconAnchor: [8, 22],
+    });
+}
+
+function resaltarLote(tr) {
     loteFilaActiva = tr;
+    document.querySelectorAll('#tbodyLotesNuevos tr').forEach(r => {
+        r.style.outline = r === tr ? '2px solid #b91c1c' : '';
+    });
+    refrescarMarcadoresLotes(true);
+}
+
+function refrescarMarcadoresLotes(enfocar) {
+    if (!mapCampo) return;
+    markersLotes.forEach(m => mapCampo.removeLayer(m));
+    markersLotes = [];
+    const pts = [];
+    document.querySelectorAll('#tbodyLotesNuevos tr').forEach(tr => {
+        const lat = parseFloat(tr.querySelector('.lote-lat')?.value);
+        const lng = parseFloat(tr.querySelector('.lote-lng')?.value);
+        if (!isFinite(lat) || !isFinite(lng)) return;
+        const nom = (tr.querySelector('.lote-cod')?.value || tr.querySelector('.lote-nom')?.value || 'Lote').trim();
+        const activo = tr === loteFilaActiva;
+        const m = L.marker([lat, lng], {
+            title: nom,
+            zIndexOffset: activo ? 1000 : 0,
+            icon: iconoLote(activo, nom),
+        }).addTo(mapCampo);
+        m.bindTooltip(nom, { permanent: activo, direction: 'top', offset: [12, -18] });
+        markersLotes.push(m);
+        pts.push([lat, lng]);
+        tr._marker = m;
+    });
+    if (enfocar && loteFilaActiva) {
+        const lat = parseFloat(loteFilaActiva.querySelector('.lote-lat')?.value);
+        const lng = parseFloat(loteFilaActiva.querySelector('.lote-lng')?.value);
+        if (isFinite(lat) && isFinite(lng)) mapCampo.panTo([lat, lng]);
+    } else if (pts.length > 1) {
+        mapCampo.fitBounds(pts, { padding: [28, 28], maxZoom: 16 });
+    } else if (pts.length === 1) {
+        mapCampo.setView(pts[0], 15);
+    }
 }
 
 function addMapBaseLayers(map, defaultSatelite = true) {
@@ -379,7 +442,7 @@ function addMapBaseLayers(map, defaultSatelite = true) {
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         {
             maxZoom: 19,
-            attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics',
+            attribution: 'Tiles © Esri - Source: Esri, Maxar, Earthstar Geographics',
         }
     );
     const calles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -417,8 +480,7 @@ function initMaps() {
             if (loteFilaActiva && document.body.contains(loteFilaActiva)) {
                 loteFilaActiva.querySelector('.lote-lat').value = lat;
                 loteFilaActiva.querySelector('.lote-lng').value = lng;
-                if (markerLote) markerLote.setLatLng(e.latlng);
-                else markerLote = L.marker(e.latlng, { title: 'Lote' }).addTo(mapCampo);
+                refrescarMarcadoresLotes(false);
             } else {
                 document.getElementById('campoLat').value = lat;
                 document.getElementById('campoLng').value = lng;
@@ -483,7 +545,7 @@ async function guardarCampo() {
             grano: document.getElementById('arrGrano').value,
             kilos_por_ha: parseFloat(document.getElementById('arrKgHa').value || 0),
             porcentaje_base: parseFloat(document.getElementById('arrPct').value || 0),
-            monto_fijo: parseFloat(document.getElementById('arrMonto').value || 0),
+            monto_fijo: CampoMoney.parse(document.getElementById('arrMonto').value),
             escalas: modalidad === 'aparceria' ? escalas : []
         };
     }
@@ -525,7 +587,7 @@ async function verCampo(id) {
             document.getElementById('arrGrano').value = ct.grano || 'Soja';
             document.getElementById('arrKgHa').value = ct.kilos_por_ha || 0;
             document.getElementById('arrPct').value = ct.porcentaje_base || 0;
-            document.getElementById('arrMonto').value = ct.monto_fijo || 0;
+            document.getElementById('arrMonto').value = CampoMoney.format(ct.monto_fijo || 0);
             document.getElementById('tbodyEscalas').innerHTML = '';
             (ct.escalas || []).forEach(e => agregarEscala(e.rendimiento_tn_ha, e.porcentaje));
             toggleEscalas();
@@ -535,10 +597,11 @@ async function verCampo(id) {
         initMaps();
         if (c.lat != null && c.lng != null) {
             const ll = [c.lat, c.lng];
-            mapCampo.setView(ll, 13);
             if (markerCampo) markerCampo.setLatLng(ll);
-            else markerCampo = L.marker(ll).addTo(mapCampo);
+            else markerCampo = L.marker(ll, { title: 'Campo', opacity: 0.55 }).addTo(mapCampo);
         }
+        loteFilaActiva = null;
+        refrescarMarcadoresLotes(false);
     }, 350);
 }
 
@@ -547,15 +610,15 @@ async function cargarCampanias() {
     const rows = await res.json();
     const sel = document.getElementById('selectCampania');
     if (!rows.length) {
-        sel.innerHTML = '<option value="">Sin campañas — creá una</option>';
+        sel.innerHTML = '<option value="">Sin campañas - creá una</option>';
         return;
     }
-    sel.innerHTML = rows.map(c => `<option value="${c.id}" ${c.activa? 'selected':''}>Campaña ${c.codigo}${c.activa?' ★':''}</option>`).join('');
+    sel.innerHTML = rows.map(c => `<option value="${c.id}" ${c.activa? 'selected':''}>Campaña ${c.codigo}${c.activa ? ' (activa)':''}</option>`).join('');
     await cargarPlan();
 }
 
 function abrirModalCampania() {
-    // Campaña agrícola: jun/AAAA–may/AAAA+1 → código AA-BB (ej. 26-27)
+    // Campaña agrícola: jun/AAAA - may/AAAA+1 → código AA-BB (ej. 26-27)
     const now = new Date();
     const anioInicio = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1; // mes 5 = junio
     const a = String(anioInicio % 100).padStart(2, '0');
@@ -620,7 +683,7 @@ async function cargarPlan() {
     const res = await fetch(`/api/agro/campanias/${id}/plan`);
     planCache = await res.json();
     if (!planCache.length) {
-        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">Sin plan. Usá “Generar plan” (o cargá antecesores a mano abajo tras generar).</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">Sin plan. Usá "Generar plan" (o cargá antecesores a mano abajo tras generar).</td></tr>`;
         return;
     }
     tb.innerHTML = planCache.map((p, idx) => `
@@ -628,9 +691,9 @@ async function cargarPlan() {
             <td>${p.campo_nombre} <span class="badge ${p.campo_tipo==='propio'?'badge-propio':'badge-arrendado'}">${p.campo_tipo}</span></td>
             <td class="fw-bold">${p.lote_nombre}</td>
             <td class="text-end"><input type="number" step="0.01" class="form-control form-control-sm font-mono plan-has" value="${p.superficie||0}" style="width:90px;margin-left:auto;"></td>
-            <td><select class="form-select form-select-sm plan-ant" onchange="onAntecesorChange(this)">${cultivosOptsHtml}<option value="">—</option></select></td>
-            <td class="text-success small fw-bold plan-sug">${p.cultivo_sugerido||'—'}</td>
-            <td><select class="form-select form-select-sm plan-plan">${cultivosOptsHtml}<option value="">—</option></select></td>
+            <td><select class="form-select form-select-sm plan-ant" onchange="onAntecesorChange(this)">${cultivosOptsHtml}<option value=""> - </option></select></td>
+            <td class="text-success small fw-bold plan-sug">${p.cultivo_sugerido||' - '}</td>
+            <td><select class="form-select form-select-sm plan-plan">${cultivosOptsHtml}<option value=""> - </option></select></td>
             <td><input class="form-control form-control-sm plan-notas" value="${(p.notas||'').replace(/"/g,'&quot;')}"></td>
         </tr>
     `).join('');
@@ -647,7 +710,7 @@ async function onAntecesorChange(sel) {
     const res = await fetch('/api/agro/rotacion?antecesor=' + encodeURIComponent(ant));
     const d = await res.json();
     const tr = sel.closest('tr');
-    tr.querySelector('.plan-sug').innerText = d.sugerido || '—';
+    tr.querySelector('.plan-sug').innerText = d.sugerido || ' - ';
     if (!tr.querySelector('.plan-plan').dataset.manual) {
         tr.querySelector('.plan-plan').value = d.sugerido || '';
     }
@@ -680,7 +743,7 @@ async function guardarPlan() {
 }
 
 function initRotacionDemo() {
-    document.getElementById('chipsRotacion').innerHTML = CULTIVOS.map(c => `<span class="rotacion-chip">${c}</span>`).join(' → ');
+    document.getElementById('chipsRotacion').innerHTML = CULTIVOS.map(c => `<span class="rotacion-chip">${c}</span>`).join(' | ');
     const sel = document.getElementById('demoAntecesor');
     sel.innerHTML = CULTIVOS.map(c => `<option value="${c}">${c}</option>`).join('');
     demoRotacion();

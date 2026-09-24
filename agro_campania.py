@@ -257,6 +257,82 @@ def asegurar_campania_activa(cursor, empresa_id: int, codigo: str, nombre: Optio
     return int(cursor.lastrowid)
 
 
+def _cuit_provisorio(cursor, razon: str) -> str:
+    """CUIT interno 99… para un arrendador que todavía no tiene CUIT fiscal."""
+    import hashlib
+    base = int(hashlib.md5(razon.upper().strip().encode("utf-8")).hexdigest()[:8], 16) % 100_000_000
+    for salto in range(20):
+        cuerpo = f"99{(base + salto) % 100_000_000:08d}0"
+        cursor.execute("SELECT 1 FROM entidades WHERE REPLACE(cuit,'-','') = ?;", (cuerpo,))
+        if not cursor.fetchone():
+            return cuerpo
+    raise RuntimeError("No hay CUIT provisorio libre")
+
+
+def alta_locadores_faltantes(cursor) -> int:
+    """
+    Da de alta en el padrón, como proveedor arrendador, cada locador de contratos
+    o de la CC de kilos que no tenga una entidad con el mismo nombre.
+    El S/P queda con centro SP. El CUIT 99… es provisorio hasta cargarlo en el padrón.
+    """
+    cursor.execute("PRAGMA table_info(entidades);")
+    cols = {r[1] for r in cursor.fetchall()}
+    for col, ddl in (
+        ("regimen_sicore", "ALTER TABLE entidades ADD COLUMN regimen_sicore TEXT DEFAULT '';"),
+        ("es_propietario_inmueble", "ALTER TABLE entidades ADD COLUMN es_propietario_inmueble INTEGER DEFAULT 0;"),
+        ("es_proveedor", "ALTER TABLE entidades ADD COLUMN es_proveedor INTEGER DEFAULT 1;"),
+        ("es_cuenta_ajuste", "ALTER TABLE entidades ADD COLUMN es_cuenta_ajuste INTEGER DEFAULT 0;"),
+        ("centro_costo", "ALTER TABLE entidades ADD COLUMN centro_costo TEXT DEFAULT '1';"),
+    ):
+        if col not in cols:
+            cursor.execute(ddl)
+    def _clave(texto: str) -> str:
+        return " ".join((texto or "").upper().replace(".", " ").split())
+
+    nombres = set()
+    cursor.execute("SELECT razon_social, nombre_fantasia FROM entidades;")
+    for row in cursor.fetchall():
+        for campo_n in ("razon_social", "nombre_fantasia"):
+            val = _clave(row[campo_n] or "")
+            if val:
+                nombres.add(val)
+    cursor.execute(
+        """
+        SELECT DISTINCT TRIM(nombre) AS nombre FROM (
+            SELECT locador AS nombre FROM contratos_alquileres WHERE TRIM(COALESCE(locador,''))<>''
+            UNION
+            SELECT locador FROM alquileres_cta_cte WHERE TRIM(COALESCE(locador,''))<>''
+            UNION
+            SELECT titular FROM campos_agro WHERE TRIM(COALESCE(titular,''))<>''
+        );
+        """
+    )
+    altas = 0
+    for row in cursor.fetchall():
+        nombre = (row["nombre"] or "").strip()
+        if not nombre or _clave(nombre) in nombres:
+            continue
+        if nombre.upper() in ("SILO CHICO",):
+            continue
+        if "/" in nombre.upper().replace("(S/P)", "").replace("S/P", ""):
+            continue
+        centro = "SP" if "(S/P)" in nombre.upper() or nombre.upper().endswith("S/P") else "1"
+        cuit = _cuit_provisorio(cursor, nombre)
+        cursor.execute(
+            """
+            INSERT INTO entidades (
+                cuit, razon_social, nombre_fantasia, condicion_iva, localidad,
+                es_cuenta_ajuste, es_cuenta_bancaria, centro_costo,
+                es_proveedor, es_cliente, es_propietario_inmueble, regimen_sicore
+            ) VALUES (?, ?, ?, '', '', 0, 0, ?, 1, 0, 1, '032');
+            """,
+            (cuit, nombre, nombre, centro),
+        )
+        nombres.add(_clave(nombre))
+        altas += 1
+    return altas
+
+
 def sincronizar_arrendador_proveedor(cursor, campo: Dict[str, Any], empresa_id: int = 1) -> Optional[str]:
     """
     Alta/actualiza el arrendador en entidades (proveedor para pagos).
@@ -327,8 +403,8 @@ def sincronizar_arrendador_proveedor(cursor, campo: Dict[str, Any], empresa_id: 
         return str(existe["cuit"])
 
     if len(cuit) < 10:
-        # Sin CUIT válido no damos de alta (evitar fantasmas); el usuario completa CUIT en padrón.
-        return None
+        cuit = _cuit_provisorio(cursor, razon)
+        cuit_fmt = cuit
 
     cursor.execute(
         """

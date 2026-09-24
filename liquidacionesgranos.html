@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,8 @@
     <title>CAmpo+ - Liquidación Primaria de Granos (LPG)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/campoplus-auth.js"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
     <style>
         .lbl { display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:2px; }
         .inp { width:100%; border:1px solid #cbd5e1; border-radius:6px; padding:6px 8px; font-size:14px; background:#fff; }
@@ -16,6 +17,7 @@
         .sec { border:1px solid #e2e8f0; border-radius:8px; padding:12px; background:#fff; }
         .sec-h { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#64748b; margin-bottom:8px; }
     </style>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 
@@ -23,12 +25,12 @@
         <div class="flex justify-between items-start mb-4 border-b pb-3 gap-3 flex-wrap">
             <div>
                 <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Ingreso liquidaciones cereales (LPG)</span></h2>
-                <p id="estado-db" class="text-xs text-slate-500 mt-1">% automáticos como Access · comprador = entidades cliente</p>
+                <p id="estado-db" class="text-xs text-slate-500 mt-1">% automáticos como Access - comprador = entidades cliente</p>
             </div>
             <div class="flex gap-2">
                 <button type="button" onclick="limpiarForm()" class="bg-slate-100 text-slate-700 px-3 py-2 rounded-md text-sm font-medium border">Limpiar</button>
                 <a href="Gestion.html" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 rounded-md text-sm font-medium">Gestión</a>
-                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">← Dashboard</a>
+                <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">Dashboard</a>
             </div>
         </div>
 
@@ -38,7 +40,7 @@
                 <div class="md:col-span-2">
                     <label class="lbl">Comprador (cliente) *</label>
                     <select id="entidad" class="inp" required>
-                        <option value="">— Solo entidades marcadas como cliente —</option>
+                        <option value=""> -  Solo entidades marcadas como cliente - </option>
                     </select>
                 </div>
                 <div>
@@ -64,7 +66,7 @@
                 <div>
                     <label class="lbl">Grano</label>
                     <select id="selectGrano" class="inp text-amber-900 font-semibold" onchange="sugerirCtaGrano()">
-                        <option value="">— Seleccionar —</option>
+                        <option value=""> -  Seleccionar - </option>
                     </select>
                 </div>
                 <div>
@@ -81,7 +83,7 @@
                 </div>
                 <div>
                     <label class="lbl">Precio referencia ($/tn)</label>
-                    <input id="precioRef" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                    <input id="precioRef" type="text" step="0.01" value="0" class="inp-money money-input" oninput="recalc()" data-money inputmode="decimal">
                 </div>
                 <div>
                     <label class="lbl">Cert. Dep. referencia</label>
@@ -99,19 +101,19 @@
                     </div>
                     <div>
                         <label class="lbl">Precio operación ($/tn)</label>
-                        <input id="precioTn" type="number" step="0.01" value="0" class="inp-money font-bold text-amber-900" oninput="recalc()">
+                        <input id="precioTn" type="text" step="0.01" value="0" class="inp-money font-bold text-amber-900 money-input" oninput="recalc()" data-money inputmode="decimal">
                     </div>
                     <div>
                         <label class="lbl">Subtotal</label>
-                        <input id="subtotal" type="text" class="inp-money inp-ro font-bold" readonly>
+                        <input id="subtotal" type="text" class="inp-money inp-ro font-bold money-input" readonly data-money inputmode="decimal">
                     </div>
                     <div>
                         <label class="lbl">IVA 10,5%</label>
-                        <input id="ivaOp" type="text" class="inp-money inp-ro" readonly>
+                        <input id="ivaOp" type="text" class="inp-money inp-ro money-input" readonly data-money inputmode="decimal">
                     </div>
                     <div>
                         <label class="lbl">Operación c/IVA</label>
-                        <input id="opCiva" type="text" class="inp-money inp-ro font-bold" readonly>
+                        <input id="opCiva" type="text" class="inp-money inp-ro font-bold money-input" readonly data-money inputmode="decimal">
                     </div>
                 </div>
             </div>
@@ -128,23 +130,23 @@
                         <div class="flex gap-1 items-center">
                             <input id="pctComision" type="number" step="0.01" value="2.5" class="inp-pct" oninput="recalc()" title="%">
                             <span class="text-xs text-slate-500">%</span>
-                            <input id="gtosAdm" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('gtosAdm');recalc()">
+                            <input id="gtosAdm" type="text" step="0.01" value="0" class="inp-money flex-1 money-input" oninput="markManual('gtosAdm');recalc()" data-money inputmode="decimal">
                         </div>
                     </div>
                     <div>
                         <label class="lbl">Fletes</label>
-                        <input id="fletes" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                        <input id="fletes" type="text" step="0.01" value="0" class="inp-money money-input" oninput="recalc()" data-money inputmode="decimal">
                     </div>
                     <div>
                         <label class="lbl">Gtos almacenamiento</label>
-                        <input id="gtosAlmacen" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                        <input id="gtosAlmacen" type="text" step="0.01" value="0" class="inp-money money-input" oninput="recalc()" data-money inputmode="decimal">
                     </div>
                     <div>
                         <label class="lbl">IVA (fletes y comisiones)</label>
                         <div class="flex gap-1 items-center">
                             <input id="pctIvaServ" type="number" step="0.01" value="10.5" class="inp-pct" oninput="recalc()">
                             <span class="text-xs text-slate-500">%</span>
-                            <input id="ivaServ" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('ivaServ');recalc()">
+                            <input id="ivaServ" type="text" step="0.01" value="0" class="inp-money flex-1 money-input" oninput="markManual('ivaServ');recalc()" data-money inputmode="decimal">
                         </div>
                     </div>
                 </div>
@@ -162,7 +164,7 @@
                         <div class="flex gap-1 items-center">
                             <input id="pctIibb" type="number" step="0.01" value="0.8" class="inp-pct" oninput="recalc()">
                             <span class="text-xs">%</span>
-                            <input id="retIibb" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('retIibb');recalc()">
+                            <input id="retIibb" type="text" step="0.01" value="0" class="inp-money flex-1 money-input" oninput="markManual('retIibb');recalc()" data-money inputmode="decimal">
                         </div>
                     </div>
                     <div>
@@ -170,7 +172,7 @@
                         <div class="flex gap-1 items-center">
                             <input id="pctSellados" type="number" step="0.01" value="0.9" class="inp-pct" oninput="recalc()">
                             <span class="text-xs">%</span>
-                            <input id="sellados" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('sellados');recalc()">
+                            <input id="sellados" type="text" step="0.01" value="0" class="inp-money flex-1 money-input" oninput="markManual('sellados');recalc()" data-money inputmode="decimal">
                         </div>
                     </div>
                     <div>
@@ -178,7 +180,7 @@
                         <div class="flex gap-1 items-center">
                             <input id="pctGan" type="number" step="0.01" value="0" class="inp-pct" oninput="recalc()">
                             <span class="text-xs">%</span>
-                            <input id="retGan" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('retGan');recalc()">
+                            <input id="retGan" type="text" step="0.01" value="0" class="inp-money flex-1 money-input" oninput="markManual('retGan');recalc()" data-money inputmode="decimal">
                         </div>
                     </div>
                     <div>
@@ -186,12 +188,12 @@
                         <div class="flex gap-1 items-center">
                             <input id="pctRetIva" type="number" step="0.01" value="5" class="inp-pct" oninput="recalc()">
                             <span class="text-xs">%</span>
-                            <input id="retIva" type="number" step="0.01" value="0" class="inp-money flex-1" oninput="markManual('retIva');recalc()">
+                            <input id="retIva" type="text" step="0.01" value="0" class="inp-money flex-1 money-input" oninput="markManual('retIva');recalc()" data-money inputmode="decimal">
                         </div>
                     </div>
                     <div>
                         <label class="lbl">Otros</label>
-                        <input id="otrosRet" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                        <input id="otrosRet" type="text" step="0.01" value="0" class="inp-money money-input" oninput="recalc()" data-money inputmode="decimal">
                     </div>
                 </div>
             </div>
@@ -204,17 +206,17 @@
                 </div>
                 <div class="sec">
                     <label class="lbl">IVA RG 2300/2007</label>
-                    <input id="ivaRg2300" type="number" step="0.01" value="0" class="inp-money" oninput="recalc()">
+                    <input id="ivaRg2300" type="text" step="0.01" value="0" class="inp-money money-input" oninput="recalc()" data-money inputmode="decimal">
                 </div>
                 <div class="sec">
                     <label class="lbl">Pago según condiciones</label>
-                    <input id="pagoCond" type="number" step="0.01" value="0" class="inp-money font-bold" oninput="markManual('pagoCond')">
+                    <input id="pagoCond" type="text" step="0.01" value="0" class="inp-money font-bold money-input" oninput="markManual('pagoCond')" data-money inputmode="decimal">
                 </div>
             </div>
 
             <div class="sec">
                 <label class="lbl">Nota</label>
-                <textarea id="nota" rows="2" class="inp" placeholder="Observaciones de la liquidación…"></textarea>
+                <textarea id="nota" rows="2" class="inp" placeholder="Observaciones de la liquidación..."></textarea>
             </div>
 
             <!-- Certificados (detalle) -->
@@ -243,7 +245,7 @@
             <div class="border-2 border-emerald-200 rounded-lg p-4 bg-emerald-50/40">
                 <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
                     <div>
-                        <h3 class="text-md font-bold text-emerald-900">Imputación de cuentas — Ingresos (Gestión)</h3>
+                        <h3 class="text-md font-bold text-emerald-900">Imputación de cuentas - Ingresos (Gestión)</h3>
                         <p class="text-xs text-emerald-800/80">Por defecto se sugiere el <strong>subtotal</strong> de la operación (venta bruta sin IVA).</p>
                     </div>
                     <div class="flex gap-2">
@@ -279,17 +281,17 @@
         const manual = { gtosAdm: false, ivaServ: false, retIibb: false, sellados: false, retGan: false, retIva: false, pagoCond: false };
         let lastCalc = {};
 
-        function num(v) { const n = parseFloat(String(v).replace(',', '.')); return Number.isFinite(n) ? n : 0; }
+        function num(v) { return CampoMoney.parse(v); }
+        function setVal(id, v) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = CampoMoney.format(v);
+        }
         function fmt(n) { return '$ ' + num(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
         function esc(s) {
             return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
         function markManual(k) { manual[k] = true; }
-        function setVal(id, v) {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.value = (Math.round(v * 100) / 100).toFixed(2);
-        }
         function setRo(id, v) {
             const el = document.getElementById(id);
             if (el) el.value = fmt(v);
@@ -323,11 +325,11 @@
         }
 
         function impRow() {
-            const optsAct = '<option value="">— Actividad —</option>' +
+            const optsAct = '<option value=""> -  Actividad - </option>' +
                 actividades.map(a => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('');
             return `<tr class="imp">
                 <td class="p-1"><select class="i-act border rounded p-1.5 w-full text-sm" onchange="onActChange(this)">${optsAct}</select></td>
-                <td class="p-1"><select class="i-cta border rounded p-1.5 w-full text-sm"><option value="">— Cuenta ingreso —</option></select></td>
+                <td class="p-1"><select class="i-cta border rounded p-1.5 w-full text-sm"><option value=""> -  Cuenta ingreso - </option></select></td>
                 <td class="p-1"><input type="number" step="0.01" class="i-neto border rounded p-1.5 w-full text-right" placeholder="0" /></td>
                 <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove()">×</button></td>
             </tr>`;
@@ -338,7 +340,7 @@
             const tr = sel.closest('tr');
             const ctaSel = tr.querySelector('.i-cta');
             const actId = sel.value;
-            ctaSel.innerHTML = '<option value="">— Cuenta ingreso —</option>';
+            ctaSel.innerHTML = '<option value=""> -  Cuenta ingreso - </option>';
             if (!actId) return;
             let ctas = await fetch('/api/actividades/' + actId + '/cuentas?tipo=INGRESO').then(r => r.json());
             ctas.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
@@ -435,7 +437,7 @@
         async function cargarEntidades() {
             const rows = await fetch('/api/entidades?rol=cliente').then(r => r.ok ? r.json() : []);
             const sel = document.getElementById('entidad');
-            sel.innerHTML = '<option value="">— Solo entidades marcadas como cliente —</option>';
+            sel.innerHTML = '<option value=""> -  Solo entidades marcadas como cliente - </option>';
             rows.forEach(e => {
                 const o = document.createElement('option');
                 o.value = (e.cuit || '').replace(/\D/g, '');
@@ -444,7 +446,7 @@
                 sel.appendChild(o);
             });
             document.getElementById('estado-db').textContent =
-                `${rows.length} compradores (es_cliente) · % Access: comisión 2,5% · IIBB 0,8% · sellados 0,9% · ret IVA 5%`;
+                `${rows.length} compradores (es_cliente) - % Access: comisión 2,5% - IIBB 0,8% - sellados 0,9% - ret IVA 5%`;
             document.getElementById('estado-db').className = 'text-xs text-emerald-600 mt-1';
         }
 

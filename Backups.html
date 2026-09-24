@@ -1,11 +1,12 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAmpo+ - Panel de Backups y Respaldos</title>
     <script src="https://cdn.tailwindcss.com"></script>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 
@@ -17,7 +18,7 @@
                 <p class="text-xs text-slate-500 mt-1">Gestión de copias de seguridad locales y exportación de la base de datos.</p>
             </div>
             <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
-                ← Volver al Dashboard
+                Volver al Dashboard
             </a>
         </div>
 
@@ -48,8 +49,7 @@
                     <h3 class="text-lg font-bold text-slate-800 mb-2">Descargar Copia de Seguridad (Backup Local)</h3>
                     <p class="text-xs text-slate-600 mb-4">Genera un archivo JSON empaquetado en tiempo real con la información de entidades, retenciones, órdenes de pago, cuentas bancarias y configuración comercial.</p>
                 </div>
-                <button onclick="generarBackupJSON()" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center">
-                    ⬇ Descargar Backup Completo (.JSON)
+                <button onclick="generarBackupJSON()" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center">Descargar Backup Completo (.JSON)
                 </button>
             </div>
 
@@ -87,10 +87,10 @@
             <h3 class="text-lg font-bold text-slate-800 mb-2">Sincronizar actualización Access</h3>
             <p class="text-xs text-slate-600 mb-3">
                 Lee <code class="bg-white px-1 rounded">tablas/tablas actualizacion.xlsx</code> e importa
-                facturas, pagos (caja/cheques), movimientos bancarios y cartera — sin duplicar (Id Access).
+                facturas, pagos (caja/cheques), movimientos bancarios y cartera - sin duplicar (Id Access).
             </p>
             <button onclick="sincronizarAccess()" class="bg-amber-700 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-amber-800">
-                🔄 Importar actualización ahora
+                Importar actualización ahora
             </button>
             <pre id="syncAccessResult" class="mt-3 text-xs bg-white border rounded p-3 hidden max-h-48 overflow-auto"></pre>
         </div>
@@ -100,7 +100,7 @@
         async function sincronizarAccess() {
             const box = document.getElementById('syncAccessResult');
             box.classList.remove('hidden');
-            box.textContent = 'Sincronizando…';
+            box.textContent = 'Sincronizando...';
             try {
                 const res = await fetch('/api/access/sincronizar_actualizacion', { method: 'POST' });
                 const data = await res.json();
@@ -116,7 +116,7 @@
         async function importarTablasAgro(forzar) {
             const box = document.getElementById('importAgroLog');
             box.classList.remove('hidden');
-            box.textContent = forzar ? 'Reimportando (puede tardar 1-2 min)…' : 'Importando tablas agro…';
+            box.textContent = forzar ? 'Reimportando (puede tardar 1-2 min)...' : 'Importando tablas agro...';
             try {
                 const res = await fetch('/api/agro/importar_tablas?forzar=' + (forzar ? 1 : 0), { method: 'POST' });
                 const data = await res.json();
@@ -126,7 +126,7 @@
                 else alert('Importación agro OK');
             } catch (e) {
                 box.textContent = String(e);
-                alert('Servidor offline o timeout — probá correr: python importar_tablas_agro.py');
+                alert('Servidor offline o timeout - probá correr: python importar_tablas_agro.py');
             }
         }
 
@@ -167,10 +167,10 @@
                 document.getElementById('lblUltimoBackup').innerText = `Hoy, ${horaActual}`;
                 document.getElementById('lblHoraBackup').innerText = "Copia guardada localmente";
 
-                alert("✅ ¡Copia de seguridad completada y descargada exitosamente!");
+                alert("¡Copia de seguridad completada y descargada exitosamente!");
             } catch (err) {
                 console.error("Error al generar el backup:", err);
-                alert("🚨 Error al generar la copia de seguridad: " + err.message);
+                alert("Error al generar la copia de seguridad: " + err.message);
             }
         }
 
@@ -190,9 +190,9 @@
                     if (!parsed.datos || !parsed.version) {
                         throw new Error("El formato del archivo JSON no corresponde a un backup válido de CAmpo+.");
                     }
-                    alert(`✅ Archivo leído correctamente.\nVersión de backup: ${parsed.version}\nFecha: ${parsed.fecha_exportacion}\nValidación exitosa.`);
+                    alert(`Archivo leído correctamente.\nVersión de backup: ${parsed.version}\nFecha: ${parsed.fecha_exportacion}\nValidación exitosa.`);
                 } catch (err) {
-                    alert("🚨 Error al procesar el archivo de respaldo: " + err.message);
+                    alert("Error al procesar el archivo de respaldo: " + err.message);
                 }
             };
 

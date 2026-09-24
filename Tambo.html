@@ -5,17 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAmpo+ - Tambo</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans">
 <div class="max-w-6xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
     <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
         <div>
-            <h1 class="text-2xl font-bold text-slate-800">Tambo <span class="text-sm font-normal text-sky-700">Producción · Lactancias · Controles</span></h1>
+            <h1 class="text-2xl font-bold text-slate-800">Tambo <span class="text-sm font-normal text-sky-700">Producción - Lactancias - Controles</span></h1>
             <p class="text-xs text-slate-500 mt-1">Litros diarios, calidad (grasa/proteína/RCS), vacas en ordeño y eventos reproductivos vía Ganadería.</p>
         </div>
         <div class="flex gap-2">
-            <a href="Ganaderia.html" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-rose-800">← Ganadería</a>
+            <a href="Ganaderia.html" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-rose-800"><- Ganadería</a>
             <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
         </div>
     </div>
@@ -88,7 +89,7 @@
                         <button type="button" onclick="cargarVacas()" class="text-xs px-2 border rounded hover:bg-slate-50">Listar</button>
                     </div>
                     <select id="c_lista" class="mt-2 w-full border rounded p-2 text-sm" onchange="document.getElementById('c_animal').value=this.value">
-                        <option value="">— vacas de tambo —</option>
+                        <option value=""> -  vacas de tambo - </option>
                     </select>
                 </div>
                 <div>
@@ -168,23 +169,23 @@ async function cargarResumen() {
     document.getElementById('kpis').innerHTML = `
         <div class="bg-sky-50 border border-sky-200 rounded-lg p-3"><div class="text-xs font-bold text-sky-800 uppercase">Vacas tambo</div><div class="text-2xl font-extrabold">${r.vacas_tambo||0}</div></div>
         <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3"><div class="text-xs font-bold text-emerald-800 uppercase">En ordeño</div><div class="text-2xl font-extrabold">${r.en_ordeno||0}</div></div>
-        <div class="bg-white border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Último día</div><div class="text-2xl font-extrabold">${u.litros!=null?Number(u.litros).toFixed(0):'—'} <span class="text-sm font-normal">L</span></div><div class="text-xs text-slate-500">${esc(u.fecha||'')}</div></div>
+        <div class="bg-white border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Último día</div><div class="text-2xl font-extrabold">${u.litros!=null?Number(u.litros).toFixed(0):' - '} <span class="text-sm font-normal">L</span></div><div class="text-xs text-slate-500">${esc(u.fecha||'')}</div></div>
         <div class="bg-slate-50 border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Prom. 30d</div><div class="text-2xl font-extrabold">${Number(r.promedio_litros_30d||0).toFixed(0)} <span class="text-sm font-normal">L</span></div></div>`;
 }
 
 async function cargarProd() {
     const rows = await fetch('/api/tambo/produccion?limit=45').then(r => r.json());
     document.getElementById('tbodyProd').innerHTML = rows.map(p => {
-        const lv = p.vacas_ordenadas ? (Number(p.litros_total)/Number(p.vacas_ordenadas)).toFixed(1) : '—';
+        const lv = p.vacas_ordenadas ? (Number(p.litros_total)/Number(p.vacas_ordenadas)).toFixed(1) : ' - ';
         return `<tr class="hover:bg-slate-50">
             <td class="p-2 font-mono text-xs">${esc(p.fecha)}</td>
             <td class="p-2 text-center">${esc(p.turno)}</td>
             <td class="p-2 text-right font-semibold">${Number(p.litros_total||0).toFixed(0)}</td>
-            <td class="p-2 text-right">${p.vacas_ordenadas||'—'}</td>
+            <td class="p-2 text-right">${p.vacas_ordenadas||' - '}</td>
             <td class="p-2 text-right font-mono">${lv}</td>
-            <td class="p-2 text-right">${p.grasa_pct??'—'}</td>
-            <td class="p-2 text-right">${p.proteina_pct??'—'}</td>
-            <td class="p-2 text-right">${p.rcs??'—'}</td>
+            <td class="p-2 text-right">${p.grasa_pct??' - '}</td>
+            <td class="p-2 text-right">${p.proteina_pct??' - '}</td>
+            <td class="p-2 text-right">${p.rcs??' - '}</td>
             <td class="p-2 text-xs">${esc(p.usuario_registro||'')}</td>
         </tr>`;
     }).join('') || '<tr><td colspan="9" class="p-6 text-center text-slate-400">Sin producciones cargadas</td></tr>';
@@ -196,8 +197,8 @@ async function cargarVacas() {
         ? CampoPlusFirma.sortByLabel(rows || [], a => a.caravana_visual || a.nombre || String(a.id))
         : (rows || []).slice().sort((a,b) => String(a.caravana_visual||a.nombre||'').localeCompare(String(b.caravana_visual||b.nombre||''), 'es', {sensitivity:'base'}));
     const sel = document.getElementById('c_lista');
-    sel.innerHTML = '<option value="">— vacas de tambo —</option>' +
-        sorted.map(a => `<option value="${a.id}">${esc(a.caravana_visual||a.id)} · ${esc(a.nombre||'')}</option>`).join('');
+    sel.innerHTML = '<option value=""> -  vacas de tambo - </option>' +
+        sorted.map(a => `<option value="${a.id}">${esc(a.caravana_visual||a.id)} - ${esc(a.nombre||'')}</option>`).join('');
 }
 
 async function guardarProd(ev) {

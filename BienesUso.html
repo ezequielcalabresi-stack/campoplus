@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Bienes de Uso / Patrimonio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
+    <style>
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: #fff; }
+            .print-card { box-shadow: none !important; border: 1px solid #ccc !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+
+<div class="max-w-[1500px] mx-auto p-4 my-4 bg-white rounded-xl shadow-lg print-card">
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 mb-4 border-b pb-3">
+        <div>
+            <h2 class="text-xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Bienes de Uso / Patrimonio</span></h2>
+            <p class="text-xs text-slate-500 mt-1">Valor histórico (EECC en $) - Valor comercial en U$S (× tipo de cambio) - Amortización lineal</p>
+        </div>
+        <div class="flex flex-wrap gap-2 no-print">
+            <a href="Contabilidad.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-semibold hover:bg-slate-300"><- Contabilidad</a>
+            <a href="Index.html" class="bg-slate-100 text-slate-600 px-3 py-2 rounded-md text-sm font-semibold hover:bg-slate-200">Dashboard</a>
+            <button onclick="window.print()" class="bg-slate-800 text-white px-3 py-2 rounded-md text-sm font-bold">PDF / Imprimir</button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
+        <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg">
+            <span class="font-bold text-slate-600 uppercase block text-[10px]">Bienes activos</span>
+            <h3 id="kpiCant" class="text-lg font-extrabold mt-1">0</h3>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg">
+            <span class="font-bold text-blue-800 uppercase block text-[10px]">Valor histórico (EECC)</span>
+            <h3 id="kpiHist" class="text-lg font-extrabold text-blue-900 mt-1 font-mono">$ 0,00</h3>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
+            <span class="font-bold text-emerald-800 uppercase block text-[10px]">Valor comercial U$S</span>
+            <h3 id="kpiComUsd" class="text-lg font-extrabold text-emerald-900 mt-1 font-mono">U$S 0</h3>
+            <div class="text-[10px] text-emerald-700 mt-0.5" id="kpiComArs">≡ $ 0,00</div>
+        </div>
+        <div class="bg-violet-50 border border-violet-200 p-3 rounded-lg">
+            <span class="font-bold text-violet-800 uppercase block text-[10px]">Valor neto contable</span>
+            <h3 id="kpiVnc" class="text-lg font-extrabold text-violet-900 mt-1 font-mono">$ 0,00</h3>
+        </div>
+    </div>
+
+    <div id="resumenCats" class="flex flex-wrap gap-2 mb-3 text-[11px] no-print"></div>
+
+    <div class="flex flex-wrap gap-2 items-end mb-3 no-print text-xs">
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">T/C comercial $/U$S</label>
+            <input type="text" id="tipoCambioCom" class="rounded-md border border-emerald-300 p-2 w-28 text-right font-mono font-bold"
+                   data-money inputmode="decimal" value="1.520,00" title="Se usa al guardar altas/ediciones">
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">Categoría (Access)</label>
+            <select id="filtroCat" class="rounded-md border border-slate-300 p-2 font-semibold bg-white min-w-[11rem]" onchange="cargarBienes()">
+                <option value="">Todas</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500">Buscar (histórico)</label>
+            <input type="search" id="filtroQ" class="rounded-md border border-slate-300 p-2 w-56" placeholder="Marca, modelo, patente, baja..."
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();cargarBienes();}">
+        </div>
+        <label class="flex items-center gap-2 px-2 py-2 border rounded-md bg-slate-50 cursor-pointer" title="Desmarcar para ver también bienes con fecha de baja">
+            <input type="checkbox" id="chkSoloActivos" checked onchange="cargarBienes()">
+            <span class="font-semibold">Solo activos<br><span class="font-normal text-[10px] text-slate-500">oculta bajas</span></span>
+        </label>
+        <button onclick="cargarBienes()" class="bg-blue-700 text-white px-4 py-2 rounded-md font-bold hover:bg-blue-800">Filtrar</button>
+        <button onclick="abrirModalBien()" class="bg-emerald-600 text-white px-4 py-2 rounded-md font-bold hover:bg-emerald-700">+ Alta bien</button>
+        <button onclick="simularAmort()" class="bg-violet-700 text-white px-3 py-2 rounded-md font-bold hover:bg-violet-800">Simular amortización</button>
+        <button onclick="aplicarAmort()" class="bg-slate-800 text-white px-3 py-2 rounded-md font-bold hover:bg-slate-900">Aplicar amort. ejercicio</button>
+    </div>
+
+    <div class="overflow-x-auto border border-slate-300 rounded">
+        <table class="w-full text-left border-collapse text-[11px]">
+            <thead>
+                <tr class="bg-slate-700 text-white uppercase font-semibold">
+                    <th class="p-2">Categoría</th>
+                    <th class="p-2">Bien</th>
+                    <th class="p-2">Patente / ID</th>
+                    <th class="p-2">Compra</th>
+                    <th class="p-2 text-right">Histórico EECC $</th>
+                    <th class="p-2 text-right">Comercial U$S</th>
+                    <th class="p-2 text-right">Comercial $</th>
+                    <th class="p-2 text-center">Vida / %</th>
+                    <th class="p-2 text-right">Amort. acum.</th>
+                    <th class="p-2 text-right">VNC</th>
+                    <th class="p-2 text-center no-print">Acción</th>
+                </tr>
+            </thead>
+            <tbody id="tbodyBienes">
+                <tr><td colspan="10" class="p-6 text-center text-slate-400">Cargando...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div id="panelAmort" class="mt-4 border rounded-lg p-4 bg-violet-50 hidden no-print">
+        <h3 class="font-bold text-violet-900 mb-2 text-sm">Amortización del ejercicio</h3>
+        <p id="amortMsg" class="text-xs text-violet-800 mb-2"></p>
+        <div class="overflow-x-auto max-h-64 overflow-y-auto">
+            <table class="w-full text-[11px]">
+                <thead><tr class="bg-violet-200 text-violet-900">
+                    <th class="p-1 text-left">Bien</th>
+                    <th class="p-1 text-right">Cuota ejercicio</th>
+                    <th class="p-1 text-right">Acum. después</th>
+                    <th class="p-1 text-right">VNC</th>
+                </tr></thead>
+                <tbody id="tbodyAmort"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal alta/edición -->
+<div id="modalBien" class="fixed inset-0 bg-black/40 z-50 hidden items-center justify-center p-4 no-print" style="display:none;">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+        <div class="flex justify-between items-center border-b px-4 py-3 sticky top-0 bg-white">
+            <h3 id="modalBienTitulo" class="font-bold text-slate-800">Alta de bien</h3>
+            <button onclick="cerrarModalBien()" class="text-slate-500 hover:text-slate-800 text-xl leading-none">&times;</button>
+        </div>
+        <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <input type="hidden" id="bienId">
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Categoría *</label>
+                <select id="bienCat" class="w-full border rounded-md p-2 font-semibold" onchange="onCatChange()">
+                    <option>Tractor</option>
+                    <option>Cosechadora</option>
+                    <option>Sembradora</option>
+                    <option>Tolva / Acoplado</option>
+                    <option>Pulverizador</option>
+                    <option>Fertilizadora</option>
+                    <option>Desmalezadora</option>
+                    <option>Extractora</option>
+                    <option>Cabezal</option>
+                    <option>Niveladora</option>
+                    <option>Retroexcavadora</option>
+                    <option>Guinche / Grúa</option>
+                    <option selected>Maquinaria</option>
+                    <option>Camioneta</option>
+                    <option>Camión</option>
+                    <option>Rodado</option>
+                    <option>Propiedad</option>
+                    <option>Instalación</option>
+                    <option>Muebles</option>
+                    <option>Otro</option>
+                </select>
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Tipo Access (opcional)</label>
+                <input id="bienTipo" class="w-full border rounded-md p-2" list="listaTiposBien" placeholder="TRACTOR, PICK-UP, COSECHADORA...">
+                <datalist id="listaTiposBien">
+                    <option value="TRACTOR">
+                    <option value="COSECHADORA">
+                    <option value="SEMBRADORA">
+                    <option value="ACOPLADO">
+                    <option value="TOLVA">
+                    <option value="PICK-UP">
+                    <option value="CAMIÓN">
+                    <option value="PULVERIZADOR">
+                    <option value="EXTRACTORA CEREAL">
+                    <option value="Cabezal Maicero">
+                    <option value="Fertilizadora">
+                    <option value="DESMALEZADORA">
+                    <option value="Casilla Rural">
+                    <option value="Propiedad">
+                </datalist>
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Marca</label>
+                <input id="bienMarca" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Modelo</label>
+                <input id="bienModelo" class="w-full border rounded-md p-2">
+            </div>
+            <div class="md:col-span-2">
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Detalle</label>
+                <input id="bienDetalle" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Año</label>
+                <input id="bienAnio" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Patente / identificador</label>
+                <input id="bienPatente" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Fecha compra</label>
+                <input type="date" id="bienFechaCompra" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Inicio amortización</label>
+                <input type="date" id="bienFechaAmort" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-bold text-blue-800 uppercase text-[10px]">Valor histórico EECC *</label>
+                <input id="bienHist" class="w-full border border-blue-300 rounded-md p-2 text-right font-mono font-bold" data-money inputmode="decimal" value="0,00">
+            </div>
+            <div>
+                <label class="font-bold text-emerald-800 uppercase text-[10px]">Valor comercial U$S *</label>
+                <input id="bienComUsd" class="w-full border border-emerald-300 rounded-md p-2 text-right font-mono font-bold" data-money inputmode="decimal" value="0,00">
+            </div>
+            <div>
+                <label class="font-bold text-emerald-800 uppercase text-[10px]">Tipo de cambio $/U$S</label>
+                <input id="bienTc" class="w-full border border-emerald-300 rounded-md p-2 text-right font-mono font-bold" data-money inputmode="decimal" value="1.520,00">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Fecha tasación comercial</label>
+                <input type="date" id="bienFechaCom" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Equiv. comercial $</label>
+                <input id="bienComArs" class="w-full border rounded-md p-2 text-right font-mono bg-slate-50" readonly value="0,00">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Valor residual</label>
+                <input id="bienResidual" class="w-full border rounded-md p-2 text-right font-mono" data-money inputmode="decimal" value="0,00">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Vida útil (años)</label>
+                <input type="number" id="bienVida" class="w-full border rounded-md p-2" min="1" max="100">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Tasa anual %</label>
+                <input type="number" id="bienTasa" class="w-full border rounded-md p-2" min="0" max="100" step="0.01">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Amort. acumulada</label>
+                <input id="bienAmortAcum" class="w-full border rounded-md p-2 text-right font-mono" data-money inputmode="decimal" value="0,00">
+            </div>
+            <div>
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Ubicación</label>
+                <input id="bienUbic" class="w-full border rounded-md p-2">
+            </div>
+            <div id="bloqueProp" class="contents hidden">
+                <div>
+                    <label class="font-bold text-slate-500 uppercase text-[10px]">Superficie (ha)</label>
+                    <input type="number" id="bienHa" class="w-full border rounded-md p-2" step="0.01">
+                </div>
+                <div>
+                    <label class="font-bold text-slate-500 uppercase text-[10px]">Nomenclatura / Partida</label>
+                    <input id="bienNomen" class="w-full border rounded-md p-2" placeholder="Nomenclatura catastral">
+                </div>
+            </div>
+            <div class="md:col-span-2">
+                <label class="font-bold text-slate-500 uppercase text-[10px]">Observaciones</label>
+                <input id="bienObs" class="w-full border rounded-md p-2">
+            </div>
+            <label class="flex items-center gap-2 md:col-span-2">
+                <input type="checkbox" id="bienActivo" checked>
+                <span class="font-semibold">Activo (en patrimonio)</span>
+            </label>
+        </div>
+        <div class="flex justify-end gap-2 border-t px-4 py-3 sticky bottom-0 bg-white">
+            <button onclick="cerrarModalBien()" class="px-4 py-2 rounded-md bg-slate-200 font-semibold text-sm">Cancelar</button>
+            <button onclick="guardarBien()" class="px-4 py-2 rounded-md bg-emerald-600 text-white font-bold text-sm">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const TASAS = {
+    Rodado: [20, 5], Camión: [20, 5], Camioneta: [20, 5],
+    Maquinaria: [10, 10], Tractor: [10, 10], Cosechadora: [10, 10], Sembradora: [10, 10],
+    'Tolva / Acoplado': [10, 10], Pulverizador: [10, 10], Fertilizadora: [10, 10],
+    Desmalezadora: [10, 10], Extractora: [10, 10], Cabezal: [10, 10], Niveladora: [10, 10],
+    Retroexcavadora: [10, 10], 'Guinche / Grúa': [10, 10],
+    Propiedad: [2, 50], Instalacion: [5, 20], 'Instalación': [5, 20], Muebles: [10, 10], Otro: [10, 10]
+};
+let bienesCache = [];
+const CATS_DEFAULT = Object.keys(TASAS).filter(k => k !== 'Instalacion');
+
+function money(n) {
+    return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function moneyUsd(n) {
+    return 'U$S ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function recalcComArs() {
+    const usd = CampoMoney.parse(document.getElementById('bienComUsd').value);
+    const tc = CampoMoney.parse(document.getElementById('bienTc').value);
+    document.getElementById('bienComArs').value = CampoMoney.format(usd * tc);
+}
+
+async function cargarBienes() {
+    const cat = document.getElementById('filtroCat').value;
+    const q = document.getElementById('filtroQ').value.trim();
+    const solo = document.getElementById('chkSoloActivos').checked;
+    const qs = new URLSearchParams({ solo_activos: solo ? 'true' : 'false' });
+    if (cat) qs.set('categoria', cat);
+    if (q) qs.set('q', q);
+    try {
+        const res = await fetch('/api/patrimonio/bienes?' + qs.toString());
+        const data = await res.json();
+        bienesCache = data.bienes || [];
+        const r = data.resumen || {};
+        document.getElementById('kpiCant').textContent = r.cantidad || 0;
+        document.getElementById('kpiHist').textContent = money(r.total_historico);
+        document.getElementById('kpiComUsd').textContent = moneyUsd(r.total_comercial_usd || 0);
+        document.getElementById('kpiComArs').textContent = '≡ ' + money(r.total_comercial);
+        document.getElementById('kpiVnc').textContent = money(r.total_neto_contable);
+        const conTc = (data.bienes || []).find(b => Number(b.tipo_cambio_comercial) > 0);
+        if (conTc) document.getElementById('tipoCambioCom').value = CampoMoney.format(conTc.tipo_cambio_comercial);
+        llenarFiltroCategorias(data.categorias || []);
+        renderTabla(bienesCache);
+        cargarResumenCats();
+    } catch (e) {
+        document.getElementById('tbodyBienes').innerHTML =
+            `<tr><td colspan="11" class="p-6 text-center text-rose-600">Error al cargar patrimonio.</td></tr>`;
+    }
+}
+
+function llenarFiltroCategorias(cats) {
+    const sel = document.getElementById('filtroCat');
+    const actual = sel.value;
+    const lista = (cats && cats.length) ? cats : CATS_DEFAULT;
+    sel.innerHTML = '<option value="">Todas</option>' + lista.map(c =>
+        `<option value="${esc(c)}" ${c === actual ? 'selected' : ''}>${esc(c)}</option>`
+    ).join('');
+}
+
+async function cargarResumenCats() {
+    try {
+        const data = await fetch('/api/patrimonio/resumen_bancario').then(r => r.json());
+        const el = document.getElementById('resumenCats');
+        el.innerHTML = (data.categorias || []).map(c =>
+            `<span class="px-2 py-1 rounded border bg-white border-slate-200">
+                <strong>${esc(c.categoria)}</strong> - ${c.cantidad}
+ - Hist ${money(c.valor_historico)}
+ - Com ${moneyUsd(c.valor_comercial_usd)} (${money(c.valor_comercial)})
+            </span>`
+        ).join('');
+    } catch (_) {}
+}
+
+function renderTabla(rows) {
+    const tbody = document.getElementById('tbodyBienes');
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-slate-400">Sin bienes. Usá «+ Alta bien» o importá el anexo comercial.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(b => {
+        const nom = [b.marca, b.modelo || b.detalle].filter(Boolean).join(' ') || b.tipo_rodado || ' - ';
+        const idExt = b.nro_patente || b.nomenclatura || b.partida || (b.anio ? 'Año ' + String(b.anio).replace('.0','') : ' - ');
+        const tc = Number(b.tipo_cambio_comercial || 0);
+        const esBaja = !b.activo || (b.fecha_baja || '').trim();
+        const tipoExtra = (b.tipo_rodado || '').trim();
+        const showTipo = tipoExtra && tipoExtra.toLowerCase() !== (b.categoria || '').toLowerCase();
+        return `<tr class="border-b hover:bg-slate-50 ${esBaja ? 'opacity-60 bg-rose-50/40' : ''}">
+            <td class="p-2"><span class="px-1.5 py-0.5 rounded bg-slate-100 font-semibold">${esc(b.categoria)}</span>
+                ${esBaja ? `<div class="text-[10px] text-rose-600 font-bold mt-0.5">Baja ${(b.fecha_baja || '').slice(0,10)}</div>` : ''}
+            </td>
+            <td class="p-2 font-semibold">${esc(nom)}${showTipo ? `<div class="text-slate-400 font-normal">${esc(tipoExtra)}</div>` : ''}</td>
+            <td class="p-2 font-mono">${esc(idExt)}</td>
+            <td class="p-2 font-mono">${esc(b.fecha_compra || ' - ')}</td>
+            <td class="p-2 text-right font-mono text-blue-900">${money(b.valor_historico)}</td>
+            <td class="p-2 text-right font-mono text-emerald-800 font-bold">${moneyUsd(b.valor_comercial_usd)}${tc ? `<div class="text-[10px] text-slate-400 font-normal">TC ${tc.toLocaleString('es-AR')}</div>` : ''}</td>
+            <td class="p-2 text-right font-mono text-emerald-700">${money(b.valor_comercial_ars || b.valor_comercial)}</td>
+            <td class="p-2 text-center font-mono">${b.vida_util_anos || ' - '}a / ${b.tasa_anual_pct || ' - '}%</td>
+            <td class="p-2 text-right font-mono">${money(b.amortizacion_acumulada)}</td>
+            <td class="p-2 text-right font-mono font-bold text-violet-900">${money(b.valor_neto_contable)}</td>
+            <td class="p-2 text-center no-print whitespace-nowrap">
+                <button class="text-blue-700 font-bold hover:underline" onclick="editarBien(${b.id})">Editar</button>
+                ${!esBaja ? ` - <button class="text-rose-600 font-bold hover:underline" onclick="bajaBien(${b.id})">Baja</button>` : ''}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function onCatChange() {
+    const cat = document.getElementById('bienCat').value;
+    const [tasa, vida] = TASAS[cat] || [10, 10];
+    document.getElementById('bienTasa').value = tasa;
+    document.getElementById('bienVida').value = vida;
+    const prop = cat === 'Propiedad';
+    document.getElementById('bloqueProp').classList.toggle('hidden', !prop);
+    document.getElementById('bloqueProp').style.display = prop ? 'contents' : 'none';
+}
+
+function abrirModalBien(bien) {
+    document.getElementById('modalBienTitulo').textContent = bien ? 'Editar bien' : 'Alta de bien';
+    document.getElementById('bienId').value = bien ? bien.id : '';
+    document.getElementById('bienCat').value = bien?.categoria || 'Maquinaria';
+    document.getElementById('bienTipo').value = bien?.tipo_rodado || '';
+    document.getElementById('bienMarca').value = bien?.marca || '';
+    document.getElementById('bienModelo').value = bien?.modelo || '';
+    document.getElementById('bienDetalle').value = bien?.detalle || '';
+    document.getElementById('bienAnio').value = String(bien?.anio || '').replace('.0', '');
+    document.getElementById('bienPatente').value = bien?.nro_patente || '';
+    document.getElementById('bienFechaCompra').value = (bien?.fecha_compra || '').slice(0, 10);
+    document.getElementById('bienFechaAmort').value = (bien?.fecha_inicio_amort || bien?.fecha_compra || '').slice(0, 10);
+    document.getElementById('bienHist').value = CampoMoney.format(bien?.valor_historico || 0);
+    document.getElementById('bienComUsd').value = CampoMoney.format(bien?.valor_comercial_usd || 0);
+    document.getElementById('bienTc').value = CampoMoney.format(
+        bien?.tipo_cambio_comercial || CampoMoney.parse(document.getElementById('tipoCambioCom').value) || 1520
+    );
+    document.getElementById('bienFechaCom').value = (bien?.fecha_valor_comercial || '').slice(0, 10);
+    recalcComArs();
+    document.getElementById('bienResidual').value = CampoMoney.format(bien?.valor_residual || 0);
+    document.getElementById('bienVida').value = bien?.vida_util_anos || '';
+    document.getElementById('bienTasa').value = bien?.tasa_anual_pct || '';
+    document.getElementById('bienAmortAcum').value = CampoMoney.format(bien?.amortizacion_acumulada || 0);
+    document.getElementById('bienUbic').value = bien?.ubicacion || '';
+    document.getElementById('bienHa').value = bien?.superficie_ha || '';
+    document.getElementById('bienNomen').value = bien?.nomenclatura || bien?.partida || '';
+    document.getElementById('bienObs').value = bien?.observaciones || '';
+    document.getElementById('bienActivo').checked = bien ? !!bien.activo : true;
+    if (!bien) onCatChange();
+    else {
+        const prop = (bien.categoria || '') === 'Propiedad';
+        document.getElementById('bloqueProp').style.display = prop ? 'contents' : 'none';
+    }
+    const m = document.getElementById('modalBien');
+    m.style.display = 'flex';
+    m.classList.remove('hidden');
+    CampoMoney.bind(m);
+}
+
+function cerrarModalBien() {
+    const m = document.getElementById('modalBien');
+    m.style.display = 'none';
+    m.classList.add('hidden');
+}
+
+async function editarBien(id) {
+    const b = bienesCache.find(x => x.id === id);
+    if (b) { abrirModalBien(b); return; }
+    const res = await fetch('/api/patrimonio/bienes/' + id);
+    if (!res.ok) { alert('No se pudo cargar'); return; }
+    abrirModalBien(await res.json());
+}
+
+async function guardarBien() {
+    const id = document.getElementById('bienId').value;
+    const payload = {
+        categoria: document.getElementById('bienCat').value,
+        tipo_rodado: document.getElementById('bienTipo').value.trim(),
+        marca: document.getElementById('bienMarca').value.trim(),
+        modelo: document.getElementById('bienModelo').value.trim(),
+        detalle: document.getElementById('bienDetalle').value.trim(),
+        anio: document.getElementById('bienAnio').value.trim(),
+        nro_patente: document.getElementById('bienPatente').value.trim(),
+        fecha_compra: document.getElementById('bienFechaCompra').value,
+        fecha_inicio_amort: document.getElementById('bienFechaAmort').value,
+        valor_historico: CampoMoney.parse(document.getElementById('bienHist').value),
+        valor_comercial_usd: CampoMoney.parse(document.getElementById('bienComUsd').value),
+        tipo_cambio_comercial: CampoMoney.parse(document.getElementById('bienTc').value),
+        valor_comercial: CampoMoney.parse(document.getElementById('bienComArs').value),
+        fecha_valor_comercial: document.getElementById('bienFechaCom').value,
+        moneda: 'USD',
+        valor_residual: CampoMoney.parse(document.getElementById('bienResidual').value),
+        vida_util_anos: parseInt(document.getElementById('bienVida').value || '0', 10) || null,
+        tasa_anual_pct: parseFloat(document.getElementById('bienTasa').value || '0') || null,
+        amortizacion_acumulada: CampoMoney.parse(document.getElementById('bienAmortAcum').value),
+        ubicacion: document.getElementById('bienUbic').value.trim(),
+        superficie_ha: parseFloat(document.getElementById('bienHa').value || '') || null,
+        nomenclatura: document.getElementById('bienNomen').value.trim(),
+        observaciones: document.getElementById('bienObs').value.trim(),
+        activo: document.getElementById('bienActivo').checked ? 1 : 0,
+        usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar',
+    };
+    if (!(payload.valor_historico > 0) && !(payload.valor_comercial_usd > 0)) {
+        alert('Indicá valor histórico (EECC) o valor comercial en U$S.');
+        return;
+    }
+    const url = id ? '/api/patrimonio/bienes/' + id : '/api/patrimonio/bienes';
+    const res = await fetch(url, {
+        method: id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.detail || 'Error al guardar'); return; }
+    cerrarModalBien();
+    await cargarBienes();
+}
+
+async function bajaBien(id) {
+    if (!confirm('¿Dar de baja este bien del patrimonio activo?')) return;
+    const res = await fetch('/api/patrimonio/bienes/' + id, { method: 'DELETE' });
+    if (!res.ok) { alert('No se pudo dar de baja'); return; }
+    await cargarBienes();
+}
+
+async function _amort(aplicar) {
+    const payload = {
+        aplicar,
+        generar_asiento: aplicar,
+        usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar',
+    };
+    if (aplicar && !confirm('Se aplicará la amortización del ejercicio (cierre 30/06) y se generará asiento contable. ¿Continuar?')) {
+        return;
+    }
+    const res = await fetch('/api/patrimonio/amortizar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.detail || 'Error'); return; }
+    const panel = document.getElementById('panelAmort');
+    panel.classList.remove('hidden');
+    document.getElementById('amortMsg').textContent =
+        `${data.simulacion ? 'Simulación' : 'Aplicado'} - Ejercicio ${data.ejercicio} - Cierre ${data.fecha_cierre} - Total ${money(data.total_amortizacion)}` +
+        (data.asiento_id ? ` - Asiento #${data.asiento_id}` : '');
+    document.getElementById('tbodyAmort').innerHTML = (data.detalle || []).map(d =>
+        `<tr class="border-b border-violet-100">
+            <td class="p-1">${esc(d.descripcion)}</td>
+            <td class="p-1 text-right font-mono">${money(d.amort_ejercicio)}</td>
+            <td class="p-1 text-right font-mono">${money(d.amort_acumulada_despues)}</td>
+            <td class="p-1 text-right font-mono">${money(d.valor_neto_despues)}</td>
+        </tr>`
+    ).join('') || `<tr><td colspan="4" class="p-2 text-slate-500">Nada para amortizar.</td></tr>`;
+    if (aplicar) await cargarBienes();
+}
+function simularAmort() { return _amort(false); }
+function aplicarAmort() { return _amort(true); }
+
+window.onload = () => {
+    CampoMoney.bind(document);
+    document.getElementById('bienComUsd')?.addEventListener('input', recalcComArs);
+    document.getElementById('bienTc')?.addEventListener('input', recalcComArs);
+    document.getElementById('bienComUsd')?.addEventListener('blur', recalcComArs);
+    document.getElementById('bienTc')?.addEventListener('blur', recalcComArs);
+    cargarBienes();
+};
+</script>
+</body>
+</html>

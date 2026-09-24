@@ -562,6 +562,83 @@ def ingresar_almacen(
     }
 
 
+def egresar_almacen_nc(
+    cursor,
+    *,
+    empresa_id: int,
+    item_id: Optional[int] = None,
+    nombre: str = "",
+    fecha: str = "",
+    cantidad: float = 0.0,
+    precio_unitario_neto: float = 0.0,
+    proveedor_cuit: str = "",
+    nro_comprobante: str = "",
+    observaciones: str = "",
+) -> Dict[str, Any]:
+    """
+    Devolución / egreso por Nota de Crédito de compra (baja stock).
+    Si no hay stock suficiente, deja stock en 0 y registra el egreso parcial.
+    """
+    if cantidad <= 0:
+        raise ValueError("La cantidad de egreso NC debe ser mayor a cero.")
+    fecha = (fecha or datetime.now().strftime("%Y-%m-%d"))[:10]
+
+    item = None
+    if item_id:
+        cursor.execute(
+            "SELECT * FROM almacen_items WHERE id=? AND empresa_id=?;",
+            (item_id, empresa_id),
+        )
+        item = cursor.fetchone()
+    if not item and (nombre or "").strip():
+        cursor.execute(
+            """
+            SELECT * FROM almacen_items
+            WHERE empresa_id=? AND UPPER(TRIM(nombre))=UPPER(TRIM(?))
+            ORDER BY id DESC LIMIT 1;
+            """,
+            (empresa_id, nombre.strip()),
+        )
+        item = cursor.fetchone()
+    if not item:
+        raise ValueError("No se encontró el ítem de almacén para egresar por NC.")
+
+    item = dict(item)
+    item_id = int(item["id"])
+    stock = float(item.get("stock_cantidad") or 0)
+    costo_u = float(item.get("costo_promedio_neto") or 0) or float(precio_unitario_neto or 0)
+    cant = min(cantidad, stock) if stock > 0 else cantidad
+    nuevo_stock = round(max(0.0, stock - cant), 6)
+    importe = round(cant * costo_u, 2)
+
+    cursor.execute(
+        "UPDATE almacen_items SET stock_cantidad=? WHERE id=?;",
+        (nuevo_stock, item_id),
+    )
+    cursor.execute(
+        """
+        INSERT INTO almacen_movimientos
+        (empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, importe_neto,
+         stock_resultante, costo_prom_resultante, proveedor_cuit, proveedor_nombre,
+         nro_comprobante, observaciones)
+        VALUES (?, ?, ?, 'egreso_nc', ?, ?, ?, ?, ?, ?, '', ?, ?);
+        """,
+        (
+            empresa_id, item_id, fecha, cant, costo_u, importe,
+            nuevo_stock, costo_u, proveedor_cuit or "",
+            nro_comprobante or "", observaciones or "",
+        ),
+    )
+    return {
+        "status": "success",
+        "item_id": item_id,
+        "movimiento_id": cursor.lastrowid,
+        "stock_cantidad": nuevo_stock,
+        "cantidad_egresada": cant,
+        "message": "Egreso por Nota de Crédito registrado.",
+    }
+
+
 def siguiente_nro_ot(cursor, empresa_id: int, anio: Optional[int] = None) -> str:
     anio = anio or datetime.now().year
     prefix = f"OT-{anio}-"

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Administración de clientes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-fechas.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+    <div class="max-w-6xl mx-auto p-6 my-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
+            <div>
+                <h1 class="text-2xl font-extrabold">CAmpo+ <span class="text-sm font-semibold text-emerald-800 bg-emerald-50 px-2 py-1 rounded-full">Administración de clientes</span></h1>
+                <p class="text-sm text-slate-500 mt-1">Cada cliente tiene su propia base. Incluye 2 empresas y 3 usuarios. Lo que exceda lo autorizás vos.</p>
+            </div>
+            <a href="Index.html" class="text-sm bg-white border border-slate-300 px-3 py-2 rounded-lg font-semibold"><- Dashboard</a>
+        </div>
+
+        <div id="bannerCuenta" class="hidden mb-4 bg-amber-50 border border-amber-300 text-amber-950 text-sm rounded-lg px-4 py-3 flex justify-between gap-3 items-center">
+            <span id="bannerTexto"></span>
+            <button type="button" onclick="salirCuenta()" class="font-bold underline">Salir de esta cuenta</button>
+        </div>
+
+        <form id="formCuenta" class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm mb-6 grid grid-cols-1 md:grid-cols-4 gap-3" onsubmit="return crearCuenta(event)">
+            <div class="md:col-span-2">
+                <label class="text-xs font-bold uppercase text-slate-500">Nuevo cliente / grupo</label>
+                <input id="nombre" required placeholder="Ej. Alan Cavallero S.A." class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold uppercase text-slate-500">Precio usuario extra</label>
+                <input id="precioUsuario" type="number" min="0" step="1" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div class="flex items-end">
+                <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg py-2 text-sm">Crear cliente</button>
+            </div>
+        </form>
+
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-6">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-800 text-white text-xs uppercase">
+                    <tr>
+                        <th class="text-left p-3">Cliente</th>
+                        <th class="text-left p-3">Empresas</th>
+                        <th class="text-left p-3">Usuarios</th>
+                        <th class="text-left p-3">Extra autorizado</th>
+                        <th class="p-3"></th>
+                    </tr>
+                </thead>
+                <tbody id="tabla"></tbody>
+            </table>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+            <h2 class="font-bold mb-3">Pedidos de cupo</h2>
+            <div id="solicitudes" class="text-sm text-slate-500">Cargando...</div>
+        </div>
+    </div>
+
+    <script>
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+        function money(n) {
+            return '$ ' + Number(n || 0).toLocaleString('es-AR');
+        }
+
+        function pintarBanner() {
+            const id = localStorage.getItem('campoplus_cuenta_impersonada');
+            const box = document.getElementById('bannerCuenta');
+            if (!id) { box.classList.add('hidden'); return; }
+            box.classList.remove('hidden');
+            document.getElementById('bannerTexto').textContent = 'Estás dentro de la cuenta #' + id + '. Las pantallas de empresas y usuarios muestran solo esa base.';
+        }
+
+        async function cargar() {
+            const res = await fetch('/api/plataforma/cuentas');
+            if (res.status === 403) {
+                document.getElementById('tabla').innerHTML = '<tr><td colspan="5" class="p-6 text-center">Esta pantalla es solo para el administrador de Campo+.</td></tr>';
+                return;
+            }
+            const rows = res.ok ? await res.json() : [];
+            document.getElementById('tabla').innerHTML = rows.map(c => `
+                <tr class="border-t align-top">
+                    <td class="p-3">
+                        <div class="font-bold">${esc(c.nombre)}</div>
+                        <div class="text-xs text-slate-500">${esc(c.slug)} - ${c.activo ? 'activa' : 'suspendida'}</div>
+                        <div class="text-[11px] text-slate-400 mt-1 break-all">${esc(c.db_path)}</div>
+                    </td>
+                    <td class="p-3">${c.empresas_usadas} / ${c.empresas_max}<div class="text-xs text-slate-500">${c.empresas_incluidas} incluidas</div></td>
+                    <td class="p-3">${c.usuarios_usados} / ${c.usuarios_max}<div class="text-xs text-slate-500">${c.usuarios_incluidos} incluidos</div></td>
+                    <td class="p-3">
+                        <label class="text-[11px] text-slate-500">Empresas extra</label>
+                        <input id="ee-${c.cuenta_id}" type="number" min="0" value="${c.empresas_extra}" class="w-20 border rounded px-2 py-1 text-sm block mb-1">
+                        <label class="text-[11px] text-slate-500">Usuarios extra</label>
+                        <input id="ue-${c.cuenta_id}" type="number" min="0" value="${c.usuarios_extra}" class="w-20 border rounded px-2 py-1 text-sm block mb-1">
+                        <label class="text-[11px] text-slate-500">$ usuario extra</label>
+                        <input id="pu-${c.cuenta_id}" type="number" min="0" value="${c.precio_usuario_extra}" class="w-24 border rounded px-2 py-1 text-sm block">
+                    </td>
+                    <td class="p-3 text-right space-y-1">
+                        <button onclick="guardarCupo(${c.cuenta_id})" class="block w-full bg-slate-800 text-white rounded px-2 py-1 text-xs font-bold">Guardar cupo</button>
+                        <button onclick="entrar(${c.cuenta_id})" class="block w-full bg-emerald-600 text-white rounded px-2 py-1 text-xs font-bold">Abrir cuenta</button>
+                        <button onclick="suspender(${c.cuenta_id}, ${c.activo ? 0 : 1})" class="block w-full border rounded px-2 py-1 text-xs font-bold">${c.activo ? 'Suspender' : 'Reactivar'}</button>
+                    </td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" class="p-6 text-center text-slate-400">Sin clientes</td></tr>';
+
+            const sol = await fetch('/api/plataforma/solicitudes');
+            const pedidos = sol.ok ? await sol.json() : [];
+            document.getElementById('solicitudes').innerHTML = pedidos.map(s => `
+                <div class="flex justify-between gap-3 border-b py-2">
+                    <div><b>${esc(s.cuenta)}</b> pide un ${esc(s.tipo)} extra. <span class="text-slate-500">${esc(s.detalle || '')}</span></div>
+                    <div class="flex gap-2">
+                        <button onclick="resolver(${s.id}, 1)" class="text-emerald-700 font-bold text-xs">Autorizar</button>
+                        <button onclick="resolver(${s.id}, 0)" class="text-rose-700 font-bold text-xs">Rechazar</button>
+                    </div>
+                </div>
+            `).join('') || '<p>No hay pedidos pendientes.</p>';
+        }
+
+        async function crearCuenta(ev) {
+            ev.preventDefault();
+            const res = await fetch('/api/plataforma/cuentas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nombre: document.getElementById('nombre').value,
+                    precio_usuario_extra: Number(document.getElementById('precioUsuario').value || 0),
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'No se pudo crear'); return false; }
+            document.getElementById('formCuenta').reset();
+            await cargar();
+            return false;
+        }
+
+        async function guardarCupo(id) {
+            const res = await fetch('/api/plataforma/cuentas/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    empresas_extra: Number(document.getElementById('ee-' + id).value || 0),
+                    usuarios_extra: Number(document.getElementById('ue-' + id).value || 0),
+                    precio_usuario_extra: Number(document.getElementById('pu-' + id).value || 0),
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'No se pudo guardar'); return; }
+            await cargar();
+        }
+
+        async function suspender(id, activo) {
+            const res = await fetch('/api/plataforma/cuentas/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activo: activo }),
+            });
+            if (!res.ok) { alert('No se pudo cambiar el estado'); return; }
+            await cargar();
+        }
+
+        function entrar(id) {
+            localStorage.setItem('campoplus_cuenta_impersonada', String(id));
+            location.href = 'Index.html';
+        }
+
+        function salirCuenta() {
+            localStorage.removeItem('campoplus_cuenta_impersonada');
+            location.reload();
+        }
+
+        async function resolver(id, aprobar) {
+            const res = await fetch('/api/plataforma/solicitudes/' + id + '/resolver?aprobar=' + aprobar, { method: 'POST' });
+            if (!res.ok) { alert('No se pudo resolver'); return; }
+            await cargar();
+        }
+
+        window.onload = async function () {
+            const me = await CampoAuth.requireAuth({ redirect: 'Plataforma.html' });
+            if (!me || !Number(me.usuario.es_superadmin)) {
+                document.body.innerHTML = '<p class="p-8 text-center">Solo el administrador de Campo+ puede entrar acá.</p>';
+                return;
+            }
+            pintarBanner();
+            await cargar();
+        };
+    </script>
+</body>
+</html>

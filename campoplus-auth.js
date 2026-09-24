@@ -1,5 +1,5 @@
 /**
- * CAmpo+ — Sesión comercial (login / token / módulos).
+ * CAmpo+ - Sesión comercial (login / token / módulos).
  * Incluir antes de campoplus-firma.js en pantallas protegidas:
  *   <script src="/campoplus-auth.js"></script>
  */
@@ -86,6 +86,10 @@
         if (t && !hdrs.has("Authorization")) {
           hdrs.set("Authorization", "Bearer " + t);
           hdrs.set("X-Session-Token", t);
+        }
+        var cuentaImp = localStorage.getItem("campoplus_cuenta_impersonada");
+        if (cuentaImp && !hdrs.has("X-Cuenta-Id")) {
+          hdrs.set("X-Cuenta-Id", cuentaImp);
         }
         init.headers = hdrs;
       }

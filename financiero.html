@@ -1,22 +1,63 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAmpo+ | Consulta de Estado Financiero</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/campoplus-firma.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
     <style>
         .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .cell-disp { background: #90EE90 !important; }
         table.fin-table tbody tr:nth-child(even) { background: #f7f8fa; }
         table.fin-table tbody tr:hover { background: #eef2ff; }
+        tr.cierre-mes td {
+            background: #0f172a !important;
+            color: #fff !important;
+            font-weight: 800;
+            border-top: 3px solid #0f172a;
+            padding-top: 8px !important;
+            padding-bottom: 6px !important;
+        }
+        tr.cierre-idc td {
+            background: #92400e !important;
+            color: #fff !important;
+            font-weight: 700;
+            border-bottom: 14px solid #e2e8f0;
+            padding-top: 6px !important;
+            padding-bottom: 8px !important;
+        }
+        tr.cierre-mes:hover td { background: #0f172a !important; }
+        tr.cierre-idc:hover td { background: #92400e !important; }
         @media print {
+            @page { size: A4 landscape; margin: 6mm; }
             .no-print { display: none !important; }
-            body { background: #fff; }
-            .fin-wrap { box-shadow: none !important; max-width: 100% !important; margin: 0 !important; padding: 8px !important; }
+            body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .fin-wrap {
+                box-shadow: none !important; max-width: 100% !important; width: 100% !important;
+                margin: 0 !important; padding: 2mm !important; border-radius: 0 !important;
+            }
+            .fin-summary { display: none !important; }
+            table.fin-table { width: 100% !important; table-layout: fixed !important; font-size: 7.5pt !important; }
+            table.fin-table th, table.fin-table td {
+                padding: 1px 3px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            }
+            /* Compactar: ocultar columnas frecuentemente en $0 (modelo Access mantiene Subtotal/Totales) */
+            .col-opt { display: none !important; }
+            table.fin-table th:nth-child(1), table.fin-table td:nth-child(1) { width: 22%; }
+            table.fin-table th:nth-child(2), table.fin-table td:nth-child(2) { width: 12%; }
+            table.fin-table th:nth-child(3), table.fin-table td:nth-child(3) { width: 10%; }
+            table.fin-table th:nth-child(4), table.fin-table td:nth-child(4) { width: 9%; }
+            table.fin-table th:nth-child(12), table.fin-table td:nth-child(12) { width: 12%; }
+            table.fin-table th:nth-child(13), table.fin-table td:nth-child(13) { width: 12%; }
+            table.fin-table th:nth-child(14), table.fin-table td:nth-child(14) { width: 14%; }
+            tr.cierre-mes td { background: #0f172a !important; color: #fff !important; font-weight: 800; border-bottom: 0; }
+            tr.cierre-idc td { background: #92400e !important; color: #fff !important; font-weight: 700; border-bottom: 8px solid #cbd5e1; }
+            .cell-disp { background: #90EE90 !important; }
         }
     </style>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800">
 
@@ -74,14 +115,11 @@
         <button onclick="cargarProyeccion()" class="bg-blue-700 text-white px-4 py-2 rounded-md font-bold hover:bg-blue-800 shadow">
             Recalcular
         </button>
-        <button onclick="reimportarAccess()" class="bg-amber-600 text-white px-3 py-2 rounded-md font-bold hover:bg-amber-700" title="Reimporta solo pendientes (sin Debitados)">
-            Reimportar Access
-        </button>
-        <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md font-bold hover:bg-slate-300">← Dashboard</a>
         <button onclick="window.print()" class="bg-slate-800 text-white px-3 py-2 rounded-md font-bold hover:bg-slate-700">PDF</button>
+        <a href="Index.html" class="ml-auto bg-slate-200 text-slate-700 px-3 py-2 rounded-md font-bold hover:bg-slate-300">← Dashboard</a>
     </div>
 
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 text-xs">
+    <div class="fin-summary grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4 text-xs">
         <div class="bg-rose-50 border border-rose-200 p-3 rounded-lg">
             <span class="font-bold text-rose-800 uppercase block text-[10px]">Total a pagar</span>
             <h3 id="lblTotalPagar" class="text-lg font-extrabold text-rose-900 mt-1 font-mono">$ 0,00</h3>
@@ -102,6 +140,10 @@
             <span class="font-bold text-indigo-800 uppercase block text-[10px]">Líneas</span>
             <h3 id="lblCant" class="text-lg font-extrabold text-indigo-900 mt-1">0</h3>
         </div>
+        <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg col-span-2 md:col-span-1">
+            <span class="font-bold text-amber-800 uppercase block text-[10px]">Imp. Déb/Créd 1,2%</span>
+            <h3 id="lblTotalIdc" class="text-lg font-extrabold text-amber-900 mt-1 font-mono">$ 0,00</h3>
+        </div>
     </div>
 
     <div id="resumenFuentes" class="flex flex-wrap gap-2 mb-3 text-[11px] no-print"></div>
@@ -114,29 +156,21 @@
                     <th class="p-2 whitespace-nowrap">Forma pago</th>
                     <th class="p-2 whitespace-nowrap">Cta Cte</th>
                     <th class="p-2 whitespace-nowrap" title="Vencimiento / fecha de pago (pendientes sin debitar)">Fecha vto/pago</th>
-                    <th class="p-2 whitespace-nowrap">Cuota</th>
-                    <th class="p-2 text-right whitespace-nowrap">T/C</th>
-                    <th class="p-2 whitespace-nowrap">Plazo</th>
-                    <th class="p-2 text-right whitespace-nowrap">Capital</th>
-                    <th class="p-2 text-right whitespace-nowrap">Intereses</th>
-                    <th class="p-2 text-right whitespace-nowrap">Impuestos</th>
-                    <th class="p-2 text-right whitespace-nowrap">Cargos</th>
+                    <th class="p-2 whitespace-nowrap col-opt">Cuota</th>
+                    <th class="p-2 text-right whitespace-nowrap col-opt">T/C</th>
+                    <th class="p-2 whitespace-nowrap col-opt">Plazo</th>
+                    <th class="p-2 text-right whitespace-nowrap col-opt">Capital</th>
+                    <th class="p-2 text-right whitespace-nowrap col-opt">Intereses</th>
+                    <th class="p-2 text-right whitespace-nowrap col-opt">Impuestos</th>
+                    <th class="p-2 text-right whitespace-nowrap col-opt">Cargos</th>
                     <th class="p-2 text-right whitespace-nowrap">Subtotal</th>
                     <th class="p-2 text-right whitespace-nowrap font-bold">Totales</th>
                     <th class="p-2 whitespace-nowrap">Varios</th>
                 </tr>
             </thead>
             <tbody id="tablaFinanciera">
-                <tr><td colspan="14" class="p-6 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colspan="14" class="p-6 text-center text-slate-400">Cargando...</td></tr>
             </tbody>
-            <tfoot>
-                <tr class="bg-slate-100 border-t-2 border-slate-400 font-bold">
-                    <td class="p-2" colspan="3">Total a Pagar mes</td>
-                    <td class="p-2" id="lblMesFooter" colspan="8"></td>
-                    <td class="p-2 text-right font-mono text-rose-800" id="lblFooterPagar" colspan="2">$ 0,00</td>
-                    <td></td>
-                </tr>
-            </tfoot>
         </table>
     </div>
 </div>
@@ -259,26 +293,10 @@ function initFechas() {
     setInterval(tickAhora, 1000);
 }
 
-async function reimportarAccess() {
-    const estado = document.getElementById('estado-db');
-    estado.textContent = 'Reimportando proyección Access…';
-    estado.className = 'text-[11px] text-amber-700 mt-0.5 font-medium';
-    try {
-        const res = await fetch('/api/financiero/reimportar_proyeccion', { method: 'POST' });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || 'Error al reimportar');
-        estado.textContent = `Importadas ${data.rows || 0} filas Access. Recalculando…`;
-        await cargarProyeccion();
-    } catch (e) {
-        estado.textContent = e.message || 'Error de reimportación';
-        estado.className = 'text-[11px] text-rose-600 mt-0.5 font-medium';
-    }
-}
-
 async function cargarProyeccion() {
     const estado = document.getElementById('estado-db');
     const tb = document.getElementById('tablaFinanciera');
-    tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-slate-400">Calculando…</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-slate-400">Calculando...</td></tr>`;
     const params = new URLSearchParams({
         desde: document.getElementById('fechaDesde').value,
         hasta: document.getElementById('fechaHasta').value,
@@ -298,7 +316,7 @@ async function cargarProyeccion() {
         const origen = data.origen === 'access'
             ? `Access (${data.filas_access || 0} filas importadas)`
             : 'Live (sin proyección Access)';
-        estado.textContent = (data.nota || '') + ' · ' + origen;
+        estado.textContent = (data.nota || '') + ' - ' + origen;
         estado.className = 'text-[11px] text-emerald-700 mt-0.5 font-medium';
 
         document.getElementById('lblTotalPagar').textContent = fmtMoneySign(data.total_a_pagar);
@@ -306,9 +324,8 @@ async function cargarProyeccion() {
         document.getElementById('lblTotalArs').textContent = fmtMoneySign(data.total_ars);
         document.getElementById('lblTotalKilos').textContent = formatMoney(data.equivalente_kg, 1) + ' Kg';
         document.getElementById('lblCant').textContent = String(data.cantidad || 0);
-        document.getElementById('lblMesFooter').textContent = data.mes_label || '';
-        document.getElementById('lblFooterPagar').textContent = fmtMoneySign(data.total_a_pagar);
-
+        const idcTot = data.total_imp_deb_cred || 0;
+        document.getElementById('lblTotalIdc').textContent = fmtMoneySign(idcTot);
         const labels = {
             cheque_emitido: 'Cheques Empresa',
             credito: 'Créditos',
@@ -316,8 +333,10 @@ async function cargarProyeccion() {
             extras: 'Pago Extras',
             sueldos: 'Sueldos',
             disponibilidad: 'Disponibilidades',
-            factura: 'Facturas',
+            factura: 'Facturas CC',
             alquiler: 'Alquileres',
+            imp_deb_cred: 'Imp. Déb/Créd 1,2%',
+            cierre_mes: 'Cierres mensuales',
             otro: 'Otros',
         };
         const fuentes = data.por_fuente || {};
@@ -329,25 +348,30 @@ async function cargarProyeccion() {
 
         const lineas = data.lineas || [];
         if (!lineas.length) {
-            tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-slate-500">Sin movimientos en el período. Probá “Reimportar Access”.</td></tr>`;
+            tb.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-slate-500">Sin movimientos en el período. Probá "Reimportar Access".</td></tr>`;
             return;
         }
         tb.innerHTML = lineas.map(L => {
             const disp = L.es_disponibilidad || (L.subtotal || L.monto_ars) < 0;
-            const subCls = disp ? 'cell-disp font-semibold' : 'font-semibold text-slate-800';
+            const cierre = !!L.es_cierre_mes;
+            const idc = !!L.es_idc;
+            let trCls = '';
+            if (idc) trCls = 'cierre-idc';
+            else if (cierre) trCls = 'cierre-mes';
+            const subCls = disp ? 'cell-disp font-semibold' : (cierre ? 'font-bold' : 'font-semibold text-slate-800');
             return `
-            <tr>
+            <tr class="${trCls}">
                 <td class="p-1.5 whitespace-nowrap max-w-[220px] truncate" title="${(L.detalle || '').replace(/"/g, '&quot;')}">${L.detalle || ''}</td>
                 <td class="p-1.5 whitespace-nowrap text-slate-600">${L.forma_pago || ''}</td>
                 <td class="p-1.5 whitespace-nowrap font-mono text-[10px]">${L.cta_cte || ''}</td>
-                <td class="p-1.5 whitespace-nowrap">${fmtFecha(L.fecha)}</td>
-                <td class="p-1.5 text-center font-mono">${fmtCuota(L.nro_cuota)}</td>
-                <td class="p-1.5 text-right font-mono">${fmtTc(L.tipo_cambio)}</td>
-                <td class="p-1.5 whitespace-nowrap">${L.plazo || ''}</td>
-                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.capital)}</td>
-                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.intereses)}</td>
-                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.impuestos)}</td>
-                <td class="p-1.5 text-right font-mono">${fmtZeroMoney(L.cargos)}</td>
+                <td class="p-1.5 whitespace-nowrap">${cierre ? '' : fmtFecha(L.fecha)}</td>
+                <td class="p-1.5 text-center font-mono col-opt">${fmtCuota(L.nro_cuota)}</td>
+                <td class="p-1.5 text-right font-mono col-opt">${fmtTc(L.tipo_cambio)}</td>
+                <td class="p-1.5 whitespace-nowrap col-opt">${L.plazo || ''}</td>
+                <td class="p-1.5 text-right font-mono col-opt">${fmtZeroMoney(L.capital)}</td>
+                <td class="p-1.5 text-right font-mono col-opt">${fmtZeroMoney(L.intereses)}</td>
+                <td class="p-1.5 text-right font-mono col-opt">${fmtZeroMoney(L.impuestos)}</td>
+                <td class="p-1.5 text-right font-mono col-opt">${fmtZeroMoney(L.cargos)}</td>
                 <td class="p-1.5 text-right font-mono ${subCls}">${fmtMoneySign(L.subtotal != null ? L.subtotal : L.monto_ars)}</td>
                 <td class="p-1.5 text-right font-mono font-bold">${fmtMoneySign(L.totales != null ? L.totales : L.acumulado)}</td>
                 <td class="p-1.5 text-slate-500 max-w-[140px] truncate" title="${(L.varios || '').replace(/"/g, '&quot;')}">${L.varios || ''}</td>

@@ -184,13 +184,15 @@
         .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
         .toolbar-left, .toolbar-right { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+<script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
     <div class="page-wrap">
         <div class="app-header">
-            <h4>CAmpo+ <small>| Tesorería, Cuentas Corrientes, Cheques y Conciliación</small></h4>
-            <a href="index.html" class="btn-back">← Volver al Dashboard</a>
+            <h4>CAmpo+ <small>| Tesorería, Cuentas Corrientes, Cheques, Caja y Conciliación</small></h4>
+            <a href="index.html" class="btn-back">Volver al Dashboard</a>
         </div>
 
         <ul class="nav nav-tabs" id="bancosNav">
@@ -198,6 +200,7 @@
             <li class="nav-item"><button class="nav-link" onclick="verTab('tabCalificaciones')">Calificaciones</button></li>
             <li class="nav-item"><button class="nav-link" onclick="verTab('tabCreditos')">Créditos / Préstamos</button></li>
             <li class="nav-item"><button class="nav-link" onclick="verTab('tabCheques')">Cartera de cheques</button></li>
+            <li class="nav-item"><button class="nav-link" onclick="verTab('tabCaja')">Caja</button></li>
             <li class="nav-item"><button class="nav-link" onclick="verTab('tabConciliacion')">Conciliación</button></li>
         </ul>
 
@@ -241,7 +244,7 @@
                 <div class="toolbar">
                     <div class="toolbar-left">
                         <input type="search" id="busqMovimientos" class="form-control form-control-sm" style="width:220px;"
-                               placeholder="Buscar nº cheque / detalle…"
+                               placeholder="Buscar nº cheque / detalle..."
                                oninput="filtrarMovimientosVista()"
                                onkeydown="if(event.key==='Enter'){event.preventDefault();cargarMovimientosCtaCte();}">
                         <button onclick="abrirModalOperacion('Debito')" class="btn-sober">Débito</button>
@@ -258,7 +261,7 @@
                 </div>
                 <div id="bannerFci" class="alert alert-info py-2 px-3 mb-3 small d-none">
                     <strong>FCI activos:</strong> <span id="lblFciActivos">$ 0,00</span>
-                    <span class="text-muted"> — disponibilidad (como plazo fijo): restan a las deudas en el financiero. El rescate vuelve al saldo de la cta cte sin impuesto a los créditos.</span>
+                    <span class="text-muted"> - disponibilidad (como plazo fijo): restan a las deudas en el financiero. El rescate vuelve al saldo de la cta cte sin impuesto a los créditos.</span>
                 </div>
 
                 <div class="border rounded-1 overflow-hidden" style="border-color: var(--line) !important;">
@@ -330,7 +333,7 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <div>
                         <h6 class="fw-bold mb-0" style="font-size:14px;">Créditos y préstamos bancarios</h6>
-                        <p class="hint mb-0">Solo se listan créditos con cuotas <strong>pendientes</strong> (sin fecha de débito) — alimentan el flujo de fondos. USD = tienen TC. Históricos debitados quedan ocultos.</p>
+                        <p class="hint mb-0">Solo se listan créditos con cuotas <strong>pendientes</strong> (sin fecha de débito) - alimentan el flujo de fondos. USD = tienen TC. Históricos debitados quedan ocultos.</p>
                     </div>
                     <div class="d-flex gap-2">
                         <button class="btn btn-outline-dark btn-sm fw-bold" onclick="vincularPrestamosExistentes()" title="Actualiza tasas, USD/TC y vínculos sin duplicar">Actualizar desde cta cte</button>
@@ -344,7 +347,7 @@
                             <option value="ARS">Pesos ($)</option>
                             <option value="USD">Dólares (USD)</option>
                         </select>
-                        <button class="btn-sober-dark" onclick="abrirModalCredito()">＋ Nuevo crédito</button>
+                        <button class="btn-sober-dark" onclick="abrirModalCredito()">+ Nuevo crédito</button>
                     </div>
                 </div>
                 <div class="table-responsive">
@@ -376,16 +379,17 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <div>
                         <h6 class="fw-bold mb-0" style="font-size:14px;">Cheques / eCheq en cartera</h6>
-                        <p class="hint mb-0">Pagos de clientes. Alta manual → impacta CC del cliente → depositar en banco o pagar proveedor. Los cheques <em>emitidos</em> (débito de cta bancaria) no figuran como disponibles.</p>
+                        <p class="hint mb-0">Pagos de clientes. Alta manual | impacta CC del cliente | depositar en banco, cobrar en caja o pagar proveedor. Los cheques <em>emitidos</em> (débito de cta bancaria) no figuran como disponibles.</p>
                     </div>
                     <div class="d-flex gap-2 flex-wrap align-items-center">
                         <input type="search" id="busqCheques" class="form-control form-control-sm" style="width:220px;"
-                               placeholder="Buscar nº / cliente / titular…"
+                               placeholder="Buscar nº / cliente / titular..."
                                oninput="filtrarChequesVista()" onkeydown="if(event.key==='Enter'){event.preventDefault();cargarCheques();}">
                         <select id="filtroChequesEstado" class="form-select form-select-sm" style="width:auto;" onchange="cargarCheques()">
                             <option value="disponibles" selected>Disponibles</option>
                             <option value="todos">Todos</option>
                             <option value="depositado">Depositados</option>
+                            <option value="cobrado en caja">Cobrados en caja</option>
                             <option value="entregado proveedor">Entregados a proveedor</option>
                             <option value="emitidos">Emitidos (propios)</option>
                         </select>
@@ -409,7 +413,7 @@
                             </tr>
                         </thead>
                         <tbody id="tablaChequesBody">
-                            <tr><td colspan="10" class="text-center py-4 text-muted">Cargando…</td></tr>
+                            <tr><td colspan="10" class="text-center py-4 text-muted">Cargando...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -435,7 +439,7 @@
                             <div class="col-md-5">
                                 <label class="lbl">Cliente / Dador del cheque *</label>
                                 <select id="chqCliente" class="form-select form-select-sm" onchange="onChqClienteChange()">
-                                    <option value="">— Seleccionar cliente —</option>
+                                    <option value=""> -  Seleccionar cliente - </option>
                                 </select>
                             </div>
                             <div class="col-md-4">
@@ -447,7 +451,7 @@
                             </div>
                             <div class="col-md-4">
                                 <label class="lbl">Banco</label>
-                                <input type="text" id="chqBanco" class="form-control form-control-sm" list="listaBancosChq" placeholder="Macro, Galicia…">
+                                <input type="text" id="chqBanco" class="form-control form-control-sm" list="listaBancosChq" placeholder="Macro, Galicia...">
                                 <datalist id="listaBancosChq">
                                     <option value="Macro"><option value="Galicia"><option value="Francés">
                                     <option value="Nación"><option value="Provincia"><option value="Santander">
@@ -468,7 +472,7 @@
                             </div>
                             <div class="col-md-3">
                                 <label class="lbl">Importe *</label>
-                                <input type="number" id="chqMonto" class="form-control form-control-sm text-end" step="0.01" min="0.01">
+                                <input type="text" id="chqMonto" class="form-control form-control-sm text-end money-input" data-money inputmode="decimal" value="0,00" required>
                             </div>
                             <div class="col-md-3">
                                 <label class="lbl">Fecha vto / pago</label>
@@ -540,6 +544,104 @@
             </div>
         </div>
 
+        </div>
+
+        <!-- TAB: CAJA -->
+        <div id="tabCaja" class="tab-item" style="display:none;">
+            <div class="panel">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+                    <div>
+                        <h6 class="fw-bold mb-1" style="font-size:14px;">Caja - pagos menores en efectivo</h6>
+                        <p class="hint mb-0">Entra efectivo por cobro de cheques en caja o ingresos manuales; sale con pagos chicos. El saldo alimenta las disponibilidades del Estado Financiero.</p>
+                    </div>
+                    <div class="saldo-box" style="min-width:160px;">
+                        <div class="cap">Saldo en caja</div>
+                        <p id="lblSaldoCaja" class="val text-success">$ 0,00</p>
+                    </div>
+                </div>
+                <div id="avisoSaldoInicialCaja" class="alert alert-warning py-2 px-3 small d-none mb-3">
+                    Todavía no hay movimientos del módulo Caja.
+                    <span id="txtLegadoCaja"></span>
+                    Podés cargar un <strong>saldo inicial</strong> con el efectivo real que tenés hoy.
+                    <button type="button" class="btn btn-sm btn-warning fw-bold ms-2" onclick="abrirModalCaja('ingreso', true)">Cargar saldo inicial</button>
+                </div>
+                <div class="toolbar mb-3">
+                    <div class="toolbar-left">
+                        <input type="date" id="cajaDesde" class="form-control form-control-sm" style="width:150px;" title="Desde">
+                        <input type="date" id="cajaHasta" class="form-control form-control-sm" style="width:150px;" title="Hasta">
+                        <button type="button" class="btn-sober" onclick="cargarCaja()">Filtrar</button>
+                    </div>
+                    <div class="toolbar-right">
+                        <button type="button" class="btn btn-success btn-sm fw-bold" onclick="abrirModalCaja('ingreso')">+ Ingreso</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm fw-bold" onclick="abrirModalCaja('egreso')">- Pago en efectivo</button>
+                    </div>
+                </div>
+                <div class="table-responsive border rounded-1" style="border-color: var(--line) !important;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th>Concepto</th>
+                                <th>Forma</th>
+                                <th>Ref.</th>
+                                <th class="text-end">Ingreso</th>
+                                <th class="text-end">Egreso</th>
+                                <th>Usuario</th>
+                                <th class="text-center" style="width:70px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaCajaBody">
+                            <tr><td colspan="9" class="text-center py-4 text-muted">Abrí esta pestaña para cargar...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal ingreso/egreso caja -->
+        <div class="modal fade" id="modalCajaMov" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title fw-bold" id="modalCajaTitulo">Movimiento de caja</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="cajaMovTipo">
+                        <label class="lbl">Fecha *</label>
+                        <input type="date" id="cajaMovFecha" class="form-control form-control-sm mb-2">
+                        <label class="lbl">Monto *</label>
+                        <input type="text" id="cajaMovMonto" class="form-control form-control-sm mb-2 money-input text-end font-mono fw-bold" data-money inputmode="decimal" value="0,00">
+                        <label class="lbl">Concepto</label>
+                        <input type="text" id="cajaMovConcepto" class="form-control form-control-sm mb-2" placeholder="Ej: Viáticos / Cobro efectivo / Ferretería">
+                        <label class="lbl">Forma</label>
+                        <select id="cajaMovForma" class="form-select form-select-sm mb-2">
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Cheque cobrado">Cheque cobrado</option>
+                            <option value="Extracción banco">Extracción banco</option>
+                            <option value="Saldo inicial">Saldo inicial</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                        <label class="lbl">Referencia</label>
+                        <input type="text" id="cajaMovRef" class="form-control form-control-sm mb-2" placeholder="Nº recibo / factura / opcional">
+                        <div id="cajaBloqueProveedor" class="d-none">
+                            <label class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="cajaImpactarProv" onchange="toggleCajaProveedor()">
+                                <span class="form-check-label small">Impactar en cuenta corriente del proveedor</span>
+                            </label>
+                            <label class="lbl">Proveedor</label>
+                            <select id="cajaProveedor" class="form-select form-select-sm mb-2" disabled></select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-dark btn-sm fw-bold" onclick="confirmarCajaMov()">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- TAB 4: CONCILIACIÓN -->
         <div id="tabConciliacion" class="tab-item" style="display:none;">
             <div class="panel">
@@ -574,7 +676,7 @@
             </div>
             <div class="panel">
                 <h6 class="fw-bold mb-1" style="font-size:14px;">Conciliación manual</h6>
-                <p class="hint mb-0">Desde Movimientos: seleccioná pendientes y usá “Conciliar seleccionados”, o el botón de cada fila. La fecha elegida es la de débito en el resumen.</p>
+                <p class="hint mb-0">Desde Movimientos: seleccioná pendientes y usá "Conciliar seleccionados", o el botón de cada fila. La fecha elegida es la de débito en el resumen.</p>
             </div>
         </div>
     </div>
@@ -591,8 +693,9 @@
                     <form id="formOperacion">
                         <input type="hidden" id="opTipo">
                         <div class="mb-2">
-                            <label class="lbl">Fecha de cobro</label>
+                            <label class="lbl" id="opFechaLbl">Fecha de cobro</label>
                             <input type="date" id="opFecha" class="form-control" required>
+                            <div class="hint mt-1" id="opFechaHint" style="display:none;"></div>
                         </div>
 
                         <div class="mb-2" id="divCuentaDestino" style="display:none;">
@@ -610,21 +713,26 @@
                             <label class="lbl">Nº cheque</label>
                             <input type="text" id="opNroCheque" class="form-control font-mono" placeholder="Ej: 2254">
                         </div>
+                        <div class="mb-2" id="divVtoCheque" style="display:none;">
+                            <label class="lbl" id="opFechaVtoLbl">Fecha de vencimiento (pago del cheque)</label>
+                            <input type="date" id="opFechaVto" class="form-control">
+                            <div class="hint mt-1" id="opFechaVtoHint">Es la fecha en que se paga/debita el cheque. El financiero y la cta cte del proveedor usan esta fecha (no la de emisión).</div>
+                        </div>
                         <div class="row g-2 mb-2">
                             <div class="col-6">
                                 <label class="lbl">Monto ($)</label>
-                                <input type="number" step="0.01" id="opMonto" class="form-control font-mono" required placeholder="0.00" oninput="sugerirImpCheque()">
+                                <input type="text" id="opMonto" class="form-control font-mono text-end money-input" data-money inputmode="decimal" required placeholder="0,00" value="0,00" oninput="sugerirImpCheque()">
                             </div>
                             <div class="col-6">
                                 <label class="lbl">Imp. al cheque ($)</label>
-                                <input type="number" step="0.01" id="opImpCheque" class="form-control font-mono" value="0.00">
+                                <input type="text" id="opImpCheque" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                         </div>
                         <div class="form-check mb-1">
                             <input class="form-check-input" type="checkbox" id="opAplicaImpCheque" onchange="sugerirImpCheque()">
-                            <label class="form-check-label" for="opAplicaImpCheque" style="font-size:12px;">Aplica impuesto (6‰ débito + 6‰ crédito = 1,2%)</label>
+                            <label class="form-check-label" for="opAplicaImpCheque" style="font-size:12px;" id="opAplicaImpChequeLbl">Aplica impuesto 6‰ (débito o crédito según el movimiento)</label>
                         </div>
-                        <div class="hint" id="opImpChequeHelp">Transferencias misma titularidad: sin impuesto.</div>
+                        <div class="hint" id="opImpChequeHelp">Cada movimiento lleva solo 6‰. El 1,2% se forma con un crédito + un débito.</div>
                     </form>
                 </div>
                 <div class="modal-footer py-2">
@@ -644,7 +752,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="detalleMovBody">
-                    <p class="text-muted">Cargando…</p>
+                    <p class="text-muted">Cargando...</p>
                 </div>
                 <div class="modal-footer py-2" id="detalleMovFooter">
                     <button type="button" class="btn-sober" data-bs-dismiss="modal">Cerrar</button>
@@ -658,7 +766,7 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-dark text-white py-2">
-                    <h6 class="modal-title fw-bold">Consulta Cta Cte Bancaria — Calificación / Disponibilidades</h6>
+                    <h6 class="modal-title fw-bold">Consulta Cta Cte Bancaria - Calificación / Disponibilidades</h6>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -699,39 +807,39 @@
                         <div class="row g-2">
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Acuerdo Cta Cte ($)</label>
-                                <input type="number" step="0.01" id="ctaAcuerdo" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaAcuerdo" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Tarjeta Business ($)</label>
-                                <input type="number" step="0.01" id="ctaVisa" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaVisa" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Tarjeta RURAL ($)</label>
-                                <input type="number" step="0.01" id="ctaRural" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaRural" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Vta de CPD ($)</label>
-                                <input type="number" step="0.01" id="ctaCpd" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaCpd" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Leasing (U$S)</label>
-                                <input type="number" step="0.01" id="ctaLeasing" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaLeasing" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Forward (U$S)</label>
-                                <input type="number" step="0.01" id="ctaFwUsd" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaFwUsd" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Forward Pesos ($)</label>
-                                <input type="number" step="0.01" id="ctaFwPesos" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaFwPesos" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Aval SGR ($)</label>
-                                <input type="number" step="0.01" id="ctaAval" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaAval" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold">Sola Firma ($)</label>
-                                <input type="number" step="0.01" id="ctaSolaFirma" class="form-control font-mono" value="0">
+                                <input type="text" id="ctaSolaFirma" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00">
                             </div>
                             <div class="col-md-12">
                                 <label class="form-label fw-bold">Varios / Notas</label>
@@ -781,7 +889,7 @@
                         </div>
                         <div class="col-md-4">
                             <label class="lbl" id="lblCredMonto">Monto total ($)*</label>
-                            <input type="number" step="0.01" id="credMonto" class="form-control font-mono" required>
+                            <input type="text" id="credMonto" class="form-control font-mono text-end money-input" data-money inputmode="decimal" value="0,00" required>
                         </div>
                         <div class="col-md-3">
                             <label class="lbl">TNA %</label>
@@ -813,7 +921,7 @@
                 <div class="modal-footer py-2">
                     <button type="button" class="btn-sober" data-bs-dismiss="modal">Cancelar</button>
                     <button type="button" class="btn-sober-dark" onclick="guardarCredito(false)">Guardar</button>
-                    <button type="button" class="btn btn-success btn-sm fw-bold" onclick="guardarCredito(true)">Guardar y cargar cuotas →</button>
+                    <button type="button" class="btn btn-success btn-sm fw-bold" onclick="guardarCredito(true)">Guardar y cargar cuotas ></button>
                 </div>
             </div>
         </div>
@@ -824,15 +932,15 @@
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title fw-bold">Desarrollo de cuotas — <span id="cuotasCredTitulo">—</span></h6>
+                    <h6 class="modal-title fw-bold">Desarrollo de cuotas - <span id="cuotasCredTitulo"> - </span></h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="cuotasCreditoId">
                     <input type="hidden" id="cuotasCreditoMoneda" value="ARS">
                     <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                        <p class="hint mb-0" id="cuotasHint">Cuotas ARS: capital, intereses, impuestos, cargos. USD: montos en U$S × TC → total en $.</p>
-                        <button class="btn btn-outline-dark btn-sm fw-bold" onclick="agregarFilaCuota()">＋ Agregar cuota</button>
+                        <p class="hint mb-0" id="cuotasHint">Cuotas ARS: capital, intereses, impuestos, cargos. USD: montos en U$S × TC > total en $.</p>
+                        <button class="btn btn-outline-dark btn-sm fw-bold" onclick="agregarFilaCuota()">+ Agregar cuota</button>
                     </div>
                     <div class="table-responsive" style="max-height:420px; overflow:auto;">
                         <table class="table table-sm table-bordered align-middle mb-0" id="tablaCuotasEdit">
@@ -872,6 +980,8 @@
             document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
             if (typeof event !== 'undefined' && event && event.target) event.target.classList.add('active');
             if (tabId === 'tabCreditos') cargarCreditos();
+            if (tabId === 'tabCaja') cargarCaja();
+            if (tabId === 'tabCheques') cargarCheques();
         }
 
         async function cargarEntidades() {
@@ -917,8 +1027,8 @@
                         ? '<span class="badge-pendiente">Bancaria</span>'
                         : '<span class="badge-pendiente">Pago</span>';
                     const btnTipo = esBanco
-                        ? `<button class="btn-sober py-0 px-2" onclick="marcarTipoCuenta(${c.id}, 0)">→ Pago</button>`
-                        : `<button class="btn-sober py-0 px-2" onclick="marcarTipoCuenta(${c.id}, 1)">→ Banco</button>`;
+                        ? `<button class="btn-sober py-0 px-2" onclick="marcarTipoCuenta(${c.id}, 0)">Pago</button>`
+                        : `<button class="btn-sober py-0 px-2" onclick="marcarTipoCuenta(${c.id}, 1)">Banco</button>`;
                     const fechaAcu = (c.fecha_acuerdo || '').toString().slice(0, 10);
                     htmlTbody += `
                         <tr>
@@ -926,7 +1036,7 @@
                             <td>${c.banco || ''}</td>
                             <td class="font-mono">${c.nro_cta_cte || ''}</td>
                             <td>${c.titular || ''}</td>
-                            <td class="font-mono">${fechaAcu || '—'}</td>
+                            <td class="font-mono">${fechaAcu || ' - '}</td>
                             <td class="text-end font-mono">${money(c.acuerdo_cta_cte)}</td>
                             <td class="text-end font-mono">${money(c.visa_business)}</td>
                             <td class="text-end font-mono">${money(c.tarjeta_rural)}</td>
@@ -1065,11 +1175,11 @@
                         <td class="text-center font-mono">${fechaFmt}</td>
                         <td>${badgeFci}</td>
                         <td>${m.proveedor || '-'}</td>
-                        <td class="text-center font-mono">${m.nro_cheque || '—'}</td>
+                        <td class="text-center font-mono">${m.nro_cheque || ' - '}</td>
                         <td class="text-center font-mono">${fechaDebFmt}</td>
-                        <td class="text-end font-mono ${haber > 0 ? 'text-out' : ''}">${haber > 0 ? '$ ' + haber.toLocaleString('es-AR', {minimumFractionDigits: 2}) : '—'}</td>
-                        <td class="text-end font-mono ${debe > 0 ? 'text-in' : ''}">${debe > 0 ? '$ ' + debe.toLocaleString('es-AR', {minimumFractionDigits: 2}) : '—'}</td>
-                        <td class="text-end font-mono text-muted">${impChq > 0 ? '$ ' + impChq.toLocaleString('es-AR', {minimumFractionDigits: 2}) : '—'}</td>
+                        <td class="text-end font-mono ${haber > 0 ? 'text-out' : ''}">${haber > 0 ? '$ ' + haber.toLocaleString('es-AR', {minimumFractionDigits: 2}) : ' - '}</td>
+                        <td class="text-end font-mono ${debe > 0 ? 'text-in' : ''}">${debe > 0 ? '$ ' + debe.toLocaleString('es-AR', {minimumFractionDigits: 2}) : ' - '}</td>
+                        <td class="text-end font-mono text-muted">${impChq > 0 ? '$ ' + impChq.toLocaleString('es-AR', {minimumFractionDigits: 2}) : ' - '}</td>
                         <td class="text-end font-mono fw-bold ${saldo < 0 ? 'text-out' : ''}">$ ${saldo.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
                         <td class="text-center font-mono text-muted">${m.cta_cte_nro}</td>
                         <td class="text-center text-nowrap" onclick="event.stopPropagation()">
@@ -1105,7 +1215,7 @@
         async function verDetalleMovimiento(id) {
             const body = document.getElementById('detalleMovBody');
             const foot = document.getElementById('detalleMovFooter');
-            body.innerHTML = '<p class="text-muted mb-0">Cargando…</p>';
+            body.innerHTML = '<p class="text-muted mb-0">Cargando...</p>';
             foot.innerHTML = '<button type="button" class="btn-sober" data-bs-dismiss="modal">Cerrar</button>';
             new bootstrap.Modal(document.getElementById('modalDetalleMov')).show();
             try {
@@ -1115,16 +1225,16 @@
                 const m = d.movimiento || {};
                 const e = d.entidad;
                 const ch = d.cheque;
-                const fmt = (v) => v ? String(v).split('T')[0].split('-').reverse().join('/') : '—';
+                const fmt = (v) => v ? String(v).split('T')[0].split('-').reverse().join('/') : ' - ';
                 const money = (n) => '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 });
 
                 let html = `
                     <div class="row g-3 mb-3">
-                        <div class="col-md-3"><div class="text-muted small">Fecha cobro / emisión</div><div class="fw-bold font-mono">${fmt(m.fecha_cobro)}</div></div>
+                        <div class="col-md-3"><div class="text-muted small">Fecha emisión</div><div class="fw-bold font-mono">${fmt(m.fecha_cobro)}</div></div>
                         <div class="col-md-3"><div class="text-muted small">Fecha débito</div><div class="fw-bold font-mono">${fmt(m.fecha_debito)}</div></div>
-                        <div class="col-md-3"><div class="text-muted small">Tipo</div><div class="fw-bold">${m.tipo_operacion || '—'}</div></div>
-                        <div class="col-md-3"><div class="text-muted small">Nº cheque</div><div class="fw-bold font-mono">${m.nro_cheque || '—'}</div></div>
-                        <div class="col-md-6"><div class="text-muted small">Proveedor / detalle</div><div class="fw-bold">${m.proveedor || '—'}</div></div>
+                        <div class="col-md-3"><div class="text-muted small">Tipo</div><div class="fw-bold">${m.tipo_operacion || ' - '}</div></div>
+                        <div class="col-md-3"><div class="text-muted small">Nº cheque</div><div class="fw-bold font-mono">${m.nro_cheque || ' - '}</div></div>
+                        <div class="col-md-6"><div class="text-muted small">Proveedor / detalle</div><div class="fw-bold">${m.proveedor || ' - '}</div></div>
                         <div class="col-md-3"><div class="text-muted small">Haber</div><div class="fw-bold font-mono">${money(m.haber)}</div></div>
                         <div class="col-md-3"><div class="text-muted small">Debe</div><div class="fw-bold font-mono">${money(m.debe)}</div></div>
                     </div>`;
@@ -1133,7 +1243,7 @@
                     html += `
                         <div class="border rounded p-3 mb-3 bg-light">
                             <div class="fw-bold mb-1">Proveedor vinculado</div>
-                            <div>${e.nombre_fantasia || e.razon_social} · CUIT <span class="font-mono">${e.cuit}</span></div>
+                            <div>${e.nombre_fantasia || e.razon_social} - CUIT <span class="font-mono">${e.cuit}</span></div>
                         </div>`;
                 } else if (m.proveedor) {
                     html += `<div class="alert alert-warning py-2 small">No se encontró el proveedor en el padrón para vincular la cta cte.</div>`;
@@ -1147,9 +1257,9 @@
                                 <div class="col-md-4"><span class="text-muted">Fecha emisión:</span> <strong class="font-mono">${fmt(ch.fecha_emision)}</strong></div>
                                 <div class="col-md-4"><span class="text-muted">Fecha pago / débito:</span> <strong class="font-mono">${fmt(ch.fecha_pago)}</strong></div>
                                 <div class="col-md-4"><span class="text-muted">Monto:</span> <strong class="font-mono">${money(ch.monto)}</strong></div>
-                                <div class="col-md-4"><span class="text-muted">Banco:</span> <strong>${ch.banco || '—'}</strong></div>
-                                <div class="col-md-4"><span class="text-muted">Estado:</span> <strong>${ch.estado || '—'}</strong></div>
-                                <div class="col-md-4"><span class="text-muted">Librador:</span> <strong>${ch.librador || '—'}</strong></div>
+                                <div class="col-md-4"><span class="text-muted">Banco:</span> <strong>${ch.banco || ' - '}</strong></div>
+                                <div class="col-md-4"><span class="text-muted">Estado:</span> <strong>${ch.estado || ' - '}</strong></div>
+                                <div class="col-md-4"><span class="text-muted">Librador:</span> <strong>${ch.librador || ' - '}</strong></div>
                             </div>
                         </div>`;
                 }
@@ -1181,7 +1291,7 @@
         }
 
         function fillSelectEntidades(sel, soloProv) {
-            sel.innerHTML = '<option value="">— Seleccionar —</option>';
+            sel.innerHTML = '<option value=""> -  Seleccionar - </option>';
             _entidadesCheque.forEach(e => {
                 if (soloProv && Number(e.es_proveedor) === 0 && Number(e.es_cliente) === 1 && !e.es_proveedor) {
                     // still show all if flags messy
@@ -1205,7 +1315,7 @@
             document.getElementById('chqFechaRec').value = hoy;
             document.getElementById('chqFechaVto').value = '';
             document.getElementById('chqNro').value = '';
-            document.getElementById('chqMonto').value = '';
+            document.getElementById('chqMonto').value = CampoMoney.format(0);
             document.getElementById('chqBanco').value = '';
             document.getElementById('chqTitular').value = '';
             document.getElementById('chqCuitEmisor').value = '';
@@ -1229,7 +1339,7 @@
             document.getElementById('chqFechaRec').value = (c.fecha_recepcion || c.fecha_emision || '').slice(0, 10);
             document.getElementById('chqFechaVto').value = (c.fecha_pago || '').slice(0, 10);
             document.getElementById('chqNro').value = c.nro_cheque || '';
-            document.getElementById('chqMonto').value = c.monto != null ? Number(c.monto) : '';
+            document.getElementById('chqMonto').value = c.monto != null ? CampoMoney.format(c.monto) : CampoMoney.format(0);
             document.getElementById('chqBanco').value = c.banco || '';
             document.getElementById('chqTitular').value = c.titular || c.librador || '';
             document.getElementById('chqCuitEmisor').value = c.cuit_emisor || '';
@@ -1282,7 +1392,7 @@
                 fecha_recepcion: document.getElementById('chqFechaRec').value,
                 fecha_emision: document.getElementById('chqFechaRec').value,
                 fecha_pago: document.getElementById('chqFechaVto').value || document.getElementById('chqFechaRec').value,
-                monto: parseFloat(document.getElementById('chqMonto').value || '0'),
+                monto: CampoMoney.parse(document.getElementById('chqMonto').value),
                 observaciones: document.getElementById('chqObs').value.trim(),
                 impactar_cc_cliente: editId ? false : document.getElementById('chqImpactarCc').checked,
             };
@@ -1355,17 +1465,18 @@
                     <button class="btn btn-sm btn-outline-secondary py-0 px-1 me-1" title="Editar" onclick="abrirEditarCheque(${c.id})">Editar</button>
                     ${disponible
                         ? `<button class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="abrirDepositarCheque(${c.id})">Depositar</button>
+                           <button class="btn btn-sm btn-outline-success py-0 px-1 me-1" onclick="cobrarChequeEnCaja(${c.id})">Cobrar en caja</button>
                            <button class="btn btn-sm btn-outline-warning py-0 px-1 text-dark me-1" onclick="abrirPagarConCheque(${c.id})">Pagar prov.</button>`
                         : ''}
                     <button class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar" onclick="eliminarChequeCartera(${c.id})">×</button>`;
                 return `<tr>
-                    <td><span class="badge ${tipoBadge}">${c.tipo || '—'}</span></td>
+                    <td><span class="badge ${tipoBadge}">${c.tipo || ' - '}</span></td>
                     <td class="font-mono fw-bold">${c.nro_cheque || ''}</td>
-                    <td>${c.banco || '—'}</td>
-                    <td class="small">${c.cliente_nombre || c.dador || '—'}<div class="text-muted font-mono" style="font-size:10px;">${c.cliente_cuit || ''}</div></td>
-                    <td class="small">${c.titular || c.librador || '—'}<div class="text-muted font-mono" style="font-size:10px;">${c.cuit_emisor || ''}</div></td>
-                    <td class="font-mono small">${c.fecha_recepcion || c.fecha_emision || '—'}</td>
-                    <td class="font-mono small">${c.fecha_pago || '—'}</td>
+                    <td>${c.banco || ' - '}</td>
+                    <td class="small">${c.cliente_nombre || c.dador || ' - '}<div class="text-muted font-mono" style="font-size:10px;">${c.cliente_cuit || ''}</div></td>
+                    <td class="small">${c.titular || c.librador || ' - '}<div class="text-muted font-mono" style="font-size:10px;">${c.cuit_emisor || ''}</div></td>
+                    <td class="font-mono small">${c.fecha_recepcion || c.fecha_emision || ' - '}</td>
+                    <td class="font-mono small">${c.fecha_pago || ' - '}</td>
                     <td class="text-end font-mono fw-bold">${money(c.monto)}</td>
                     <td class="text-center"><span class="badge ${estBadge}">${c.estado || ''}</span></td>
                     <td class="text-center text-nowrap">${acciones}</td>
@@ -1376,7 +1487,7 @@
         async function eliminarChequeCartera(id) {
             const c = _chequesCache.find(x => x.id === id);
             const label = c
-                ? `Ch. ${c.nro_cheque || id} · $ ${Number(c.monto || 0).toLocaleString('es-AR')} · ${c.cliente_nombre || c.dador || c.librador || ''}`
+                ? `Ch. ${c.nro_cheque || id} - $ ${Number(c.monto || 0).toLocaleString('es-AR')} - ${c.cliente_nombre || c.dador || c.librador || ''}`
                 : `id ${id}`;
             if (!confirm(`¿Eliminar el cheque ${label}?\n\nSi tenía impacto en CC del cliente, depósito bancario o pago a proveedor, también se revierte.`)) {
                 return;
@@ -1394,13 +1505,13 @@
             if (!c) return;
             document.getElementById('depChqId').value = id;
             document.getElementById('depChqInfo').textContent =
-                `Ch. ${c.nro_cheque} · $ ${Number(c.monto).toLocaleString('es-AR')} · ${c.banco || ''} · ${c.librador || c.cliente_nombre || ''}`;
+                `Ch. ${c.nro_cheque} - $ ${Number(c.monto).toLocaleString('es-AR')} - ${c.banco || ''} - ${c.librador || c.cliente_nombre || ''}`;
             document.getElementById('depFecha').value = new Date().toISOString().slice(0, 10);
             const sel = document.getElementById('depCuentaId');
-            sel.innerHTML = '<option value="">Cargando…</option>';
+            sel.innerHTML = '<option value="">Cargando...</option>';
             const ctas = await fetch('/api/bancos/cuentas?tipo=bancarias').then(r => r.ok ? r.json() : []).catch(() => []);
             const lista = (ctas && ctas.length) ? ctas : await fetch('/api/bancos/cuentas?tipo=todas').then(r => r.json()).catch(() => []);
-            sel.innerHTML = '<option value="">— Cuenta destino —</option>';
+            sel.innerHTML = '<option value=""> -  Cuenta destino - </option>';
             (lista || []).filter(x => Number(x.es_cuenta_bancaria) !== 0 || !('es_cuenta_bancaria' in x)).forEach(cta => {
                 const o = document.createElement('option');
                 o.value = cta.id;
@@ -1429,13 +1540,37 @@
             cargarCheques();
         }
 
+        async function cobrarChequeEnCaja(id) {
+            const c = _chequesCache.find(x => x.id === id);
+            if (!c) return;
+            const money = Number(c.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+            if (!confirm(`¿Cobrar en caja el cheque ${c.nro_cheque || id} por $ ${money}?\n\nEl efectivo entra a Caja y el cheque sale de disponibles.`)) {
+                return;
+            }
+            const res = await fetch(`/api/caja/cobrar_cheque/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fecha: new Date().toISOString().slice(0, 10),
+                    usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar',
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.detail || 'No se pudo cobrar en caja');
+                return;
+            }
+            alert(data.message || 'Cobrado en caja');
+            cargarCheques();
+        }
+
         async function abrirPagarConCheque(id) {
             const c = _chequesCache.find(x => x.id === id);
             if (!c) return;
             await asegurarEntidadesCheque();
             document.getElementById('pagChqId').value = id;
             document.getElementById('pagChqInfo').textContent =
-                `Ch. ${c.nro_cheque} · $ ${Number(c.monto).toLocaleString('es-AR')} — se acreditará en la CC del proveedor.`;
+                `Ch. ${c.nro_cheque} - $ ${Number(c.monto).toLocaleString('es-AR')} - se acreditará en la CC del proveedor.`;
             document.getElementById('pagFecha').value = new Date().toISOString().slice(0, 10);
             fillSelectEntidades(document.getElementById('pagProveedor'), true);
             new bootstrap.Modal(document.getElementById('modalPagarConCheque')).show();
@@ -1494,30 +1629,58 @@
                 Cheque: 'Cheque emitido',
                 Deposito: 'Depósito / acreditación',
                 Transferencia: 'Transferencia entre cuentas (misma titularidad)',
-                FCI: 'Suscripción FCI (débito cta cte · sigue como disponibilidad)',
-                'Rescate FCI': 'Rescate FCI (vuelve al saldo · sin imp. créditos)'
+                FCI: 'Suscripción FCI (débito cta cte - sigue como disponibilidad)',
+                'Rescate FCI': 'Rescate FCI (vuelve al saldo - sin imp. créditos)'
             };
             document.getElementById('modalOperacionTitulo').innerText = titulos[tipo] || 'Movimiento';
 
             const esCheque = tipo === 'Cheque';
+            const esDebito = tipo === 'Debito';
+            const esDeposito = tipo === 'Deposito';
             const esTransfer = tipo === 'Transferencia';
             const esFci = tipo === 'FCI' || tipo === 'Rescate FCI';
-            document.getElementById('divNroCheque').style.display = (esCheque || tipo === 'Debito') ? 'block' : 'none';
+            document.getElementById('divNroCheque').style.display = (esCheque || esDebito) ? 'block' : 'none';
+            document.getElementById('divVtoCheque').style.display = esCheque ? 'block' : 'none';
             document.getElementById('divCuentaDestino').style.display = esTransfer ? 'block' : 'none';
             document.getElementById('divProveedor').style.display = esTransfer ? 'none' : 'block';
+            // Cheque emitido: fecha emisión ≠ fecha de pago (vto). El financiero usa el vto.
+            const lblFecha = document.getElementById('opFechaLbl');
+            const hintFecha = document.getElementById('opFechaHint');
+            if (esCheque) {
+                lblFecha.textContent = 'Fecha de emisión';
+                hintFecha.style.display = 'block';
+                hintFecha.textContent = 'Cuando se emite/entrega el cheque. No es la fecha del financiero.';
+                document.getElementById('opFechaVto').value = '';
+            } else {
+                lblFecha.textContent = 'Fecha de cobro';
+                hintFecha.style.display = 'none';
+                hintFecha.textContent = '';
+            }
             document.getElementById('opDetalle').required = !esTransfer;
             document.getElementById('opDetalle').placeholder = esFci
                 ? (tipo === 'FCI' ? 'Ej: FCI Galicia / Money Market' : 'Ej: Rescate FCI Galicia')
                 : 'Proveedor o concepto';
-            document.getElementById('opAplicaImpCheque').checked = esCheque;
+            // Débito/cheque y depósitos normales: 6‰ por defecto. Exentos: transfer / FCI.
+            document.getElementById('opAplicaImpCheque').checked = esCheque || esDebito || esDeposito;
             document.getElementById('opAplicaImpCheque').disabled = esTransfer || esFci;
-            document.getElementById('opImpCheque').value = '0.00';
+            document.getElementById('opImpCheque').value = CampoMoney.format(0);
             document.getElementById('opImpCheque').disabled = esTransfer || esFci;
+            document.getElementById('opMonto').value = CampoMoney.format(0);
+            const lbl = document.getElementById('opAplicaImpChequeLbl');
+            if (esDeposito) {
+                lbl.innerText = 'Aplica impuesto al crédito (6‰)';
+            } else if (esCheque || esDebito) {
+                lbl.innerText = 'Aplica impuesto al débito (6‰)';
+            } else {
+                lbl.innerText = 'Aplica impuesto 6‰ (débito o crédito según el movimiento)';
+            }
             document.getElementById('opImpChequeHelp').innerText = esTransfer
-                ? 'Sin impuesto al cheque (transferencia misma titularidad).'
+                ? 'Sin impuesto (transferencia misma titularidad / otro banco mismo titular).'
                 : esFci
-                    ? 'FCI / Rescate: sin impuesto a los débitos/créditos. La suscripción resta liquidez de cta cte pero sigue como disponibilidad.'
-                    : 'Base: 6‰ débito + 6‰ crédito = 1,2% total.';
+                    ? 'FCI / Rescate: sin impuesto a débitos/créditos.'
+                    : esDeposito
+                        ? 'Crédito 6‰. Desmarcar si es: misma titularidad otro banco, préstamo agro exento, rescate FCI, ALYC/caución 24hs (Mercado de Valores).'
+                        : 'Débito 6‰ sobre este movimiento. El 1,2% se forma recién cuando también hubo (o hay) un crédito con su 6‰.';
 
             if (esTransfer) {
                 await cargarCuentasDestinoTransferencia();
@@ -1545,7 +1708,7 @@
                     return;
                 }
                 sel.innerHTML = data.destinos.map(c =>
-                    `<option value="${c.id}">${c.banco} — ${c.nro_cta_cte}</option>`
+                    `<option value="${c.id}">${c.banco} - ${c.nro_cta_cte}</option>`
                 ).join('');
             } catch (e) {
                 console.error(e);
@@ -1553,28 +1716,23 @@
             }
         }
 
-        const ALICUOTA_IMP_CHEQUE_TOTAL = (6 / 1000) + (6 / 1000);
+        const ALICUOTA_IMP_DEBITOS_CREDITOS = 6 / 1000; // 6‰ por lado (nunca 1,2% en un solo mov.)
 
         function sugerirImpCheque() {
             const tipo = document.getElementById('opTipo').value;
             const aplica = document.getElementById('opAplicaImpCheque').checked;
-            const monto = parseFloat(document.getElementById('opMonto').value || 0);
+            const monto = CampoMoney.parse(document.getElementById('opMonto').value);
             const input = document.getElementById('opImpCheque');
             if (tipo === 'Transferencia' || tipo === 'FCI' || tipo === 'Rescate FCI') {
-                input.value = '0.00';
+                input.value = CampoMoney.format(0);
                 input.disabled = true;
                 return;
             }
-            if (tipo === 'Deposito') {
-                if (!aplica) input.value = '0.00';
-                input.disabled = !aplica;
-                return;
-            }
             input.disabled = false;
-            if (aplica && monto > 0 && (tipo === 'Cheque' || tipo === 'Debito')) {
-                input.value = (monto * ALICUOTA_IMP_CHEQUE_TOTAL).toFixed(2);
+            if (aplica && monto > 0 && (tipo === 'Cheque' || tipo === 'Debito' || tipo === 'Deposito')) {
+                input.value = CampoMoney.format(monto * ALICUOTA_IMP_DEBITOS_CREDITOS);
             } else if (!aplica) {
-                input.value = '0.00';
+                input.value = CampoMoney.format(0);
             }
         }
 
@@ -1583,9 +1741,9 @@
             let fecha = document.getElementById('opFecha').value;
             let detalle = document.getElementById('opDetalle').value.trim();
             let nroChq = document.getElementById('opNroCheque').value.trim();
-            let monto = parseFloat(document.getElementById('opMonto').value || 0);
+            let monto = CampoMoney.parse(document.getElementById('opMonto').value);
             let aplicaImp = document.getElementById('opAplicaImpCheque').checked;
-            let impChq = parseFloat(document.getElementById('opImpCheque').value || 0);
+            let impChq = CampoMoney.parse(document.getElementById('opImpCheque').value);
             const destinoId = document.getElementById('opCuentaDestino').value;
             const esFci = tipo === 'FCI' || tipo === 'Rescate FCI';
 
@@ -1609,12 +1767,17 @@
                 alert('Completá proveedor / detalle.');
                 return;
             }
+            if (tipo === 'Cheque' && !document.getElementById('opFechaVto').value) {
+                alert('Indicá la fecha de vencimiento (pago del cheque).\nEsa es la fecha que usa el financiero y la cta cte del proveedor.');
+                return;
+            }
 
             let payload = {
                 cuenta_id: parseInt(ctaSeleccionadaId, 10),
                 fecha_cobro: fecha,
                 proveedor: detalle,
                 nro_cheque: nroChq,
+                fecha_vencimiento: tipo === 'Cheque' ? document.getElementById('opFechaVto').value : '',
                 tipo_operacion: tipo,
                 monto: monto,
                 imp_chq: impChq,
@@ -1630,6 +1793,8 @@
             });
 
             if (res.ok) {
+                const okData = await res.json().catch(() => ({}));
+                if (okData.message) alert(okData.message);
                 bootstrap.Modal.getInstance(document.getElementById('modalOperacion')).hide();
                 cargarMovimientosCtaCte();
                 if (esFci) cargarPosicionFci(ctaSeleccionadaId);
@@ -1692,8 +1857,11 @@
         }
 
         function numOr0(v) {
-            const n = Number(v);
-            return Number.isFinite(n) ? n : 0;
+            return CampoMoney.parse(v);
+        }
+
+        function moneyVal(v) {
+            return CampoMoney.format(CampoMoney.parse(v));
         }
 
         function rellenarModalCuenta(c) {
@@ -1703,15 +1871,15 @@
             document.getElementById('ctaTitular').value = limpiaNan(c.titular);
             document.getElementById('ctaCbu').value = limpiaNan(c.cbu);
             document.getElementById('ctaFechaAcuerdo').value = limpiaNan(c.fecha_acuerdo).slice(0, 10);
-            document.getElementById('ctaAcuerdo').value = numOr0(c.acuerdo_cta_cte);
-            document.getElementById('ctaVisa').value = numOr0(c.visa_business);
-            document.getElementById('ctaRural').value = numOr0(c.tarjeta_rural);
-            document.getElementById('ctaCpd').value = numOr0(c.vta_cpd);
-            document.getElementById('ctaLeasing').value = numOr0(c.leasing_sgr);
-            document.getElementById('ctaFwUsd').value = numOr0(c.fw_usd);
-            document.getElementById('ctaFwPesos').value = numOr0(c.fw_pesos);
-            document.getElementById('ctaAval').value = numOr0(c.credito_aval_sgr);
-            document.getElementById('ctaSolaFirma').value = numOr0(c.sola_firma);
+            document.getElementById('ctaAcuerdo').value = moneyVal(c.acuerdo_cta_cte);
+            document.getElementById('ctaVisa').value = moneyVal(c.visa_business);
+            document.getElementById('ctaRural').value = moneyVal(c.tarjeta_rural);
+            document.getElementById('ctaCpd').value = moneyVal(c.vta_cpd);
+            document.getElementById('ctaLeasing').value = moneyVal(c.leasing_sgr);
+            document.getElementById('ctaFwUsd').value = moneyVal(c.fw_usd);
+            document.getElementById('ctaFwPesos').value = moneyVal(c.fw_pesos);
+            document.getElementById('ctaAval').value = moneyVal(c.credito_aval_sgr);
+            document.getElementById('ctaSolaFirma').value = moneyVal(c.sola_firma);
             document.getElementById('ctaVarios').value = limpiaNan(c.varios);
             document.getElementById('ctaEsBancaria').checked = Number(c.es_cuenta_bancaria) === 1;
             new bootstrap.Modal(document.getElementById('modalCuenta')).show();
@@ -1798,7 +1966,7 @@
                     return;
                 }
                 document.getElementById('resumenConciliacion').innerText =
-                    `Cuenta ${data.cuenta}: ${data.conciliados} conciliados · ${data.sin_match} sin match`;
+                    `Cuenta ${data.cuenta}: ${data.conciliados} conciliados - ${data.sin_match} sin match`;
                 document.getElementById('tablaConciliadosAuto').innerHTML = (data.detalle_conciliados || []).map(r => `
                     <tr>
                         <td>${r.movimiento_id}</td>
@@ -1821,7 +1989,7 @@
             let html = '<option value="">Sin asociar</option>';
             (cuentasGlobales || []).forEach(c => {
                 const sel = String(c.id) === String(selectedId || '') ? 'selected' : '';
-                html += `<option value="${c.id}" ${sel}>${c.banco} · ${c.nro_cta_cte} (${c.moneda || 'ARS'})</option>`;
+                html += `<option value="${c.id}" ${sel}>${c.banco} - ${c.nro_cta_cte} (${c.moneda || 'ARS'})</option>`;
             });
             return html;
         }
@@ -1879,7 +2047,7 @@
             document.getElementById('credId').value = '';
             ['credEntidad','credOrigen','credNro','credAmort'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('credMoneda').value = 'ARS';
-            document.getElementById('credMonto').value = '';
+            document.getElementById('credMonto').value = CampoMoney.format(0);
             document.getElementById('credTna').value = '0';
             document.getElementById('credTea').value = '0';
             document.getElementById('credPlazo').value = '0';
@@ -1898,7 +2066,7 @@
             document.getElementById('credOrigen').value = c.origen_detalle || c.descripcion || '';
             document.getElementById('credNro').value = c.nro_credito || '';
             document.getElementById('credMoneda').value = (c.moneda || 'ARS').toUpperCase() === 'USD' ? 'USD' : 'ARS';
-            document.getElementById('credMonto').value = c.monto_total || 0;
+            document.getElementById('credMonto').value = CampoMoney.format(c.monto_total || 0);
             document.getElementById('credTna').value = c.tna || 0;
             document.getElementById('credTea').value = c.tea || 0;
             document.getElementById('credAmort').value = c.amortizacion || '';
@@ -1913,7 +2081,7 @@
                 entidad_financiera: document.getElementById('credEntidad').value.trim(),
                 nro_credito: document.getElementById('credNro').value.trim(),
                 origen_detalle: document.getElementById('credOrigen').value.trim(),
-                monto_total: parseFloat(document.getElementById('credMonto').value) || 0,
+                monto_total: CampoMoney.parse(document.getElementById('credMonto').value),
                 moneda: document.getElementById('credMoneda').value,
                 tna: parseFloat(document.getElementById('credTna').value) || 0,
                 tea: parseFloat(document.getElementById('credTea').value) || 0,
@@ -1957,19 +2125,20 @@
             const opts = opcionesCuentasCredito(d.cuenta_id || ctaId);
             const idAccess = d.id_access != null ? d.id_access : '';
             const movId = d.movimiento_banco_id != null ? d.movimiento_banco_id : '';
+            const m = (v) => CampoMoney.format(v || 0);
             if (esUsd) {
                 return `<tr class="fila-cuota">
                     <td><input type="number" class="form-control form-control-sm font-mono cq-nro" value="${d.nro_cuota || n}" style="width:56px;"></td>
                     <td><select class="form-select form-select-sm cq-cta">${opts}</select></td>
                     <td><input type="date" class="form-control form-control-sm cq-fecha" value="${d.fecha_pago || ''}"></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-cap-usd" value="${d.capital_usd || 0}" oninput="recalcFilaUsd(this)"></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-int-usd" value="${d.intereses_usd || 0}" oninput="recalcFilaUsd(this)"></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-car-usd" value="${d.cargos_usd || 0}" oninput="recalcFilaUsd(this)"></td>
-                    <td><input type="number" step="0.0001" class="form-control form-control-sm font-mono cq-tc" value="${d.tipo_cambio || 0}" oninput="recalcFilaUsd(this)" style="width:90px;"></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-cap-ars" value="${d.capital_ars || 0}" readonly></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-int-ars" value="${d.intereses_ars || 0}" readonly></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-car-ars" value="${d.cargos_ars || 0}" readonly></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-total fw-bold" value="${d.total_ars || d.total_pagar || 0}" readonly></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-cap-usd" data-money value="${m(d.capital_usd)}" oninput="recalcFilaUsd(this)"></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-int-usd" data-money value="${m(d.intereses_usd)}" oninput="recalcFilaUsd(this)"></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-car-usd" data-money value="${m(d.cargos_usd)}" oninput="recalcFilaUsd(this)"></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-tc" data-money value="${m(d.tipo_cambio)}" oninput="recalcFilaUsd(this)" style="width:90px;"></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-cap-ars" data-money value="${m(d.capital_ars)}" readonly></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-int-ars" data-money value="${m(d.intereses_ars)}" readonly></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-car-ars" data-money value="${m(d.cargos_ars)}" readonly></td>
+                    <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-total fw-bold" data-money value="${m(d.total_ars || d.total_pagar)}" readonly></td>
                     <td><input type="number" class="form-control form-control-sm font-mono cq-id-access" value="${idAccess}" style="width:90px;" title="Id único Access"></td>
                     <td><input type="number" class="form-control form-control-sm font-mono cq-mov-id" value="${movId}" style="width:80px;" title="ID movimiento cta cte"></td>
                     <td><input type="text" class="form-control form-control-sm cq-nota" value="${d.nota || ''}"></td>
@@ -1980,11 +2149,11 @@
                 <td><input type="number" class="form-control form-control-sm font-mono cq-nro" value="${d.nro_cuota || n}" style="width:56px;"></td>
                 <td><select class="form-select form-select-sm cq-cta">${opts}</select></td>
                 <td><input type="date" class="form-control form-control-sm cq-fecha" value="${d.fecha_pago || ''}"></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-cap" value="${d.capital || 0}" oninput="recalcFilaArs(this)"></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-int" value="${d.intereses || 0}" oninput="recalcFilaArs(this)"></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-imp" value="${d.impuestos || 0}" oninput="recalcFilaArs(this)"></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-car" value="${d.cargos || 0}" oninput="recalcFilaArs(this)"></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm font-mono cq-total fw-bold" value="${d.total_pagar || 0}" readonly></td>
+                <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-cap" data-money value="${m(d.capital)}" oninput="recalcFilaArs(this)"></td>
+                <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-int" data-money value="${m(d.intereses)}" oninput="recalcFilaArs(this)"></td>
+                <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-imp" data-money value="${m(d.impuestos)}" oninput="recalcFilaArs(this)"></td>
+                <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-car" data-money value="${m(d.cargos)}" oninput="recalcFilaArs(this)"></td>
+                <td><input type="text" class="form-control form-control-sm font-mono text-end money-input cq-total fw-bold" data-money value="${m(d.total_pagar)}" readonly></td>
                 <td><input type="number" class="form-control form-control-sm font-mono cq-id-access" value="${idAccess}" style="width:90px;" title="Id único Access"></td>
                 <td><input type="number" class="form-control form-control-sm font-mono cq-mov-id" value="${movId}" style="width:80px;" title="ID movimiento cta cte"></td>
                 <td><input type="text" class="form-control form-control-sm cq-nota" value="${d.nota || ''}"></td>
@@ -1993,24 +2162,28 @@
         }
         function recalcFilaArs(el) {
             const tr = el.closest('tr');
-            const t = (parseFloat(tr.querySelector('.cq-cap').value)||0)+(parseFloat(tr.querySelector('.cq-int').value)||0)+(parseFloat(tr.querySelector('.cq-imp').value)||0)+(parseFloat(tr.querySelector('.cq-car').value)||0);
-            tr.querySelector('.cq-total').value = t.toFixed(2);
+            const t = CampoMoney.parse(tr.querySelector('.cq-cap').value)
+                + CampoMoney.parse(tr.querySelector('.cq-int').value)
+                + CampoMoney.parse(tr.querySelector('.cq-imp').value)
+                + CampoMoney.parse(tr.querySelector('.cq-car').value);
+            tr.querySelector('.cq-total').value = CampoMoney.format(t);
         }
         function recalcFilaUsd(el) {
             const tr = el.closest('tr');
-            const tc = parseFloat(tr.querySelector('.cq-tc').value)||0;
-            const cap = parseFloat(tr.querySelector('.cq-cap-usd').value)||0;
-            const ints = parseFloat(tr.querySelector('.cq-int-usd').value)||0;
-            const car = parseFloat(tr.querySelector('.cq-car-usd').value)||0;
-            tr.querySelector('.cq-cap-ars').value = (cap*tc).toFixed(2);
-            tr.querySelector('.cq-int-ars').value = (ints*tc).toFixed(2);
-            tr.querySelector('.cq-car-ars').value = (car*tc).toFixed(2);
-            tr.querySelector('.cq-total').value = ((cap+ints+car)*tc).toFixed(2);
+            const tc = CampoMoney.parse(tr.querySelector('.cq-tc').value);
+            const cap = CampoMoney.parse(tr.querySelector('.cq-cap-usd').value);
+            const ints = CampoMoney.parse(tr.querySelector('.cq-int-usd').value);
+            const car = CampoMoney.parse(tr.querySelector('.cq-car-usd').value);
+            tr.querySelector('.cq-cap-ars').value = CampoMoney.format(cap * tc);
+            tr.querySelector('.cq-int-ars').value = CampoMoney.format(ints * tc);
+            tr.querySelector('.cq-car-ars').value = CampoMoney.format(car * tc);
+            tr.querySelector('.cq-total').value = CampoMoney.format((cap + ints + car) * tc);
         }
         function agregarFilaCuota() {
             const esUsd = document.getElementById('cuotasCreditoMoneda').value === 'USD';
             const tbody = document.getElementById('tbodyCuotasEdit');
             tbody.insertAdjacentHTML('beforeend', filaCuotaHtml(esUsd, tbody.querySelectorAll('tr').length+1, null));
+            CampoMoney.bind(tbody);
         }
         async function abrirCuotasCredito(id) {
             const res = await fetch('/api/bancos/creditos/' + id);
@@ -2019,9 +2192,9 @@
             const esUsd = (c.moneda || 'ARS').toUpperCase() === 'USD';
             document.getElementById('cuotasCreditoId').value = id;
             document.getElementById('cuotasCreditoMoneda').value = esUsd ? 'USD' : 'ARS';
-            document.getElementById('cuotasCredTitulo').innerText = `${c.nro_credito || ''} · ${c.entidad_financiera || c.banco || ''} · ${esUsd ? 'USD' : 'ARS'}`;
+            document.getElementById('cuotasCredTitulo').innerText = `${c.nro_credito || ''} - ${c.entidad_financiera || c.banco || ''} - ${esUsd ? 'USD' : 'ARS'}`;
             document.getElementById('cuotasHint').innerText = esUsd
-                ? 'USD: U$S × TC. Si ya está en cta cte, usá Id Access / Mov ID — no se duplica.'
+                ? 'USD: U$S × TC. Si ya está en cta cte, usá Id Access / Mov ID - no se duplica.'
                 : 'Pesos: capital+intereses+impuestos+cargos. Vincular por Id Access si ya está en banco.';
             renderTheadCuotas(esUsd);
             const tbody = document.getElementById('tbodyCuotasEdit');
@@ -2034,6 +2207,7 @@
             } else {
                 tbody.innerHTML = cuotas.map((q, idx) => filaCuotaHtml(esUsd, q.nro_cuota || idx + 1, c.cuenta_id, q)).join('');
             }
+            CampoMoney.bind(tbody);
             new bootstrap.Modal(document.getElementById('modalCuotasCredito')).show();
         }
         async function guardarCuotasCredito() {
@@ -2055,23 +2229,23 @@
                 };
                 if (esUsd) {
                     Object.assign(base, {
-                        capital_usd: parseFloat(tr.querySelector('.cq-cap-usd').value) || 0,
-                        intereses_usd: parseFloat(tr.querySelector('.cq-int-usd').value) || 0,
-                        cargos_usd: parseFloat(tr.querySelector('.cq-car-usd').value) || 0,
-                        tipo_cambio: parseFloat(tr.querySelector('.cq-tc').value) || 0,
-                        capital_ars: parseFloat(tr.querySelector('.cq-cap-ars').value) || 0,
-                        intereses_ars: parseFloat(tr.querySelector('.cq-int-ars').value) || 0,
-                        cargos_ars: parseFloat(tr.querySelector('.cq-car-ars').value) || 0,
-                        total_ars: parseFloat(tr.querySelector('.cq-total').value) || 0,
-                        total_pagar: parseFloat(tr.querySelector('.cq-total').value) || 0
+                        capital_usd: CampoMoney.parse(tr.querySelector('.cq-cap-usd').value),
+                        intereses_usd: CampoMoney.parse(tr.querySelector('.cq-int-usd').value),
+                        cargos_usd: CampoMoney.parse(tr.querySelector('.cq-car-usd').value),
+                        tipo_cambio: CampoMoney.parse(tr.querySelector('.cq-tc').value),
+                        capital_ars: CampoMoney.parse(tr.querySelector('.cq-cap-ars').value),
+                        intereses_ars: CampoMoney.parse(tr.querySelector('.cq-int-ars').value),
+                        cargos_ars: CampoMoney.parse(tr.querySelector('.cq-car-ars').value),
+                        total_ars: CampoMoney.parse(tr.querySelector('.cq-total').value),
+                        total_pagar: CampoMoney.parse(tr.querySelector('.cq-total').value)
                     });
                 } else {
                     Object.assign(base, {
-                        capital: parseFloat(tr.querySelector('.cq-cap').value) || 0,
-                        intereses: parseFloat(tr.querySelector('.cq-int').value) || 0,
-                        impuestos: parseFloat(tr.querySelector('.cq-imp').value) || 0,
-                        cargos: parseFloat(tr.querySelector('.cq-car').value) || 0,
-                        total_pagar: parseFloat(tr.querySelector('.cq-total').value) || 0
+                        capital: CampoMoney.parse(tr.querySelector('.cq-cap').value),
+                        intereses: CampoMoney.parse(tr.querySelector('.cq-int').value),
+                        impuestos: CampoMoney.parse(tr.querySelector('.cq-imp').value),
+                        cargos: CampoMoney.parse(tr.querySelector('.cq-car').value),
+                        total_pagar: CampoMoney.parse(tr.querySelector('.cq-total').value)
                     });
                 }
                 cuotas.push(base);
@@ -2099,7 +2273,7 @@
                 const sync = data.sync || {};
                 alert(
                     `Actualizado.\n` +
-                    `USD: ${sync.creditos_usd || 0} · Tasas/TC desde Excel: ${sync.excel_filas || 0} filas.\n` +
+                    `USD: ${sync.creditos_usd || 0} - Tasas/TC desde Excel: ${sync.excel_filas || 0} filas.\n` +
                     `Créditos: ${sync.creditos_actualizados || 0} act. / ${sync.creditos_creados || 0} nuevos.\n` +
                     `Cuotas: ${sync.cuotas_actualizadas || 0} act. / ${sync.cuotas_vinculadas || 0} nuevas.`
                 );
@@ -2109,6 +2283,133 @@
                 console.error(e);
                 alert('Error al vincular préstamos');
             }
+        }
+
+        // - - - CAJA - - - 
+        async function cargarCaja() {
+            try {
+                const desde = document.getElementById('cajaDesde')?.value || '';
+                const hasta = document.getElementById('cajaHasta')?.value || '';
+                const qs = new URLSearchParams();
+                if (desde) qs.set('desde', desde);
+                if (hasta) qs.set('hasta', hasta);
+                const [saldoRes, movRes] = await Promise.all([
+                    fetch('/api/caja/saldo').then(r => r.json()),
+                    fetch('/api/caja/movimientos?' + qs.toString()).then(r => r.json()),
+                ]);
+                const money = (n) => '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                document.getElementById('lblSaldoCaja').textContent = money(saldoRes.saldo);
+                const aviso = document.getElementById('avisoSaldoInicialCaja');
+                if (!saldoRes.usa_modulo_caja) {
+                    aviso.classList.remove('d-none');
+                    const leg = Number(saldoRes.saldo_legado_sugerido || 0);
+                    document.getElementById('txtLegadoCaja').textContent = leg > 0.01
+                        ? ` Hay un saldo histórico importado de $ ${leg.toLocaleString('es-AR', { minimumFractionDigits: 2 })} (solo referencia).`
+                        : '';
+                } else {
+                    aviso.classList.add('d-none');
+                }
+                const rows = movRes.movimientos || [];
+                const tbody = document.getElementById('tablaCajaBody');
+                if (!rows.length) {
+                    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">Sin movimientos en el rango.</td></tr>`;
+                    return;
+                }
+                tbody.innerHTML = rows.map(m => {
+                    const ing = String(m.tipo || '').toLowerCase() === 'ingreso';
+                    const monto = Number(m.monto || 0);
+                    return `<tr>
+                        <td class="font-mono small">${m.fecha || ' - '}</td>
+                        <td><span class="badge ${ing ? 'bg-success' : 'bg-danger'}">${ing ? 'Ingreso' : 'Egreso'}</span></td>
+                        <td>${(m.concepto || ' - ').replace(/</g, '&lt;')}</td>
+                        <td class="small">${m.forma || ' - '}</td>
+                        <td class="font-mono small">${m.referencia || ' - '}</td>
+                        <td class="text-end font-mono text-success">${ing ? money(monto) : ''}</td>
+                        <td class="text-end font-mono text-danger">${ing ? '' : money(monto)}</td>
+                        <td class="small text-muted">${m.usuario_registro || ''}</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" title="Anular" onclick="anularCajaMov(${m.id})">×</button>
+                        </td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                console.error(e);
+                document.getElementById('tablaCajaBody').innerHTML =
+                    `<tr><td colspan="9" class="text-center py-4 text-danger">Error al cargar caja.</td></tr>`;
+            }
+        }
+
+        async function abrirModalCaja(tipo, saldoInicial) {
+            document.getElementById('cajaMovTipo').value = tipo;
+            document.getElementById('modalCajaTitulo').textContent =
+                tipo === 'ingreso' ? (saldoInicial ? 'Saldo inicial de caja' : 'Ingreso a caja') : 'Pago en efectivo (caja)';
+            document.getElementById('cajaMovFecha').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('cajaMovMonto').value = CampoMoney.format(0);
+            document.getElementById('cajaMovConcepto').value = saldoInicial ? 'Saldo inicial de caja' : '';
+            document.getElementById('cajaMovRef').value = '';
+            const forma = document.getElementById('cajaMovForma');
+            forma.value = saldoInicial ? 'Saldo inicial' : (tipo === 'ingreso' ? 'Efectivo' : 'Efectivo');
+            const bloque = document.getElementById('cajaBloqueProveedor');
+            if (tipo === 'egreso') {
+                bloque.classList.remove('d-none');
+                document.getElementById('cajaImpactarProv').checked = false;
+                await asegurarEntidadesCheque();
+                fillSelectEntidades(document.getElementById('cajaProveedor'), true);
+                toggleCajaProveedor();
+            } else {
+                bloque.classList.add('d-none');
+            }
+            new bootstrap.Modal(document.getElementById('modalCajaMov')).show();
+        }
+
+        function toggleCajaProveedor() {
+            const on = document.getElementById('cajaImpactarProv').checked;
+            document.getElementById('cajaProveedor').disabled = !on;
+        }
+
+        async function confirmarCajaMov() {
+            const tipo = document.getElementById('cajaMovTipo').value;
+            const monto = CampoMoney.parse(document.getElementById('cajaMovMonto').value);
+            if (!(monto > 0)) { alert('Ingresá un monto válido'); return; }
+            const payload = {
+                fecha: document.getElementById('cajaMovFecha').value,
+                monto,
+                concepto: document.getElementById('cajaMovConcepto').value.trim(),
+                forma: document.getElementById('cajaMovForma').value,
+                referencia: document.getElementById('cajaMovRef').value.trim(),
+                usuario_registro: (window.CampoPlusFirma && CampoPlusFirma.getNombre()) || 'Sin firmar',
+                impactar_cc_proveedor: false,
+                proveedor_cuit: '',
+            };
+            if (tipo === 'egreso' && document.getElementById('cajaImpactarProv').checked) {
+                payload.impactar_cc_proveedor = true;
+                payload.proveedor_cuit = document.getElementById('cajaProveedor').value || '';
+                if (!payload.proveedor_cuit) { alert('Elegí el proveedor'); return; }
+            }
+            const url = tipo === 'ingreso' ? '/api/caja/ingreso' : '/api/caja/egreso';
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.detail || 'No se pudo guardar');
+                return;
+            }
+            bootstrap.Modal.getInstance(document.getElementById('modalCajaMov'))?.hide();
+            await cargarCaja();
+        }
+
+        async function anularCajaMov(id) {
+            if (!confirm('¿Anular este movimiento de caja?')) return;
+            const res = await fetch(`/api/caja/movimientos/${id}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.detail || 'No se pudo anular');
+                return;
+            }
+            await cargarCaja();
         }
 
         window.onload = inicializar;

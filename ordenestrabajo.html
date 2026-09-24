@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -14,7 +14,8 @@
         .cons-tipo option[value="producto"] { color:#1e40af; }
         .cons-tipo option[value="laboreo"] { color:#92400e; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
 <div class="container my-4" style="max-width:1100px;">
@@ -26,7 +27,7 @@
         <div class="d-flex gap-2">
             <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
             <a href="Margenesbrutos.html" class="btn btn-sm btn-outline-dark fw-bold">Campaña</a>
-            <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">← Dashboard</a>
+            <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">Dashboard</a>
         </div>
     </div>
 
@@ -113,7 +114,7 @@
             </table>
         </div>
         <div class="text-end mt-3">
-            <button class="btn btn-success fw-bold px-4" onclick="emitirOT()">💾 Emitir Orden de Trabajo</button>
+            <button class="btn btn-success fw-bold px-4" onclick="emitirOT()">Emitir Orden de Trabajo</button>
         </div>
     </div>
 
@@ -122,7 +123,7 @@
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0">
                 <thead><tr><th>Nº</th><th>Fecha</th><th>Labor</th><th>Has</th><th class="text-end">Insumos</th><th class="text-end">Laboreos</th><th class="text-end">Total neto</th></tr></thead>
-                <tbody id="tablaOTHist"><tr><td colspan="7" class="text-muted text-center py-2">—</td></tr></tbody>
+                <tbody id="tablaOTHist"><tr><td colspan="7" class="text-muted text-center py-2"> - </td></tr></tbody>
             </table>
         </div>
     </div>
@@ -151,7 +152,7 @@ async function init() {
     selC.innerHTML = (camps || []).map(c => `<option value="${c.id}">Campaña ${c.codigo}</option>`).join('')
         || '<option value="">Sin campaña</option>';
     const selCampo = document.getElementById('selCampo');
-    selCampo.innerHTML = '<option value="">Seleccione…</option>' +
+    selCampo.innerHTML = '<option value="">Seleccione...</option>' +
         camposCache.map(c => `<option value="${c.id}">${c.nombre} (${c.tipo})</option>`).join('');
     renderHist(ots || []);
     agregarLinea('producto');
@@ -199,12 +200,12 @@ function optsItems(tipo) {
     const t = (tipo || 'producto').toLowerCase();
     const list = itemsCache.filter(i => (i.tipo || 'producto') === t);
     if (!list.length) {
-        return `<option value="">— Sin ${t === 'laboreo' ? 'labores' : 'productos'} con stock —</option>`;
+        return `<option value=""> -  Sin ${t === 'laboreo' ? 'labores' : 'productos'} con stock - </option>`;
     }
     return list.map(i => {
         const etiqueta = t === 'laboreo' ? 'labor' : 'producto';
         return `<option value="${i.id}" data-unidad="${i.unidad||''}" data-costo="${i.costo_promedio_neto||0}" data-tipo="${i.tipo}">
-            [${etiqueta}] ${i.nombre} — stock ${Number(i.stock_cantidad||0).toFixed(2)} ${i.unidad||''} · $ ${Number(i.costo_promedio_neto||0).toFixed(2)}
+            [${etiqueta}] ${i.nombre} - stock ${Number(i.stock_cantidad||0).toFixed(2)} ${i.unidad||''} - $ ${Number(i.costo_promedio_neto||0).toFixed(2)}
         </option>`;
     }).join('');
 }
@@ -237,7 +238,7 @@ function agregarLinea(tipoInicial) {
         <td><select class="form-select form-select-sm cons-item" onchange="onItemChange(this)">${optsItems(tipo)}</select></td>
         <td class="text-center"><input type="number" step="0.01" class="form-control form-control-sm font-mono cons-dosis" value="${tipo==='laboreo'?'1':'0'}" oninput="recalcularLineas()"></td>
         <td class="text-end"><input type="number" step="0.01" class="form-control form-control-sm font-mono cons-cant" value="0" oninput="recalcularLineas()"></td>
-        <td class="cons-un small">—</td>
+        <td class="cons-un small"> - </td>
         <td class="text-end font-mono cons-cu">$ 0,00</td>
         <td class="text-end font-mono fw-bold cons-ct">$ 0,00</td>
         <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove(); recalcularLineas();">×</button></td>`;
@@ -249,7 +250,7 @@ function onItemChange(sel) {
     const opt = sel.selectedOptions[0];
     const tr = sel.closest('tr');
     if (!opt) return;
-    tr.querySelector('.cons-un').innerText = opt.dataset.unidad || '—';
+    tr.querySelector('.cons-un').innerText = opt.dataset.unidad || ' - ';
     const cu = Number(opt.dataset.costo || 0);
     tr.querySelector('.cons-cu').innerText = '$ ' + cu.toLocaleString('es-AR', {minimumFractionDigits:2});
     recalcularLineas();
@@ -310,7 +311,7 @@ async function emitirOT() {
     });
     const d = await res.json().catch(()=>({}));
     if (!res.ok) return alert(d.detail || 'Error al emitir OT');
-    alert(`✅ ${d.message}\nInsumos: $ ${Number(d.costo_insumos_neto||0).toLocaleString('es-AR')}\nLaboreos: $ ${Number(d.costo_laboreos_neto||0).toLocaleString('es-AR')}\nTotal neto: $ ${Number(d.costo_total_neto||0).toLocaleString('es-AR')}`);
+    alert(`${d.message}\nInsumos: $ ${Number(d.costo_insumos_neto||0).toLocaleString('es-AR')}\nLaboreos: $ ${Number(d.costo_laboreos_neto||0).toLocaleString('es-AR')}\nTotal neto: $ ${Number(d.costo_total_neto||0).toLocaleString('es-AR')}`);
     location.reload();
 }
 

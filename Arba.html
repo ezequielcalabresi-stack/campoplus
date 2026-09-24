@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -16,7 +16,8 @@
         #jobPanel.error { display: block; border-color: #fca5a5; background: #fef2f2; }
         .clock { font-size: 1.75rem; font-weight: 700; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
     </style>
-<script src="/campoplus-firma.js"></script>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
 <div class="container my-4" style="max-width: 960px;">
@@ -25,22 +26,22 @@
             <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Padrón ARBA RGS (Ret / Perc)</small></h4>
             <p class="text-muted small mb-0">Descargá el padrón una vez al mes, cargalo acá y las OP consultan esas alícuotas todo el período.</p>
         </div>
-        <a href="Index.html" class="btn btn-secondary btn-sm" style="background:#e2e8f0;color:#334155;border:none;font-weight:600;">← Dashboard</a>
+        <a href="Index.html" class="btn btn-secondary btn-sm" style="background:#e2e8f0;color:#334155;border:none;font-weight:600;">Dashboard</a>
     </div>
 
     <div class="main-card">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
             <div>
                 <h5 class="fw-bold mb-1">Estado del padrón cargado</h5>
-                <p class="text-muted small mb-0" id="lblEstado">Consultando…</p>
+                <p class="text-muted small mb-0" id="lblEstado">Consultando...</p>
             </div>
-            <span class="badge fs-6 p-2" id="badgeEstado">—</span>
+            <span class="badge fs-6 p-2" id="badgeEstado"> - </span>
         </div>
         <div class="row g-3" id="panelStats">
-            <div class="col-md-3"><div class="stat"><div class="text-muted small">Período</div><div class="fw-bold font-mono" id="stPeriodo">—</div></div></div>
-            <div class="col-md-3"><div class="stat"><div class="text-muted small">Vigencia</div><div class="fw-bold font-mono small" id="stVigencia">—</div></div></div>
-            <div class="col-md-3"><div class="stat"><div class="text-muted small">Registros</div><div class="fw-bold font-mono" id="stRegs">—</div></div></div>
-            <div class="col-md-3"><div class="stat"><div class="text-muted small">Última carga</div><div class="fw-bold font-mono small" id="stCarga">—</div></div></div>
+            <div class="col-md-3"><div class="stat"><div class="text-muted small">Período</div><div class="fw-bold font-mono" id="stPeriodo"> - </div></div></div>
+            <div class="col-md-3"><div class="stat"><div class="text-muted small">Vigencia</div><div class="fw-bold font-mono small" id="stVigencia"> - </div></div></div>
+            <div class="col-md-3"><div class="stat"><div class="text-muted small">Registros</div><div class="fw-bold font-mono" id="stRegs"> - </div></div></div>
+            <div class="col-md-3"><div class="stat"><div class="text-muted small">Última carga</div><div class="fw-bold font-mono small" id="stCarga"> - </div></div></div>
         </div>
     </div>
 
@@ -58,10 +59,10 @@
                     <input type="file" id="filePer" class="form-control form-control-sm" accept=".txt,.TXT,.zip,.ZIP">
                 </div>
                 <div class="d-grid gap-2">
-                    <button class="btn btn-primary fw-bold" id="btnUpload" onclick="subirEImportar()">⬆ Subir e importar</button>
-                    <button class="btn btn-outline-dark fw-bold" id="btnDetect" onclick="importarDetectados()">📂 Importar detectados en carpeta</button>
+                    <button class="btn btn-primary fw-bold" id="btnUpload" onclick="subirEImportar()">Subir e importar</button>
+                    <button class="btn btn-outline-dark fw-bold" id="btnDetect" onclick="importarDetectados()">Importar detectados en carpeta</button>
                 </div>
-                <p class="text-muted small mt-3 mb-0" id="lblDetect">—</p>
+                <p class="text-muted small mt-3 mb-0" id="lblDetect"> - </p>
 
                 <div id="jobPanel">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -71,7 +72,7 @@
                         </div>
                         <div class="text-end">
                             <div class="fw-bold" id="jobPct">0%</div>
-                            <div class="small text-muted" id="jobFase">—</div>
+                            <div class="small text-muted" id="jobFase"> - </div>
                         </div>
                     </div>
                     <div class="progress mt-2" style="height:10px;">
@@ -80,7 +81,7 @@
                     <p class="small mb-0 mt-2" id="jobMsg">Podés salir de esta pantalla: la carga sigue en el servidor.</p>
                 </div>
 
-                <p class="small text-muted mt-2 mb-0">La importación puede tardar varios minutos (archivos ~150–300 MB). Corre en segundo plano: podés ir al Dashboard y volver.</p>
+                <p class="small text-muted mt-2 mb-0">La importación puede tardar varios minutos (archivos ~150 - 300 MB). Corre en segundo plano: podés ir al Dashboard y volver.</p>
             </div>
         </div>
         <div class="col-md-6">
@@ -92,17 +93,17 @@
                     <button class="btn btn-dark fw-bold" onclick="consultarCuit()">Consultar</button>
                 </div>
                 <div id="resBox" class="border rounded p-3 bg-light" style="display:none;">
-                    <div class="fw-bold mb-2" id="resTitulo">—</div>
+                    <div class="fw-bold mb-2" id="resTitulo"> - </div>
                     <div class="row g-2">
                         <div class="col-6">
                             <div class="small text-muted">Retención</div>
-                            <div class="fs-5 fw-bold text-primary font-mono" id="resRet">—</div>
-                            <div class="small">Grupo <span id="resRetG" class="font-mono">—</span></div>
+                            <div class="fs-5 fw-bold text-primary font-mono" id="resRet"> - </div>
+                            <div class="small">Grupo <span id="resRetG" class="font-mono"> - </span></div>
                         </div>
                         <div class="col-6">
                             <div class="small text-muted">Percepción</div>
-                            <div class="fs-5 fw-bold text-primary font-mono" id="resPerc">—</div>
-                            <div class="small">Grupo <span id="resPercG" class="font-mono">—</span></div>
+                            <div class="fs-5 fw-bold text-primary font-mono" id="resPerc"> - </div>
+                            <div class="small">Grupo <span id="resPercG" class="font-mono"> - </span></div>
                         </div>
                     </div>
                 </div>
@@ -111,7 +112,7 @@
                 <ol class="small text-muted mb-0">
                     <li>Entrá a ARBA / DFE con tu CIT (Configuración empresa).</li>
                     <li>Descargá padrón de <strong>Retenciones</strong> y <strong>Percepciones</strong> del mes.</li>
-                    <li>Subilos acá (o copialos a <code>padrones_arba/</code> y usá “Importar detectados”).</li>
+                    <li>Subilos acá (o copialos a <code>padrones_arba/</code> y usá "Importar detectados").</li>
                 </ol>
             </div>
         </div>
@@ -171,7 +172,7 @@ function renderJob(d) {
         document.getElementById('jobBar').className = 'progress-bar progress-bar-striped progress-bar-animated bg-primary';
         document.getElementById('jobPct').innerText = Math.round(pct) + '%';
         document.getElementById('jobFase').innerText = d.fase || 'importando';
-        document.getElementById('jobMsg').innerText = d.message || 'Importando en segundo plano… Podés salir y volver.';
+        document.getElementById('jobMsg').innerText = d.message || 'Importando en segundo plano... Podés salir y volver.';
         if (d.elapsed_sec != null) {
             document.getElementById('jobClock').innerText = fmtClock(d.elapsed_sec);
         }
@@ -186,11 +187,11 @@ function renderJob(d) {
         document.getElementById('jobBar').className = 'progress-bar bg-success';
         document.getElementById('jobPct').innerText = '100%';
         document.getElementById('jobFase').innerText = 'listo';
-        const regs = d.registros != null ? Number(d.registros).toLocaleString('es-AR') : '—';
-        document.getElementById('jobMsg').innerText = `${d.message || 'Listo'} · ${regs} registros · ${secs != null ? secs + 's' : ''}`.trim();
+        const regs = d.registros != null ? Number(d.registros).toLocaleString('es-AR') : ' - ';
+        document.getElementById('jobMsg').innerText = `${d.message || 'Listo'} - ${regs} registros - ${secs != null ? secs + 's' : ''}`.trim();
         if (!doneAlertShown) {
             doneAlertShown = true;
-            alert(`✅ ${d.message || 'Padrón cargado'}\nRegistros: ${regs}\nTiempo: ${secs != null ? secs + 's' : '—'}`);
+            alert(`${d.message || 'Padrón cargado'}\nRegistros: ${regs}\nTiempo: ${secs != null ? secs + 's' : ' - '}`);
             cargarEstado();
         }
     } else if (st === 'error') {
@@ -205,7 +206,7 @@ function renderJob(d) {
         document.getElementById('jobMsg').innerText = d.message || 'Error en la importación';
         if (!doneAlertShown) {
             doneAlertShown = true;
-            alert('❌ ' + (d.message || 'Error al importar'));
+            alert('' + (d.message || 'Error al importar'));
         }
     } else {
         panel.style.display = 'none';
@@ -253,13 +254,13 @@ async function cargarEstado() {
             badge.className = 'badge fs-6 p-2 bg-secondary';
             badge.innerText = 'SIN PADRÓN';
         }
-        document.getElementById('stPeriodo').innerText = d.periodo_label || '—';
-        document.getElementById('stVigencia').innerText = (d.vigencia_desde && d.vigencia_hasta) ? `${d.vigencia_desde} → ${d.vigencia_hasta}` : '—';
-        document.getElementById('stRegs').innerText = d.registros != null ? Number(d.registros).toLocaleString('es-AR') : '—';
-        document.getElementById('stCarga').innerText = d.fecha_carga || '—';
+        document.getElementById('stPeriodo').innerText = d.periodo_label || ' - ';
+        document.getElementById('stVigencia').innerText = (d.vigencia_desde && d.vigencia_hasta) ? `${d.vigencia_desde} ? ${d.vigencia_hasta}` : ' - ';
+        document.getElementById('stRegs').innerText = d.registros != null ? Number(d.registros).toLocaleString('es-AR') : ' - ';
+        document.getElementById('stCarga').innerText = d.fecha_carga || ' - ';
         const det = d.detectados || {};
         document.getElementById('lblDetect').innerHTML =
-            `Detectados: Ret <code>${det.retenciones ? det.retenciones.split(/[/\\\\]/).pop() : '—'}</code> · Perc <code>${det.percepciones ? det.percepciones.split(/[/\\\\]/).pop() : '—'}</code>`;
+            `Detectados: Ret <code>${det.retenciones ? det.retenciones.split(/[/\\\\]/).pop() : ' - '}</code> - Perc <code>${det.percepciones ? det.percepciones.split(/[/\\\\]/).pop() : ' - '}</code>`;
     } catch (e) {
         document.getElementById('lblEstado').innerText = 'No se pudo consultar el estado del padrón.';
     }
@@ -277,7 +278,7 @@ async function importarDetectados() {
         ensurePolling();
     } catch (e) {
         setBusy(false);
-        alert('❌ ' + (e.message || e));
+        alert('' + (e.message || e));
     }
 }
 
@@ -298,7 +299,7 @@ async function subirEImportar() {
         ensurePolling();
     } catch (e) {
         setBusy(false);
-        alert('❌ ' + (e.message || e));
+        alert('' + (e.message || e));
     }
 }
 
@@ -310,8 +311,8 @@ async function consultarCuit() {
         const d = await res.json();
         document.getElementById('resBox').style.display = 'block';
         document.getElementById('resTitulo').innerText = d.encontrado
-            ? `CUIT ${d.cuit} — ${d.estado || 'Oficial ARBA'}`
-            : `CUIT ${d.cuit} — ${d.estado || 'No encontrado'}`;
+            ? `CUIT ${d.cuit} - ${d.estado || 'Oficial ARBA'}`
+            : `CUIT ${d.cuit} - ${d.estado || 'No encontrado'}`;
         document.getElementById('resRet').innerText = `${Number(d.alicuota_retencion||0).toFixed(2).replace('.',',')} %`;
         document.getElementById('resPerc').innerText = `${Number(d.alicuota_percepcion||0).toFixed(2).replace('.',',')} %`;
         document.getElementById('resRetG').innerText = d.ret_grupo || '00';

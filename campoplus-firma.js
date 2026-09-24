@@ -1,5 +1,5 @@
 /**
- * CAmpo+ — Firma de operador y trazabilidad.
+ * CAmpo+ - Firma de operador y trazabilidad.
  * Incluir en todas las pantallas: <script src="/campoplus-firma.js"></script>
  * - Guarda el usuario activo en localStorage
  * - Inyecta X-Usuario-* en todo fetch hacia /api/
@@ -103,26 +103,106 @@
     }
   }
 
+  function isMobile() {
+    return window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+  }
+
+  function updateCollapsedLabel() {
+    const label = document.getElementById("campoplus-firma-collapsed-label");
+    if (!label) return;
+    const u = loadUser();
+    label.textContent = u && u.nombre ? u.nombre : "Firma";
+  }
+
+  function setBarExpanded(expanded) {
+    const bar = document.getElementById("campoplus-firma-bar");
+    if (!bar) return;
+    bar.dataset.expanded = expanded ? "1" : "0";
+    const collapsed = document.getElementById("campoplus-firma-collapsed");
+    const panel = document.getElementById("campoplus-firma-panel");
+    if (collapsed) collapsed.style.display = expanded ? "none" : "flex";
+    if (panel) panel.style.display = expanded ? "flex" : "none";
+    if (!expanded) updateCollapsedLabel();
+  }
+
+  function syncBarVisibility() {
+    const bar = document.getElementById("campoplus-firma-bar");
+    if (!bar) return;
+    // Ocultar cuando hay modal abierto (botones Aceptar/Guardar abajo)
+    const modalOpen = !!document.querySelector(".modal.show");
+    bar.style.display = modalOpen ? "none" : "flex";
+    if (modalOpen) return;
+    // En celular: colapsado por defecto para no tapar acciones
+    if (isMobile() && bar.dataset.expanded !== "1") {
+      setBarExpanded(false);
+    } else if (!isMobile()) {
+      setBarExpanded(true);
+    }
+  }
+
   function ensureBar() {
     if (document.getElementById("campoplus-firma-bar")) return;
+
+    if (!document.getElementById("campoplus-firma-style")) {
+      const st = document.createElement("style");
+      st.id = "campoplus-firma-style";
+      st.textContent =
+        "#campoplus-firma-bar{position:fixed;bottom:max(12px,env(safe-area-inset-bottom));" +
+        "right:max(12px,env(safe-area-inset-right));z-index:99990;" +
+        "font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;" +
+        "border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:12px;" +
+        "max-width:min(96vw,420px);flex-direction:column;align-items:stretch}" +
+        "#campoplus-firma-collapsed{align-items:center;gap:8px;padding:8px 12px;cursor:pointer;" +
+        "user-select:none;-webkit-tap-highlight-color:transparent}" +
+        "#campoplus-firma-collapsed-label{font-weight:700;max-width:140px;overflow:hidden;" +
+        "text-overflow:ellipsis;white-space:nowrap}" +
+        "#campoplus-firma-panel{align-items:center;gap:8px;padding:8px 12px;flex-wrap:wrap}" +
+        "#campoplus-firma-select{flex:1;min-width:140px;border-radius:6px;border:1px solid #334155;" +
+        "background:#1e293b;color:#f8fafc;padding:4px 6px;font-size:12px;font-weight:600}" +
+        "#campoplus-firma-bar a{font-weight:700;text-decoration:none;white-space:nowrap}" +
+        "@media (max-width:768px){#campoplus-firma-bar{max-width:min(92vw,280px)}" +
+        "#campoplus-firma-panel{flex-direction:column;align-items:stretch}" +
+        "#campoplus-firma-select{min-width:0;width:100%}" +
+        "#campoplus-firma-links{display:none !important}}" +
+        "@media print{#campoplus-firma-bar{display:none !important}}";
+      document.head.appendChild(st);
+    }
+
     const bar = document.createElement("div");
     bar.id = "campoplus-firma-bar";
-    bar.style.cssText =
-      "position:fixed;bottom:12px;right:12px;z-index:99999;font-family:system-ui,sans-serif;" +
-      "background:#0f172a;color:#f8fafc;border-radius:10px;padding:8px 12px;box-shadow:0 8px 24px rgba(0,0,0,.25);" +
-      "display:flex;align-items:center;gap:8px;font-size:12px;max-width:min(96vw,420px);";
+    bar.className = "no-print";
+    bar.dataset.expanded = isMobile() ? "0" : "1";
     bar.innerHTML =
+      '<div id="campoplus-firma-collapsed" title="Elegir operador que firma">' +
+      '<span style="opacity:.75">✎</span>' +
+      '<span id="campoplus-firma-collapsed-label">Firma</span>' +
+      "</div>" +
+      '<div id="campoplus-firma-panel">' +
+      '<div style="display:flex;align-items:center;gap:8px;width:100%">' +
       '<span style="opacity:.8;white-space:nowrap">Firma</span>' +
-      '<select id="campoplus-firma-select" style="flex:1;min-width:140px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#f8fafc;padding:4px 6px;font-size:12px;font-weight:600"></select>' +
-      '<a href="/AuditLog.html" title="Ver log de auditoría" style="color:#6ee7b7;font-weight:700;text-decoration:none;white-space:nowrap">Log</a>' +
-      '<a href="/Usuarios.html" title="Usuarios" style="color:#93c5fd;font-weight:700;text-decoration:none;white-space:nowrap">Users</a>';
+      '<select id="campoplus-firma-select"></select>' +
+      '<button type="button" id="campoplus-firma-minimize" title="Minimizar" ' +
+      'style="border:none;background:#334155;color:#f8fafc;border-radius:6px;padding:4px 8px;' +
+      'font-size:12px;font-weight:700;cursor:pointer;display:none"></button>' +
+      "</div></div>";
     document.body.appendChild(bar);
+
+    const collapsed = document.getElementById("campoplus-firma-collapsed");
+    const minimize = document.getElementById("campoplus-firma-minimize");
+    collapsed.addEventListener("click", function () {
+      setBarExpanded(true);
+      if (isMobile()) minimize.style.display = "inline-block";
+    });
+    minimize.addEventListener("click", function () {
+      setBarExpanded(false);
+    });
 
     const sel = document.getElementById("campoplus-firma-select");
     sel.addEventListener("change", function () {
       const opt = sel.options[sel.selectedIndex];
       if (!opt || !opt.value) {
         saveUser(null);
+        updateCollapsedLabel();
         syncPageSelects();
         return;
       }
@@ -132,8 +212,20 @@
         rol: opt.dataset.rol || "",
         email: opt.dataset.email || "",
       });
+      updateCollapsedLabel();
       syncPageSelects();
+      // En celular, colapsar al elegir para liberar la pantalla
+      if (isMobile()) setBarExpanded(false);
     });
+
+    // Ocultar barra mientras hay modales (Aceptar / Guardar abajo)
+    document.addEventListener("shown.bs.modal", syncBarVisibility);
+    document.addEventListener("hidden.bs.modal", syncBarVisibility);
+    window.addEventListener("resize", syncBarVisibility);
+
+    setBarExpanded(!isMobile());
+    updateCollapsedLabel();
+    syncBarVisibility();
   }
 
   function fillSelect(users) {
@@ -143,7 +235,7 @@
     sel.innerHTML = "";
     const empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "— Elegir operador —";
+    empty.textContent = " -  Elegir operador - ";
     sel.appendChild(empty);
     (users || []).forEach(function (u) {
       const o = document.createElement("option");
@@ -170,6 +262,7 @@
       sel.value = String(users[0].id);
       saveUser(users[0]);
     }
+    updateCollapsedLabel();
   }
 
   /** Sincroniza #selectUsuario u otros selects de operador de la página. */
@@ -291,7 +384,16 @@
   };
 
   function boot() {
-    ensureBar();
+    var vieja = document.getElementById("campoplus-firma-bar");
+    if (vieja) vieja.remove();
+    var estilo = document.getElementById("campoplus-firma-style");
+    if (estilo) estilo.remove();
+    if (!loadUser()) {
+      try {
+        var ses = JSON.parse(localStorage.getItem("campoplus_session_user") || "null");
+        if (ses && ses.nombre) saveUser(ses);
+      } catch (_) {}
+    }
     fetchUsuarios().then(function (users) {
       users = sortByLabel(users, "nombre");
       fillSelect(users);
