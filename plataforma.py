@@ -141,6 +141,17 @@ def _headers_scope(scope) -> dict:
     return out
 
 
+def _ruta_base_cuenta(master_path: str, stored: Optional[str]) -> str:
+    """Si la ruta se guardó en Windows y acá no existe, la cuenta maestra usa el archivo del servidor."""
+    path = (stored or "").strip() or master_path
+    if os.path.isfile(path):
+        return path
+    normal = path.replace("\\", "/")
+    if "datos_clientes" not in normal:
+        return master_path
+    return path
+
+
 def resolver_contexto(master_path: str, token: str, cuenta_header: str):
     """Devuelve (db_path, cuenta_id, bloquear)."""
     if not token:
@@ -180,7 +191,7 @@ def resolver_contexto(master_path: str, token: str, cuenta_header: str):
         return master_path, None, False
     if not int(cuenta["activo"] or 0) and not superadmin:
         return master_path, int(cuenta["id"]), True
-    return cuenta["db_path"] or master_path, int(cuenta["id"]), False
+    return _ruta_base_cuenta(master_path, cuenta["db_path"]), int(cuenta["id"]), False
 
 
 class TenantDBMiddleware:
@@ -234,7 +245,7 @@ def abrir_base_cuenta(master_path: str, cuenta_id: Optional[int] = None) -> sqli
     if not cid:
         return master_connect(master_path)
     row = _cuenta_row(master_path, cid)
-    path = row["db_path"] if row and row["db_path"] else master_path
+    path = _ruta_base_cuenta(master_path, row["db_path"] if row else None)
     if os.path.abspath(path) == os.path.abspath(master_path):
         return master_connect(master_path)
     conn = sqlite3.connect(path, timeout=30.0)
