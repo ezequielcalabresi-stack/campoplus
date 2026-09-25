@@ -628,6 +628,28 @@ def start_import_job(
         return dict(job0)
 
 
+def _ciclo_padron_automatico() -> None:
+    """En el servidor, si hay TXT del mes y el padrón no está vigente, importa solo."""
+    if not os.environ.get("CAMPO_DATA_DIR", "").strip():
+        return
+    time.sleep(60)
+    while True:
+        try:
+            det = detectar_archivos_padron()
+            if det.get("retenciones") and det.get("percepciones"):
+                est = estado_padron_arba()
+                job = get_import_job_status()
+                if not est.get("vigente") and job.get("status") != "running":
+                    print("Padrón ARBA: importación automática de los TXT detectados.")
+                    start_import_job(auto_detect=True)
+        except Exception as exc:
+            print(f"AVISO padron automatico: {exc}")
+        time.sleep(6 * 3600)
+
+
+threading.Thread(target=_ciclo_padron_automatico, name="padron-mensual", daemon=True).start()
+
+
 if __name__ == "__main__":
     print(detectar_archivos_padron())
     print(estado_padron_arba())
