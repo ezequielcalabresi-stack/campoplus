@@ -191,7 +191,21 @@ def _separar_entidades_por_empresa(cursor) -> None:
 def get_empresa_activa_id() -> int:
     """Devuelve el id de la empresa activa validado contra la tabla empresas."""
     try:
+        from plataforma import empresa_ctx
+
+        pedida = empresa_ctx.get()
         conn = get_db()
+        cursor = conn.cursor()
+        if pedida:
+            cursor.execute("SELECT id FROM empresas WHERE id = ?;", (int(pedida),))
+            if cursor.fetchone():
+                cursor.execute(
+                    "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
+                    (int(pedida),),
+                )
+                conn.commit()
+                conn.close()
+                return int(pedida)
         cursor = conn.cursor()
         cursor.execute("SELECT empresa_activa_id FROM configuracion_empresa WHERE id = 1;")
         cfg = cursor.fetchone()
@@ -5681,7 +5695,10 @@ def obtener_detalle_cuenta_corriente(cuit: str):
     cursor = conn.cursor()
     cuit_clean = "".join(filter(str.isdigit, str(cuit)))
     
-    cursor.execute("SELECT * FROM entidades WHERE REPLACE(cuit, '-', '') = ?;", (cuit_clean,))
+    cursor.execute(
+        "SELECT * FROM entidades WHERE REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?;",
+        (cuit_clean, empresa_id),
+    )
     entidad_row = cursor.fetchone()
     entidad_dict = dict(entidad_row) if entidad_row else {"cuit": cuit, "razon_social": cuit, "es_cuenta_ajuste": 0}
 

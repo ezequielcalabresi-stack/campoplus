@@ -24,6 +24,7 @@ USUARIOS_INCLUIDOS = 3
 
 db_ctx: ContextVar[Optional[str]] = ContextVar("campo_db_path", default=None)
 cuenta_ctx: ContextVar[Optional[int]] = ContextVar("campo_cuenta_id", default=None)
+empresa_ctx: ContextVar[Optional[int]] = ContextVar("campo_empresa_id", default=None)
 
 _TABLAS_REF = (
     "ref_provincias",
@@ -251,7 +252,7 @@ def resolver_contexto(master_path: str, token: str, cuenta_header: str):
         return master_path, None, False
     if not int(cuenta["activo"] or 0) and not superadmin:
         return master_path, int(cuenta["id"]), True
-    return _ruta_base_cuenta(master_path, cuenta["db_path"]), int(cuenta["id"]), False
+    return _abrir_base_cuenta(master_path, cuenta), int(cuenta["id"]), False
 
 
 class TenantDBMiddleware:
@@ -282,13 +283,17 @@ class TenantDBMiddleware:
             )
             await send({"type": "http.response.body", "body": body})
             return
+        raw_emp = str(headers.get("x-empresa-id") or "").strip()
+        empresa_id = int(raw_emp) if raw_emp.isdigit() and int(raw_emp) > 0 else None
         t_db = db_ctx.set(path)
         t_cta = cuenta_ctx.set(cuenta_id)
+        t_emp = empresa_ctx.set(empresa_id)
         try:
             await self.app(scope, receive, send)
         finally:
             db_ctx.reset(t_db)
             cuenta_ctx.reset(t_cta)
+            empresa_ctx.reset(t_emp)
 
 
 def _cuenta_row(master_path: str, cuenta_id: int):
@@ -464,6 +469,19 @@ def provisionar_base(master_path: str, slug: str, nombre: str) -> str:
     conn.commit()
     conn.close()
     return dest
+
+
+def _abrir_base_cuenta(master_path: str, cuenta) -> str:
+    """Una cuenta que no es Silo Chico nunca abre el archivo de Silo Chico."""
+    cid = int(cuenta["id"])
+    path = _ruta_base_cuenta(master_path, cuenta["db_path"])
+    master = os.path.abspath(master_path)
+    if cid == 1:
+        return path if os.path.isfile(path) else master_path
+    if path and os.path.isfile(path) and os.path.abspath(path) != master:
+        return path
+    slug = (cuenta["slug"] or "").strip() or _slug(cuenta["nombre"] or "")
+    return provisionar_base(master_path, slug, cuenta["nombre"] or slug)
 
 
 def _es_superadmin(master_path: str, request: Request) -> bool:

@@ -91,6 +91,10 @@
         if (!hdrs.has("X-Cuenta-Id")) {
           hdrs.set("X-Cuenta-Id", cuentaImp || "0");
         }
+        var empresaAbierta = localStorage.getItem("campoplus_tenant_activo");
+        if (empresaAbierta && !hdrs.has("X-Empresa-Id")) {
+          hdrs.set("X-Empresa-Id", empresaAbierta);
+        }
         init.headers = hdrs;
       }
       return _fetch(input, init);
