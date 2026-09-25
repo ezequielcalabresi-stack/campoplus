@@ -47,10 +47,10 @@
             <!-- Descargar Respaldo Local -->
             <div class="border p-6 rounded-xl bg-slate-50 flex flex-col justify-between">
                 <div>
-                    <h3 class="text-lg font-bold text-slate-800 mb-2">Descargar Copia de Seguridad (Backup Local)</h3>
-                    <p class="text-xs text-slate-600 mb-4">Genera un archivo JSON empaquetado en tiempo real con la información de entidades, retenciones, órdenes de pago, cuentas bancarias y configuración comercial.</p>
+                    <h3 class="text-lg font-bold text-slate-800 mb-2">Descargar la base completa</h3>
+                    <p class="text-xs text-slate-600 mb-4">Baja el archivo de la empresa que tenés abierta: clientes, proveedores, bancos, cuentas corrientes, facturas, bienes y el resto de esa base. Guardalo fuera del servidor.</p>
                 </div>
-                <button onclick="generarBackupJSON()" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center">Descargar Backup Completo (.JSON)
+                <button id="btnBackupBase" onclick="descargarBaseCompleta()" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center">Descargar base (.db)
                 </button>
             </div>
 
@@ -128,6 +128,40 @@
             } catch (e) {
                 box.textContent = String(e);
                 alert('Servidor offline o timeout - probá correr: python importar_tablas_agro.py');
+            }
+        }
+
+        async function descargarBaseCompleta() {
+            const btn = document.getElementById('btnBackupBase');
+            btn.disabled = true;
+            btn.textContent = 'Preparando la base...';
+            try {
+                const res = await fetch('/api/backup/base');
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.detail || 'No se pudo descargar la base');
+                    return;
+                }
+                const blob = await res.blob();
+                const dispo = res.headers.get('Content-Disposition') || '';
+                const match = dispo.match(/filename="?([^"]+)"?/);
+                const nombre = match ? match[1] : 'campoplus_backup.db';
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = nombre;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                const horaActual = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('lblUltimoBackup').innerText = `Hoy, ${horaActual}`;
+                document.getElementById('lblHoraBackup').innerText = nombre;
+            } catch (err) {
+                alert('Error al descargar la base: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Descargar base (.db)';
             }
         }
 

@@ -1,10 +1,12 @@
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import sqlite3
+import tempfile
 import uvicorn
 import pandas as pd
 import os
@@ -7499,6 +7501,48 @@ def listar_ordenes_pago():
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+@app.get("/api/backup/base")
+def descargar_base_empresa(request: Request):
+    """Baja el archivo SQLite completo de la empresa abierta."""
+    from plataforma import _token_from_headers, db_path_efectivo
+    from saas_auth import exigir_admin_usuarios
+
+    if not _token_from_headers({k.lower(): v for k, v in request.headers.items()}):
+        raise HTTPException(401, "Tenés que iniciar sesión")
+    exigir_admin_usuarios(get_db, request)
+    origen = db_path_efectivo(DB_PATH)
+    if not os.path.isfile(origen):
+        raise HTTPException(404, "No encontré la base de esta empresa")
+    fd, tmp = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    src = sqlite3.connect(origen)
+    dst = sqlite3.connect(tmp)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    emp_id = get_empresa_activa_id()
+    nombre = "empresa"
+    try:
+        conn = sqlite3.connect(origen)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT razon_social FROM empresas WHERE id = ?;", (emp_id,)).fetchone()
+        conn.close()
+        if row and row["razon_social"]:
+            nombre = re.sub(r"[^A-Za-z0-9]+", "_", row["razon_social"]).strip("_") or nombre
+    except sqlite3.Error:
+        pass
+    fecha = datetime.now().strftime("%Y-%m-%d")
+    archivo = f"campoplus_{nombre}_{fecha}.db"
+    return FileResponse(
+        tmp,
+        media_type="application/octet-stream",
+        filename=archivo,
+        background=BackgroundTask(os.remove, tmp),
+    )
+
+
 # --- GESTIÓN DE EMPRESAS (fuente: tabla empresas) ---
 
 @app.get("/api/empresas")
