@@ -48,9 +48,11 @@
             <div class="border p-6 rounded-xl bg-slate-50 flex flex-col justify-between">
                 <div>
                     <h3 class="text-lg font-bold text-slate-800 mb-2">Descargar la base completa</h3>
-                    <p class="text-xs text-slate-600 mb-4">Baja el archivo de la empresa que tenés abierta: clientes, proveedores, bancos, cuentas corrientes, facturas, bienes y el resto de esa base. Guardalo fuera del servidor.</p>
+                    <p class="text-xs text-slate-600 mb-4">La base (.db) es el archivo completo de la empresa abierta. El JSON guarda la configuración, clientes, proveedores, retenciones, órdenes de pago y cuentas bancarias.</p>
                 </div>
-                <button id="btnBackupBase" onclick="descargarBaseCompleta()" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center">Descargar base (.db)
+                <button id="btnBackupBase" onclick="descargarBaseCompleta()" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition-all text-center mb-2">Descargar base (.db)
+                </button>
+                <button onclick="generarBackupJSON()" class="bg-white border border-slate-300 text-slate-800 px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-100 transition-all text-center">Descargar configuración (.json)
                 </button>
             </div>
 
