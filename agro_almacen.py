@@ -147,6 +147,12 @@ def init_almacen_schema(cursor) -> None:
     cols_item = {r[1] for r in cursor.fetchall()}
     if "costo_promedio_usd" not in cols_item:
         cursor.execute("ALTER TABLE almacen_items ADD COLUMN costo_promedio_usd REAL DEFAULT 0;")
+    if "presentacion" not in cols_item:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN presentacion TEXT;")
+    if "detalle" not in cols_item:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN detalle TEXT;")
+    if "stock_manual" not in cols_item:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN stock_manual INTEGER DEFAULT 0;")
     cursor.execute("PRAGMA table_info(almacen_movimientos);")
     cols_mov = {r[1] for r in cursor.fetchall()}
     if "precio_unitario_usd" not in cols_mov:
@@ -574,6 +580,97 @@ def actualizar_item_clasificacion(
         (item_id, empresa_id),
     )
     return dict(cursor.fetchone())
+
+
+def guardar_ficha_item(
+    cursor,
+    empresa_id: int,
+    item_id: int,
+    *,
+    nombre: str,
+    presentacion: str = "",
+    detalle: str = "",
+    tipo: Optional[str] = None,
+    categoria_codigo: Optional[str] = None,
+    unidad: Optional[str] = None,
+    stock_cantidad: float = 0,
+    costo_usd: float = 0,
+    costo_ars: float = 0,
+    tipo_cambio: float = 0,
+) -> Dict[str, Any]:
+    """Ficha del producto: nombre, presentación, stock y costos en U$S y pesos."""
+    cursor.execute(
+        "SELECT * FROM almacen_items WHERE id=? AND empresa_id=?;",
+        (item_id, empresa_id),
+    )
+    item = cursor.fetchone()
+    if not item:
+        raise ValueError("Ítem no encontrado.")
+    item = dict(item)
+    nombre = (nombre or "").strip()
+    if not nombre:
+        raise ValueError("El nombre es obligatorio.")
+    usd = round(float(costo_usd or 0), 4)
+    ars = round(float(costo_ars or 0), 4)
+    tc = round(float(tipo_cambio or 0), 4)
+    if tc > 0 and usd > 0 and ars <= 0:
+        ars = round(usd * tc, 4)
+    elif tc > 0 and ars > 0 and usd <= 0:
+        usd = round(ars / tc, 4)
+    elif usd > 0 and ars > 0 and tc <= 0:
+        tc = round(ars / usd, 4)
+
+    actualizar_item_clasificacion(
+        cursor, empresa_id, item_id,
+        categoria_codigo=categoria_codigo, tipo=tipo, unidad=unidad,
+    )
+    stock_nuevo = round(float(stock_cantidad or 0), 4)
+    stock_viejo = round(float(item.get("stock_cantidad") or 0), 4)
+    manual = int(item.get("stock_manual") or 0)
+    if abs(stock_nuevo - stock_viejo) > 0.0001:
+        manual = 1
+        delta = round(stock_nuevo - stock_viejo, 4)
+        cursor.execute("PRAGMA table_info(almacen_movimientos);")
+        if "precio_unitario_usd" not in {r[1] for r in cursor.fetchall()}:
+            cursor.execute("ALTER TABLE almacen_movimientos ADD COLUMN precio_unitario_usd REAL DEFAULT 0;")
+        cursor.execute(
+            """
+            INSERT INTO almacen_movimientos (
+                empresa_id, item_id, fecha, tipo_mov, cantidad,
+                precio_unitario_neto, precio_unitario_usd, importe_neto,
+                stock_resultante, costo_prom_resultante, observaciones
+            ) VALUES (?, ?, ?, 'ajuste', ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                empresa_id, item_id, datetime.now().strftime("%Y-%m-%d"),
+                delta, ars, usd, round(abs(delta) * ars, 2),
+                stock_nuevo, usd or ars,
+                "Corrección manual de stock",
+            ),
+        )
+    cursor.execute("PRAGMA table_info(almacen_items);")
+    cols = {r[1] for r in cursor.fetchall()}
+    if "presentacion" not in cols:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN presentacion TEXT;")
+    if "detalle" not in cols:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN detalle TEXT;")
+    if "stock_manual" not in cols:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN stock_manual INTEGER DEFAULT 0;")
+    cursor.execute(
+        """
+        UPDATE almacen_items
+        SET nombre=?, presentacion=?, detalle=?,
+            stock_cantidad=?, stock_manual=?,
+            costo_promedio_usd=?, costo_promedio_neto=?
+        WHERE id=? AND empresa_id=?;
+        """,
+        (nombre, (presentacion or "").strip(), (detalle or "").strip(),
+         stock_nuevo, manual, usd, ars, item_id, empresa_id),
+    )
+    cursor.execute("SELECT * FROM almacen_items WHERE id=? AND empresa_id=?;", (item_id, empresa_id))
+    row = dict(cursor.fetchone())
+    row["tipo_cambio"] = tc
+    return row
 
 
 def listar_items_almacen(

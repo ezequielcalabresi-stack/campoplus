@@ -19,7 +19,7 @@
     <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
-<div class="container my-4" style="max-width:1100px;">
+<div class="container my-4" style="max-width:1320px;">
     <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
         <div>
             <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Almacén agropecuario</small></h4>
@@ -113,18 +113,84 @@
             <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-dark">
                     <tr>
-                        <th style="min-width:110px;">Tipo</th>
+                        <th>Tipo</th>
                         <th>Nombre</th>
-                        <th style="min-width:180px;">Categoría <span class="fw-normal opacity-75">(editable)</span></th>
+                        <th>Presentación</th>
+                        <th>Categoría</th>
                         <th class="text-center" title="Aplica a Órdenes de Trabajo">OT</th>
                         <th class="text-end">Stock</th>
                         <th>Un.</th>
-                        <th class="text-end">Costo prom. neto</th>
-                        <th class="text-end">Valor stock</th>
+                        <th class="text-end">Costo U$S</th>
+                        <th class="text-end">Costo $</th>
+                        <th class="text-end">T/C</th>
+                        <th class="text-end">Valor U$S</th>
+                        <th></th>
                     </tr>
                 </thead>
-                <tbody id="tablaStock"><tr><td colspan="8" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+                <tbody id="tablaStock"><tr><td colspan="12" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<div id="fichaProducto" class="d-none" style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:40;">
+    <div class="bg-white rounded-3 shadow mx-auto my-5 p-4" style="max-width:720px;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold mb-0">Ficha del producto</h5>
+            <button type="button" class="btn-close" onclick="cerrarFicha()"></button>
+        </div>
+        <input type="hidden" id="fichaId">
+        <div class="row g-2">
+            <div class="col-md-8">
+                <label class="small fw-bold">Nombre</label>
+                <input id="fichaNombre" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-4">
+                <label class="small fw-bold">Presentación</label>
+                <input id="fichaPresentacion" class="form-control form-control-sm" placeholder="x 20 Lts">
+            </div>
+            <div class="col-md-4">
+                <label class="small fw-bold">Tipo</label>
+                <select id="fichaTipo" class="form-select form-select-sm">
+                    <option value="producto">Producto</option>
+                    <option value="laboreo">Laboreo</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="small fw-bold">Categoría</label>
+                <select id="fichaCat" class="form-select form-select-sm"></select>
+            </div>
+            <div class="col-md-4">
+                <label class="small fw-bold">Unidad</label>
+                <select id="fichaUnidad" class="form-select form-select-sm">
+                    <option>Kg</option><option>Lt</option><option>Un</option><option>Has</option><option>Hs</option>
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="small fw-bold">Detalle</label>
+                <input id="fichaDetalle" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Stock</label>
+                <input type="number" step="0.001" id="fichaStock" class="form-control form-control-sm font-mono">
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Costo U$S</label>
+                <input type="number" step="0.0001" id="fichaUsd" class="form-control form-control-sm font-mono" oninput="recalcularFicha('usd')">
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Costo $</label>
+                <input type="number" step="0.01" id="fichaArs" class="form-control form-control-sm font-mono" oninput="recalcularFicha('ars')">
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">Tipo de cambio</label>
+                <input type="number" step="0.01" id="fichaTc" class="form-control form-control-sm font-mono" oninput="recalcularFicha('tc')">
+            </div>
+        </div>
+        <p class="hint mt-2 mb-0">El stock que corrijas queda fijo: un recálculo desde Excel no lo pisa. El tipo de cambio es pesos por dólar.</p>
+        <div class="text-end mt-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="cerrarFicha()">Cancelar</button>
+            <button type="button" class="btn btn-sm btn-dark fw-bold" onclick="guardarFicha()">Guardar ficha</button>
         </div>
     </div>
 </div>
@@ -235,43 +301,100 @@ async function cargarStock() {
     dl.innerHTML = itemsCache.map(i => `<option value="${i.nombre}">`).join('');
     const tb = document.getElementById('tablaStock');
     if (!itemsCache.length) {
-        tb.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-3">Sin ítems. Desmarcá filtros o reimportá Stock Almacenes.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="12" class="text-center text-muted py-3">Sin ítems. Desmarcá filtros o reimportá Stock Almacenes.</td></tr>`;
         return;
     }
+    const money = (n) => Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     tb.innerHTML = itemsCache.map(i => {
         const stock = Number(i.stock_cantidad || 0);
-        const costo = Number(i.costo_promedio_neto || 0);
-        const valor = stock * costo;
+        const usd = Number(i.costo_promedio_usd || 0);
+        const ars = Number(i.costo_promedio_neto || 0);
+        const tc = usd > 0 && ars > 0 ? ars / usd : 0;
+        const valor = stock * usd;
         const otBadge = Number(i.aplica_ot) === 1
             ? '<span class="badge bg-success">sí</span>'
             : '<span class="badge bg-secondary">no</span>';
-        const manual = Number(i.clasificacion_manual) === 1
-            ? ' <span class="text-muted" title="Clasificación manual (no se pisa al reimportar)">M</span>'
-            : '';
-        const selTipo = `<select class="form-select form-select-sm" style="font-size:12px;min-width:100px;"
-            onchange="cambiarClasificacion(${i.id}, 'tipo', this.value)" title="Editar tipo">
-            <option value="producto"${i.tipo==='producto'?' selected':''}>producto</option>
-            <option value="laboreo"${i.tipo==='laboreo'?' selected':''}>laboreo</option>
-        </select>`;
-        const selCat = `<select class="form-select form-select-sm" style="min-width:160px;font-size:12px;"
-            onchange="cambiarClasificacion(${i.id}, 'categoria_codigo', this.value)" title="Editar categoría">${optsCats(i.categoria_codigo || '')}</select>${manual}`;
-        const selUn = `<select class="form-select form-select-sm" style="width:72px;font-size:12px;"
-            onchange="cambiarClasificacion(${i.id}, 'unidad', this.value)" title="Editar unidad">
-            ${['Kg','Lt','Un','Has','Hs','Unidad'].map(u =>
-                `<option value="${u}"${(i.unidad||'')===u?' selected':''}>${u}</option>`
-            ).join('')}
-        </select>`;
+        const cat = (catsCache.find(c => c.codigo === i.categoria_codigo) || {}).nombre || i.categoria || '';
         return `<tr>
-            <td>${selTipo}</td>
-            <td class="fw-bold">${i.nombre}</td>
-            <td>${selCat}</td>
+            <td class="small">${i.tipo === 'laboreo' ? 'laboreo' : 'producto'}</td>
+            <td class="fw-bold">${esc(i.nombre)}</td>
+            <td class="small">${esc(i.presentacion)}</td>
+            <td class="small">${esc(cat)}</td>
             <td class="text-center">${otBadge}</td>
             <td class="text-end font-mono">${stock.toLocaleString('es-AR',{maximumFractionDigits:3})}</td>
-            <td>${selUn}</td>
-            <td class="text-end font-mono">$ ${costo.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-            <td class="text-end font-mono fw-bold">$ ${valor.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+            <td>${esc(i.unidad)}</td>
+            <td class="text-end font-mono">${usd ? money(usd) : ''}</td>
+            <td class="text-end font-mono">${ars ? money(ars) : ''}</td>
+            <td class="text-end font-mono">${tc ? money(tc) : ''}</td>
+            <td class="text-end font-mono fw-bold">${usd ? money(valor) : ''}</td>
+            <td class="text-end"><button type="button" class="btn btn-outline-dark btn-sm py-0" onclick="abrirFicha(${i.id})">Ficha</button></td>
         </tr>`;
     }).join('');
+}
+
+function esc(s) {
+    return String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+let fichaOrigen = '';
+function abrirFicha(id) {
+    const i = itemsCache.find(x => x.id === id);
+    if (!i) return;
+    document.getElementById('fichaId').value = i.id;
+    document.getElementById('fichaNombre').value = i.nombre || '';
+    document.getElementById('fichaPresentacion').value = i.presentacion || '';
+    document.getElementById('fichaDetalle').value = i.detalle || '';
+    document.getElementById('fichaTipo').value = i.tipo === 'laboreo' ? 'laboreo' : 'producto';
+    document.getElementById('fichaCat').innerHTML = optsCats(i.categoria_codigo || '');
+    const un = document.getElementById('fichaUnidad');
+    if (i.unidad && ![...un.options].some(o => o.value === i.unidad)) {
+        un.insertAdjacentHTML('beforeend', `<option>${esc(i.unidad)}</option>`);
+    }
+    un.value = i.unidad || 'Un';
+    document.getElementById('fichaStock').value = Number(i.stock_cantidad || 0);
+    const usd = Number(i.costo_promedio_usd || 0);
+    const ars = Number(i.costo_promedio_neto || 0);
+    document.getElementById('fichaUsd').value = usd || '';
+    document.getElementById('fichaArs').value = ars || '';
+    document.getElementById('fichaTc').value = usd > 0 && ars > 0 ? (ars / usd).toFixed(2) : '';
+    fichaOrigen = '';
+    document.getElementById('fichaProducto').classList.remove('d-none');
+}
+function cerrarFicha() {
+    document.getElementById('fichaProducto').classList.add('d-none');
+}
+function recalcularFicha(origen) {
+    if (fichaOrigen && fichaOrigen !== origen) return;
+    fichaOrigen = origen;
+    const usd = Number(document.getElementById('fichaUsd').value || 0);
+    const ars = Number(document.getElementById('fichaArs').value || 0);
+    const tc = Number(document.getElementById('fichaTc').value || 0);
+    if (origen === 'usd' && tc > 0) document.getElementById('fichaArs').value = (usd * tc).toFixed(2);
+    if (origen === 'tc' && usd > 0) document.getElementById('fichaArs').value = (usd * tc).toFixed(2);
+    if (origen === 'ars' && usd > 0) document.getElementById('fichaTc').value = (ars / usd).toFixed(2);
+    if (origen === 'ars' && tc > 0 && usd <= 0) document.getElementById('fichaUsd').value = (ars / tc).toFixed(4);
+    setTimeout(() => { fichaOrigen = ''; }, 0);
+}
+async function guardarFicha() {
+    const id = document.getElementById('fichaId').value;
+    const body = {
+        nombre: document.getElementById('fichaNombre').value.trim(),
+        presentacion: document.getElementById('fichaPresentacion').value.trim(),
+        detalle: document.getElementById('fichaDetalle').value.trim(),
+        tipo: document.getElementById('fichaTipo').value,
+        categoria_codigo: document.getElementById('fichaCat').value,
+        unidad: document.getElementById('fichaUnidad').value,
+        stock_cantidad: Number(document.getElementById('fichaStock').value || 0),
+        costo_usd: Number(document.getElementById('fichaUsd').value || 0),
+        costo_ars: Number(document.getElementById('fichaArs').value || 0),
+        tipo_cambio: Number(document.getElementById('fichaTc').value || 0),
+    };
+    const res = await fetch('/api/agro/almacen/items/' + id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo guardar la ficha');
+    cerrarFicha();
+    await cargarStock();
 }
 
 async function guardarIngreso() {

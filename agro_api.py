@@ -595,6 +595,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         crear_categoria_almacen,
         actualizar_item_categoria,
         actualizar_item_clasificacion,
+        guardar_ficha_item,
         ingresar_almacen,
         emitir_ot_consumiendo_almacen,
         valuar_salida_insumo,
@@ -741,6 +742,33 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             categoria_codigo=categoria_codigo, tipo=tipo, unidad=unidad
         )
         return _patch_item_clasificacion(item_id, data)
+
+    @app.put("/api/agro/almacen/items/{item_id}")
+    def api_almacen_ficha(item_id: int, data: dict = Body(...)):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            row = guardar_ficha_item(
+                cur, empresa_id, item_id,
+                nombre=data.get("nombre") or "",
+                presentacion=data.get("presentacion") or "",
+                detalle=data.get("detalle") or "",
+                tipo=data.get("tipo"),
+                categoria_codigo=data.get("categoria_codigo"),
+                unidad=data.get("unidad"),
+                stock_cantidad=float(data.get("stock_cantidad") or 0),
+                costo_usd=float(data.get("costo_usd") or 0),
+                costo_ars=float(data.get("costo_ars") or 0),
+                tipo_cambio=float(data.get("tipo_cambio") or 0),
+            )
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, str(e))
+        conn.close()
+        return {"status": "ok", "id": row.get("id"), "stock_cantidad": row.get("stock_cantidad")}
 
     @app.get("/api/agro/almacen/items")
     def api_almacen_items(

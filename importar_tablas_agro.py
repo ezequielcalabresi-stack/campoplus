@@ -1272,14 +1272,17 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
         stock_last[item_id] = (saldo, avg_out, avg_usd_out)
 
     cur.execute("PRAGMA table_info(almacen_items);")
-    if "costo_promedio_usd" not in {r[1] for r in cur.fetchall()}:
+    cols_item = {r[1] for r in cur.fetchall()}
+    if "costo_promedio_usd" not in cols_item:
         cur.execute("ALTER TABLE almacen_items ADD COLUMN costo_promedio_usd REAL DEFAULT 0;")
+    if "stock_manual" not in cols_item:
+        cur.execute("ALTER TABLE almacen_items ADD COLUMN stock_manual INTEGER DEFAULT 0;")
 
     for item_id, (stock, vu, vu_usd) in stock_last.items():
         cur.execute(
             """
             UPDATE almacen_items SET
-                stock_cantidad = ?,
+                stock_cantidad = CASE WHEN COALESCE(stock_manual, 0) = 1 THEN stock_cantidad ELSE ? END,
                 costo_promedio_neto = CASE WHEN ? > 0 THEN ? ELSE costo_promedio_neto END,
                 costo_promedio_usd = CASE WHEN ? > 0 THEN ? ELSE costo_promedio_usd END
             WHERE id = ?;
