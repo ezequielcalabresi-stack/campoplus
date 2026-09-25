@@ -541,6 +541,10 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
     def api_empresas_detalle(request: Request):
         """Listado ampliado (planes/módulos/logo). Superadmin ve todas."""
         ses = sesion_actual(get_db, request)
+        import main as _main
+        from plataforma import quitar_empresas_fantasma
+
+        quitar_empresas_fantasma(_main.DB_PATH)
         conn = get_db()
         cur = conn.cursor()
         if ses and int(ses.get("es_superadmin") or 0):

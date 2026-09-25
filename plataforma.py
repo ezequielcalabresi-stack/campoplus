@@ -25,6 +25,7 @@ USUARIOS_INCLUIDOS = 3
 db_ctx: ContextVar[Optional[str]] = ContextVar("campo_db_path", default=None)
 cuenta_ctx: ContextVar[Optional[int]] = ContextVar("campo_cuenta_id", default=None)
 empresa_ctx: ContextVar[Optional[int]] = ContextVar("campo_empresa_id", default=None)
+grupo_ctx: ContextVar[Optional[str]] = ContextVar("campo_grupo_path", default=None)
 
 _TABLAS_REF = (
     "ref_provincias",
@@ -40,6 +41,53 @@ def db_path_efectivo(default_path: str) -> str:
 
 def cuenta_id_actual() -> Optional[int]:
     return cuenta_ctx.get()
+
+
+def quitar_empresas_fantasma(master_path: str) -> None:
+    """En una cuenta nueva, borra una empresa que solo repite el nombre de otra cuenta."""
+    cid = cuenta_id_actual()
+    grupo = grupo_ctx.get()
+    if not cid or int(cid) == 1 or not grupo or not os.path.isfile(grupo):
+        return
+    if os.path.abspath(grupo) == os.path.abspath(master_path):
+        return
+    master = master_connect(master_path)
+    try:
+        ajenas = {
+            _nombre_empresa(r["razon_social"])
+            for r in master.execute("SELECT razon_social FROM empresas;")
+            if _nombre_empresa(r["razon_social"])
+        }
+    except sqlite3.Error:
+        master.close()
+        return
+    master.close()
+    conn = sqlite3.connect(grupo)
+    conn.row_factory = sqlite3.Row
+    try:
+        propias = list(conn.execute("SELECT id, razon_social FROM empresas;"))
+        borrar = [r for r in propias if _nombre_empresa(r["razon_social"]) in ajenas]
+        if not borrar or len(borrar) >= len(propias):
+            return
+        for row in borrar:
+            conn.execute("DELETE FROM empresas WHERE id = ?;", (int(row["id"]),))
+            fantasma = os.path.join(
+                os.path.dirname(os.path.abspath(grupo)),
+                "bases_empresas",
+                str(cid),
+                f"empresa_{int(row['id'])}.db",
+            )
+            if os.path.isfile(fantasma):
+                os.remove(fantasma)
+        queda = conn.execute("SELECT id FROM empresas ORDER BY id LIMIT 1;").fetchone()
+        if queda:
+            conn.execute(
+                "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
+                (int(queda["id"]),),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def master_connect(master_path: str) -> sqlite3.Connection:
@@ -285,16 +333,19 @@ class TenantDBMiddleware:
             return
         raw_emp = str(headers.get("x-empresa-id") or "").strip()
         empresa_id = int(raw_emp) if raw_emp.isdigit() and int(raw_emp) > 0 else None
+        grupo = path
         path = base_de_empresa(path, cuenta_id, empresa_id)
         t_db = db_ctx.set(path)
         t_cta = cuenta_ctx.set(cuenta_id)
         t_emp = empresa_ctx.set(empresa_id)
+        t_grupo = grupo_ctx.set(grupo)
         try:
             await self.app(scope, receive, send)
         finally:
             db_ctx.reset(t_db)
             cuenta_ctx.reset(t_cta)
             empresa_ctx.reset(t_emp)
+            grupo_ctx.reset(t_grupo)
 
 
 def _cuenta_row(master_path: str, cuenta_id: int):

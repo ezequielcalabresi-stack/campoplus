@@ -7507,6 +7507,9 @@ def listar_empresas(request: Request):
 
     if not _token_from_headers({k.lower(): v for k, v in request.headers.items()}):
         raise HTTPException(status_code=401, detail="Tenés que iniciar sesión")
+    from plataforma import quitar_empresas_fantasma
+
+    quitar_empresas_fantasma(DB_PATH)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM empresas ORDER BY razon_social COLLATE NOCASE ASC;")
