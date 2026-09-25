@@ -281,9 +281,8 @@ def sincronizar_padron_access(db_path: str = DB_PATH, excel_path: str = EXCEL) -
         if (es_forma_pago or es_cta_bancaria) and not es_arrendador:
             stats["omitidos"] += 1
             continue
-        if baja and not es_arrendador:
-            stats["omitidos"] += 1
-            continue
+        # Baja en Access no saca al proveedor del padrón: la ficha se conserva
+        # para no perder el historial de la cuenta corriente.
 
         razon = _safe_str(row.get("Nombre Real")) or nombre
         payload = {
@@ -307,8 +306,8 @@ def sincronizar_padron_access(db_path: str = DB_PATH, excel_path: str = EXCEL) -
             "centro_costo": "SP" if sp else "1",
             "es_cuenta_bancaria": 1 if es_cta_bancaria else 0,
         }
-        # proveedores normales: solo sincronizar flag arrendador / alta si arrendador
-        # para no inflar el padrón con 1800 filas de una: priorizar arrendadores + actualizar existentes
+        # El padrón de Access es la madre de las cuentas corrientes: se carga cada proveedor.
+        # El tilde de arrendador solo marca la ficha, no decide si entra o no.
         if es_arrendador:
             stats["arrendadores_excel"] += 1
             upsert_entidad(payload, True)
@@ -336,30 +335,8 @@ def sincronizar_padron_access(db_path: str = DB_PATH, excel_path: str = EXCEL) -
                     if cur.rowcount:
                         stats["alineados_provisorios"] += 1
         else:
-            # si ya existe por CUIT, solo refrescar datos básicos / no tocar propietario a 0
-            cur.execute("SELECT 1 FROM entidades WHERE REPLACE(cuit,'-','') = ?;", (cuit,))
-            if cur.fetchone():
-                payload["es_propietario_inmueble"] = 0  # no bajar el flag en este branch
-                # update suave sin apagar arrendador
-                cur.execute(
-                    """
-                    UPDATE entidades SET
-                        nombre_fantasia = COALESCE(NULLIF(?,''), nombre_fantasia),
-                        razon_social = COALESCE(NULLIF(?,''), razon_social),
-                        telefono = COALESCE(NULLIF(?,''), telefono),
-                        domicilio = COALESCE(NULLIF(?,''), domicilio),
-                        localidad = COALESCE(NULLIF(?,''), localidad),
-                        es_cliente = CASE WHEN ? = 1 THEN 1 ELSE es_cliente END
-                    WHERE REPLACE(cuit,'-','') = ?;
-                    """,
-                    (
-                        payload["nombre_fantasia"], payload["razon_social"],
-                        payload["telefono"], payload["domicilio"], payload["localidad"],
-                        payload["es_cliente"], cuit,
-                    ),
-                )
-                stats["upsert_otros"] += 1
-            # no insertar masivamente el resto del excel aquí
+            upsert_entidad(payload, False)
+            stats["upsert_otros"] += 1
 
     # Pasada final: todos los excel arrendadores por nombre (por si CUIT distinto)
     for _, row in df.iterrows():
