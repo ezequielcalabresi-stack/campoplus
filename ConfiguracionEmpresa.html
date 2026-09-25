@@ -81,6 +81,25 @@
             <div class="bg-amber-50 border border-amber-200 p-5 rounded-lg space-y-3 text-xs">
                 <h3 class="font-bold text-amber-900 uppercase tracking-wide border-b border-amber-200 pb-2 text-sm">Perfil fiscal (magnitud / agentes)</h3>
                 <p class="text-amber-800">Por facturación anual la empresa puede quedar alcanzada como agente. Los proveedores S/P quedan siempre exentos.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block font-medium text-amber-950 mb-1">Estado SISA (ARCA) — retención IVA granos</label>
+                        <select id="cfgSisaEstado" class="w-full rounded border border-amber-300 p-2 bg-white">
+                            <option value="1">Estado 1</option>
+                            <option value="2">Estado 2</option>
+                            <option value="3">Estado 3</option>
+                            <option value="inactivo">Inactivo (100% de la alícuota de IVA)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-amber-950 mb-1">Carácter en la venta de granos</label>
+                        <select id="cfgSisaCaracter" class="w-full rounded border border-amber-300 p-2 bg-white">
+                            <option value="productor">Productor vendedor (producción propia)</option>
+                            <option value="operador">Operador vendedor</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="text-amber-800">Cereales, oleaginosas y legumbres (excepto arroz): estado 1 o estado 2 operador 5%; estado 2 productor 7%; estado 3 8%. Arroz: 10%, 14% y 16%. Se aplica sobre el precio neto de la liquidación.</p>
                 <div class="flex flex-wrap gap-6">
                     <label class="inline-flex items-center gap-2 font-semibold text-slate-800">
                         <input type="checkbox" id="cfgAgenteRetIibb" class="rounded border-amber-400" checked>
@@ -129,6 +148,8 @@
                 document.getElementById('cfgAgenteRetIibb').checked = r.agente_retencion_iibb !== 0 && r.agente_retencion_iibb !== false;
                 document.getElementById('cfgAgenteSicore').checked = r.agente_retencion_ganancias !== 0 && r.agente_retencion_ganancias !== false;
                 document.getElementById('cfgAgentePercIibb').checked = r.agente_percepcion_iibb !== 0 && r.agente_percepcion_iibb !== false;
+                document.getElementById('cfgSisaEstado').value = r.sisa_estado || '1';
+                document.getElementById('cfgSisaCaracter').value = r.sisa_caracter || 'productor';
             } catch (e) {
                 console.error(e);
                 document.getElementById('estado-db').innerText = "Error de conexión con el backend.";
@@ -147,7 +168,9 @@
                 cit_arba: document.getElementById('cfgCitArba').value.trim(),
                 agente_retencion_iibb: document.getElementById('cfgAgenteRetIibb').checked ? 1 : 0,
                 agente_retencion_ganancias: document.getElementById('cfgAgenteSicore').checked ? 1 : 0,
-                agente_percepcion_iibb: document.getElementById('cfgAgentePercIibb').checked ? 1 : 0
+                agente_percepcion_iibb: document.getElementById('cfgAgentePercIibb').checked ? 1 : 0,
+                sisa_estado: document.getElementById('cfgSisaEstado').value,
+                sisa_caracter: document.getElementById('cfgSisaCaracter').value
             };
 
             try {

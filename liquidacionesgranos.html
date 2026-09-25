@@ -65,7 +65,7 @@
             <div class="sec grid grid-cols-2 md:grid-cols-6 gap-3">
                 <div>
                     <label class="lbl">Grano</label>
-                    <select id="selectGrano" class="inp text-amber-900 font-semibold" onchange="sugerirCtaGrano()">
+                    <select id="selectGrano" class="inp text-amber-900 font-semibold" onchange="sugerirCtaGrano(); aplicarAlicuotaSisa(false)">
                         <option value=""> -  Seleccionar - </option>
                     </select>
                 </div>
@@ -158,6 +158,27 @@
                     <div class="sec-h text-indigo-700 mb-0">Retenciones</div>
                     <div class="text-sm font-bold text-indigo-800">Total <span id="totRetLbl">$ 0,00</span></div>
                 </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div>
+                        <label class="lbl">Estado SISA de la empresa</label>
+                        <select id="sisaEstado" class="inp" onchange="aplicarAlicuotaSisa(true)">
+                            <option value="1">Estado 1</option>
+                            <option value="2">Estado 2</option>
+                            <option value="3">Estado 3</option>
+                            <option value="inactivo">Inactivo</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="lbl">Carácter en la venta</label>
+                        <select id="sisaCaracter" class="inp" onchange="aplicarAlicuotaSisa(true)">
+                            <option value="productor">Productor vendedor</option>
+                            <option value="operador">Operador vendedor</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <p id="sisaNota" class="text-xs text-indigo-800 leading-snug">Ret. IVA sobre el precio neto de venta, según ARCA / SISA.</p>
+                    </div>
+                </div>
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
                     <div>
                         <label class="lbl">Ret IIBB</label>
@@ -186,7 +207,7 @@
                     <div>
                         <label class="lbl">Ret IVA</label>
                         <div class="flex gap-1 items-center">
-                            <input id="pctRetIva" type="number" step="0.01" value="5" class="inp-pct" oninput="recalc()">
+                            <input id="pctRetIva" type="number" step="0.01" value="5" class="inp-pct" oninput="markManual('pctRetIva');recalc()">
                             <span class="text-xs">%</span>
                             <input id="retIva" type="text" step="0.01" value="0" class="inp-money flex-1 money-input" oninput="markManual('retIva');recalc()" data-money inputmode="decimal">
                         </div>
@@ -278,7 +299,40 @@
     <script>
         let actividades = [];
         const GRANOS = ['Soja', 'Maíz', 'Trigo', 'Girasol', 'Cebada', 'Sorgo', 'Poroto', 'Pisingallo'];
-        const manual = { gtosAdm: false, ivaServ: false, retIibb: false, sellados: false, retGan: false, retIva: false, pagoCond: false };
+        const manual = { gtosAdm: false, ivaServ: false, retIibb: false, sellados: false, retGan: false, retIva: false, pctRetIva: false, pagoCond: false };
+        let sisaEmpresa = { estado: '1', caracter: 'productor' };
+
+        function alicuotaRetIvaSisa(grano, estado, caracter) {
+            const arroz = /arroz/i.test(grano || '');
+            const e = String(estado || '1');
+            const productor = caracter !== 'operador';
+            if (e === 'inactivo') return 10.5;
+            if (arroz) {
+                if (e === '3') return 16;
+                if (e === '2' && productor) return 14;
+                return 10;
+            }
+            if (e === '3') return 8;
+            if (e === '2' && productor) return 7;
+            return 5;
+        }
+
+        function aplicarAlicuotaSisa(forzar) {
+            if (forzar) manual.pctRetIva = false;
+            const grano = document.getElementById('selectGrano').value;
+            const estado = document.getElementById('sisaEstado').value;
+            const caracter = document.getElementById('sisaCaracter').value;
+            const pct = alicuotaRetIvaSisa(grano, estado, caracter);
+            if (!manual.pctRetIva) document.getElementById('pctRetIva').value = String(pct);
+            const arroz = /arroz/i.test(grano || '');
+            const quien = caracter === 'operador' ? 'operador vendedor' : 'productor vendedor';
+            const est = estado === 'inactivo' ? 'inactivo' : ('estado ' + estado);
+            const base = estado === 'inactivo'
+                ? '100% de la alícuota de IVA (10,5%) sobre el precio neto'
+                : (pct + '% sobre el precio neto' + (arroz ? ' (arroz)' : ' (cereales, oleaginosas y legumbres, excepto arroz)'));
+            document.getElementById('sisaNota').textContent = 'SISA ' + est + ', ' + quien + ': ' + base + '.';
+            recalc();
+        }
         let lastCalc = {};
 
         function num(v) { return CampoMoney.parse(v); }
@@ -385,8 +439,8 @@
             let retIibb = manual.retIibb ? num(document.getElementById('retIibb').value) : subtotal * (pctIibb / 100);
             let sellados = manual.sellados ? num(document.getElementById('sellados').value) : subtotal * (pctSell / 100);
             let retGan = manual.retGan ? num(document.getElementById('retGan').value) : subtotal * (pctGan / 100);
-            // Ret IVA = % sobre el IVA de la operación (como en Access 5%)
-            let retIva = manual.retIva ? num(document.getElementById('retIva').value) : ivaOp * (pctRetIva / 100);
+            // ARCA/SISA: la alícuota se aplica sobre el precio neto de venta (subtotal), no sobre el IVA.
+            let retIva = manual.retIva ? num(document.getElementById('retIva').value) : subtotal * (pctRetIva / 100);
             if (!manual.retIibb) setVal('retIibb', retIibb); else retIibb = num(document.getElementById('retIibb').value);
             if (!manual.sellados) setVal('sellados', sellados); else sellados = num(document.getElementById('sellados').value);
             if (!manual.retGan) setVal('retGan', retGan); else retGan = num(document.getElementById('retGan').value);
@@ -486,7 +540,9 @@
             document.getElementById('pctIibb').value = '0.8';
             document.getElementById('pctSellados').value = '0.9';
             document.getElementById('pctGan').value = '0';
-            document.getElementById('pctRetIva').value = '5';
+            document.getElementById('sisaEstado').value = sisaEmpresa.estado || '1';
+            document.getElementById('sisaCaracter').value = sisaEmpresa.caracter || 'productor';
+            document.getElementById('pctRetIva').value = String(alicuotaRetIvaSisa('', sisaEmpresa.estado, sisaEmpresa.caracter));
             document.getElementById('factor').value = '1';
             const hoy = new Date().toISOString().slice(0, 10);
             document.getElementById('fecha').value = hoy;
@@ -502,7 +558,7 @@
                 if (sel) { sel.value = prefer.id; onActChange(sel); }
             }
             lastCalc = {};
-            recalc();
+            aplicarAlicuotaSisa(true);
         }
 
         async function guardar(ev) {
@@ -590,6 +646,13 @@
             actividades.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
             await cargarEntidades();
             await cargarGranos();
+            try {
+                const cfg = await fetch('/api/configuracion').then(r => r.ok ? r.json() : {});
+                sisaEmpresa = {
+                    estado: cfg.sisa_estado || '1',
+                    caracter: cfg.sisa_caracter || 'productor',
+                };
+            } catch (e) { /* queda estado 1 productor */ }
             limpiarForm();
         };
     </script>

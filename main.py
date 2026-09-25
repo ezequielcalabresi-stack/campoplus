@@ -363,6 +363,10 @@ def init_db():
     ):
         if col_flag not in cols_conf:
             cursor.execute(f"ALTER TABLE configuracion_empresa ADD COLUMN {col_flag} INTEGER DEFAULT 1;")
+    if "sisa_estado" not in cols_conf:
+        cursor.execute("ALTER TABLE configuracion_empresa ADD COLUMN sisa_estado TEXT DEFAULT '1';")
+    if "sisa_caracter" not in cols_conf:
+        cursor.execute("ALTER TABLE configuracion_empresa ADD COLUMN sisa_caracter TEXT DEFAULT 'productor';")
     cursor.execute("""
         UPDATE configuracion_empresa
         SET agente_retencion_iibb = COALESCE(agente_retencion_iibb, 1),
@@ -1782,6 +1786,8 @@ class ConfiguracionModel(BaseModel):
     agente_retencion_iibb: int = 1
     agente_retencion_ganancias: int = 1
     agente_percepcion_iibb: int = 1
+    sisa_estado: str = "1"
+    sisa_caracter: str = "productor"
 
 class CuentaBancariaModel(BaseModel):
     nro_cta_cte: str
@@ -2085,20 +2091,24 @@ def guardar_configuracion(data: ConfiguracionModel):
     cursor.execute("""
         INSERT INTO configuracion_empresa (
             id, razon_social, cuit, condicion_iva, localidad, contacto_email, cit_arba,
-            agente_retencion_iibb, agente_retencion_ganancias, agente_percepcion_iibb
+            agente_retencion_iibb, agente_retencion_ganancias, agente_percepcion_iibb,
+            sisa_estado, sisa_caracter
         )
-        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             razon_social=excluded.razon_social, cuit=excluded.cuit, condicion_iva=excluded.condicion_iva,
             localidad=excluded.localidad, contacto_email=excluded.contacto_email, cit_arba=excluded.cit_arba,
             agente_retencion_iibb=excluded.agente_retencion_iibb,
             agente_retencion_ganancias=excluded.agente_retencion_ganancias,
-            agente_percepcion_iibb=excluded.agente_percepcion_iibb;
+            agente_percepcion_iibb=excluded.agente_percepcion_iibb,
+            sisa_estado=excluded.sisa_estado, sisa_caracter=excluded.sisa_caracter;
     """, (
         data.razon_social, data.cuit, data.condicion_iva, data.localidad, data.contacto_email, data.cit_arba,
         1 if data.agente_retencion_iibb else 0,
         1 if data.agente_retencion_ganancias else 0,
         1 if data.agente_percepcion_iibb else 0,
+        (data.sisa_estado or "1").strip() or "1",
+        (data.sisa_caracter or "productor").strip() or "productor",
     ))
     conn.commit()
     conn.close()
