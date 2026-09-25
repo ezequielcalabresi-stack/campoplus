@@ -53,7 +53,10 @@
         </div>
     </div>
 
-    <div id="resumenCats" class="flex flex-wrap gap-2 mb-3 text-[11px] no-print"></div>
+    <div class="mb-4 no-print">
+        <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">Resumen por categoría</div>
+        <div id="resumenCats" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2"></div>
+    </div>
 
     <div class="flex flex-wrap gap-2 items-end mb-3 no-print text-xs">
         <div>
@@ -338,13 +341,21 @@ async function cargarResumenCats() {
     try {
         const data = await fetch('/api/patrimonio/resumen_bancario').then(r => r.json());
         const el = document.getElementById('resumenCats');
-        el.innerHTML = (data.categorias || []).map(c =>
-            `<span class="px-2 py-1 rounded border bg-white border-slate-200">
-                <strong>${esc(c.categoria)}</strong> - ${c.cantidad}
- - Hist ${money(c.valor_historico)}
- - Com ${moneyUsd(c.valor_comercial_usd)} (${money(c.valor_comercial)})
-            </span>`
-        ).join('');
+        const cats = data.categorias || [];
+        if (!cats.length) { el.innerHTML = ''; return; }
+        el.innerHTML = cats.map(c => `
+            <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 min-w-0" style="border-left:3px solid #1a4332">
+                <div class="flex items-baseline justify-between gap-2">
+                    <span class="text-xs font-semibold truncate" style="color:#1a4332">${esc(c.categoria)}</span>
+                    <span class="text-[10px] font-bold text-slate-500 shrink-0">${c.cantidad}</span>
+                </div>
+                <div class="mt-1.5 space-y-0.5 text-[11px] font-mono leading-tight">
+                    <div class="flex justify-between gap-3"><span class="text-slate-400 font-sans">Histórico</span><span class="text-slate-800">${money(c.valor_historico)}</span></div>
+                    <div class="flex justify-between gap-3"><span class="text-slate-400 font-sans">Comercial</span><span class="text-emerald-800">${moneyUsd(c.valor_comercial_usd)}</span></div>
+                    <div class="flex justify-between gap-3"><span class="text-slate-400 font-sans">En $</span><span class="text-slate-600">${money(c.valor_comercial)}</span></div>
+                </div>
+            </div>
+        `).join('');
     } catch (_) {}
 }
 
