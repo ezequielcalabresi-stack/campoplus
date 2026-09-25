@@ -357,6 +357,16 @@ def _cuenta_row(master_path: str, cuenta_id: int):
     return row
 
 
+def conexion_grupo() -> Optional[sqlite3.Connection]:
+    """La cuenta del grupo, con todas sus empresas. No el archivo de una sola empresa."""
+    grupo = grupo_ctx.get()
+    if not grupo or not os.path.isfile(grupo):
+        return None
+    conn = sqlite3.connect(grupo, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def abrir_base_cuenta(master_path: str, cuenta_id: Optional[int] = None) -> sqlite3.Connection:
     cid = cuenta_id if cuenta_id is not None else cuenta_id_actual()
     if not cid:

@@ -7564,7 +7564,9 @@ def listar_empresas(request: Request):
     from plataforma import quitar_empresas_fantasma
 
     quitar_empresas_fantasma(DB_PATH)
-    conn = get_db()
+    from plataforma import conexion_grupo
+
+    conn = conexion_grupo() or get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM empresas ORDER BY razon_social COLLATE NOCASE ASC;")
     rows = [_row_to_empresa(r) for r in cursor.fetchall()]
@@ -7690,7 +7692,9 @@ def obtener_empresa_activa():
 
 @app.post("/api/empresa_activa")
 def actualizar_empresa_activa(data: EmpresaActivaModel):
-    conn = get_db()
+    from plataforma import conexion_grupo
+
+    conn = conexion_grupo() or get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM empresas WHERE id = ?;", (data.empresa_activa_id,))
     if not cursor.fetchone():

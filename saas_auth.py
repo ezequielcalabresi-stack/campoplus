@@ -545,7 +545,9 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         from plataforma import quitar_empresas_fantasma
 
         quitar_empresas_fantasma(_main.DB_PATH)
-        conn = get_db()
+        from plataforma import conexion_grupo
+
+        conn = conexion_grupo() or get_db()
         cur = conn.cursor()
         if ses and int(ses.get("es_superadmin") or 0):
             cur.execute("SELECT * FROM empresas ORDER BY razon_social COLLATE NOCASE;")
