@@ -299,7 +299,7 @@ def sincronizar_padron_access(db_path: str = DB_PATH, excel_path: str = EXCEL) -
             "cbu": _safe_str(row.get("CBU")),
             "banco": _safe_str(row.get("BANCO")),
             "condicion_iva": _safe_str(row.get("Cod AfipCondicion")),
-            "es_proveedor": 0 if (es_cliente and not es_arrendador) else 1,
+            "es_proveedor": 1,
             "es_cliente": 1 if es_cliente else 0,
             "es_empleado": 1 if es_empleado else 0,
             "es_propietario_inmueble": 1 if es_arrendador else 0,
