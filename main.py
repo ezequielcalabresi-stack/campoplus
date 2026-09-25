@@ -7895,8 +7895,10 @@ _restablecer_clave_eze_una_vez()
 
 
 @app.get("/")
+@app.get("/index.html")
+@app.get("/Index.html")
 def pagina_inicio():
-    """En Linux la raíz no abre Index.html (la I mayúscula no coincide con index.html)."""
+    """En Linux la raíz y index.html abren el mismo inicio."""
     return FileResponse(os.path.join(BASE_DIR, "Index.html"))
 
 
