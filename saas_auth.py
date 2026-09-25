@@ -181,6 +181,7 @@ def init_saas_schema(cursor: sqlite3.Cursor) -> None:
         );
         """
     )
+    _ensure_col(cursor, "sesiones_usuario", "cuenta_activa_id", "INTEGER")
 
     # Passwords por defecto si faltan (solo primera vez)
     cursor.execute(

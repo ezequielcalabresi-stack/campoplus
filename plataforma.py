@@ -205,7 +205,7 @@ def resolver_contexto(master_path: str, token: str, cuenta_header: str):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT s.empresa_id, u.es_superadmin, u.cuenta_id, u.activo
+        SELECT s.empresa_id, s.cuenta_activa_id, u.es_superadmin, u.cuenta_id, u.activo
         FROM sesiones_usuario s
         JOIN usuarios_sistema u ON u.id = s.usuario_id
         WHERE s.token = ?;
@@ -218,9 +218,24 @@ def resolver_contexto(master_path: str, token: str, cuenta_header: str):
         return master_path, None, False
 
     superadmin = int(ses["es_superadmin"] or 0) == 1
+    header = str(cuenta_header or "").strip()
     cuenta_id = None
-    if superadmin and str(cuenta_header or "").strip().isdigit():
-        cuenta_id = int(cuenta_header)
+    if superadmin and header.isdigit() and int(header) > 0:
+        cuenta_id = int(header)
+        cur.execute(
+            "UPDATE sesiones_usuario SET cuenta_activa_id = ? WHERE token = ?;",
+            (cuenta_id, token),
+        )
+        conn.commit()
+    elif superadmin and header == "0":
+        cur.execute(
+            "UPDATE sesiones_usuario SET cuenta_activa_id = NULL WHERE token = ?;",
+            (token,),
+        )
+        conn.commit()
+        cuenta_id = 1
+    elif superadmin and ses["cuenta_activa_id"]:
+        cuenta_id = int(ses["cuenta_activa_id"])
     elif ses["cuenta_id"]:
         cuenta_id = int(ses["cuenta_id"])
     elif not superadmin:

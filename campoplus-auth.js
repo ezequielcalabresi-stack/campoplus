@@ -88,8 +88,8 @@
           hdrs.set("X-Session-Token", t);
         }
         var cuentaImp = localStorage.getItem("campoplus_cuenta_impersonada");
-        if (cuentaImp && !hdrs.has("X-Cuenta-Id")) {
-          hdrs.set("X-Cuenta-Id", cuentaImp);
+        if (!hdrs.has("X-Cuenta-Id")) {
+          hdrs.set("X-Cuenta-Id", cuentaImp || "0");
         }
         init.headers = hdrs;
       }
