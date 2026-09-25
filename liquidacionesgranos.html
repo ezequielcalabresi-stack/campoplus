@@ -226,8 +226,8 @@
                     <div id="netoPagar" class="text-2xl font-extrabold text-emerald-900 font-mono">$ 0,00</div>
                 </div>
                 <div class="sec">
-                    <label class="lbl">IVA RG 2300/2007</label>
-                    <input id="ivaRg2300" type="text" step="0.01" value="0" class="inp-money money-input" oninput="recalc()" data-money inputmode="decimal">
+                    <label class="lbl">IVA RG 4310/2018 (ex 2300/2007)</label>
+                    <input id="ivaRg2300" type="text" step="0.01" value="0" class="inp-money money-input" oninput="markManual('ivaRg');recalc()" data-money inputmode="decimal" title="Diferencia entre el IVA de la operación y la retención SISA. La deposita el agente de retención.">
                 </div>
                 <div class="sec">
                     <label class="lbl">Pago según condiciones</label>
@@ -299,7 +299,7 @@
     <script>
         let actividades = [];
         const GRANOS = ['Soja', 'Maíz', 'Trigo', 'Girasol', 'Cebada', 'Sorgo', 'Poroto', 'Pisingallo'];
-        const manual = { gtosAdm: false, ivaServ: false, retIibb: false, sellados: false, retGan: false, retIva: false, pctRetIva: false, pagoCond: false };
+        const manual = { gtosAdm: false, ivaServ: false, retIibb: false, sellados: false, retGan: false, retIva: false, pctRetIva: false, ivaRg: false, pagoCond: false };
         let sisaEmpresa = { estado: '1', caracter: 'productor' };
 
         function alicuotaRetIvaSisa(grano, estado, caracter) {
@@ -448,7 +448,10 @@
 
             const otros = num(document.getElementById('otrosRet').value);
             const totRet = retIibb + sellados + retGan + retIva + otros;
-            const ivaRg = num(document.getElementById('ivaRg2300').value);
+            // RG 4310/2018: el agente deposita la diferencia entre el IVA liquidado y el IVA retenido.
+            let ivaRg = manual.ivaRg ? num(document.getElementById('ivaRg2300').value) : Math.max(0, ivaOp - retIva);
+            if (!manual.ivaRg) setVal('ivaRg2300', ivaRg);
+            else ivaRg = num(document.getElementById('ivaRg2300').value);
             const neto = opCiva - totDed - totRet - ivaRg;
 
             setRo('subtotal', subtotal);
