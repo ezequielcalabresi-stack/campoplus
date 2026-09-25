@@ -142,6 +142,47 @@ def init_almacen_schema(cursor) -> None:
             FOREIGN KEY(item_id) REFERENCES almacen_items(id)
         );
     """)
+    cursor.execute("PRAGMA table_info(almacen_items);")
+    cols_item = {r[1] for r in cursor.fetchall()}
+    if "costo_promedio_usd" not in cols_item:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN costo_promedio_usd REAL DEFAULT 0;")
+    _aplicar_costos_usd_access(cursor)
+
+
+def _aplicar_costos_usd_access(cursor) -> None:
+    """Completa el costo en dólares de los productos que vinieron de Access.
+
+    El promedio en pesos sigue en costo_promedio_neto. La OT de insumos usa
+    esta moneda constante y no el valor histórico en pesos.
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).with_name("datos") / "costos_usd_almacen.json"
+    if not path.exists():
+        return
+    try:
+        mapa = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(mapa, dict) or not mapa:
+        return
+    for nombre, usd in mapa.items():
+        try:
+            valor = float(usd or 0)
+        except (TypeError, ValueError):
+            continue
+        if valor <= 0 or not str(nombre).strip():
+            continue
+        cursor.execute(
+            """
+            UPDATE almacen_items
+            SET costo_promedio_usd = ?
+            WHERE UPPER(TRIM(nombre)) = UPPER(TRIM(?))
+              AND COALESCE(costo_promedio_usd, 0) = 0;
+            """,
+            (round(valor, 4), str(nombre).strip()),
+        )
 
 
 def _inferir_categoria_codigo(nombre: str = "", tipo: str = "", categoria: str = "") -> str:
@@ -738,7 +779,11 @@ def emitir_ot_consumiendo_almacen(
             raise ValueError(
                 f"Stock insuficiente de '{item.get('nombre')}': hay {stock}, se piden {cant}."
             )
-        costo_u = float(item.get("costo_promedio_neto") or 0)
+        costo_usd = float(item.get("costo_promedio_usd") or 0)
+        if (item.get("tipo") or "") != "laboreo" and costo_usd > 0:
+            costo_u = costo_usd
+        else:
+            costo_u = float(item.get("costo_promedio_neto") or 0)
         costo_t = round(cant * costo_u, 2)
         nuevo_stock = round(stock - cant, 6)
 
@@ -778,23 +823,24 @@ def emitir_ot_consumiendo_almacen(
         else:
             costo_prod += costo_t
 
-    total = round(costo_prod + costo_lab, 2)
+    insumos_usd = round(costo_prod, 2)
+    labores_ars = round(costo_lab, 2)
     cursor.execute(
         """
         UPDATE ordenes_trabajo
         SET costo_insumos_neto=?, costo_laboreos_neto=?, costo_total_neto=?
         WHERE id=?;
         """,
-        (round(costo_prod, 2), round(costo_lab, 2), total, ot_id),
+        (insumos_usd, labores_ars, insumos_usd, ot_id),
     )
     return {
         "status": "success",
         "ot_id": ot_id,
         "nro_ot": nro,
-        "costo_insumos_neto": round(costo_prod, 2),
-        "costo_laboreos_neto": round(costo_lab, 2),
-        "costo_total_neto": total,
-        "message": f"OT {nro} emitida. Costos a neto de almacén (sin impuestos).",
+        "costo_insumos_neto": insumos_usd,
+        "costo_laboreos_neto": labores_ars,
+        "costo_total_neto": insumos_usd,
+        "message": f"OT {nro} emitida. Insumos en U$S (moneda constante). Laboreos en pesos netos.",
     }
 
 

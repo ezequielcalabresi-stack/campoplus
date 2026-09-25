@@ -14,12 +14,13 @@
         .cons-tipo { font-weight:600; }
         .cons-tipo option[value="producto"] { color:#1e40af; }
         .cons-tipo option[value="laboreo"] { color:#92400e; }
+        .cons-cu, .cons-ct, th.costo-col { white-space: nowrap; }
     </style>
 <script src="/campoplus-firma.js?v=2"></script>
     <script src="/campoplus-fechas.js"></script>
 </head>
 <body>
-<div class="container my-4" style="max-width:1100px;">
+<div class="container my-4" style="max-width:1280px;">
     <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
         <div>
             <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Órdenes de Trabajo</small></h4>
@@ -83,7 +84,7 @@
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
             <div>
                 <h5 class="fw-bold mb-0">Consumos desde almacén</h5>
-                <span class="hint">Elegí <strong>Producto</strong> o <strong>Labor</strong> en cada línea; el listado se filtra según el tipo.</span>
+                <span class="hint">Los productos se costean en U$S, el valor constante que vino de Access. Las labores siguen en pesos.</span>
             </div>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="agregarLinea('producto')">+ Producto</button>
@@ -99,16 +100,16 @@
                         <th class="text-center">Dosis / ha</th>
                         <th class="text-end">Cantidad</th>
                         <th>Un.</th>
-                        <th class="text-end">Costo u. neto</th>
-                        <th class="text-end">Costo total</th>
+                        <th class="text-end costo-col" style="min-width:9.5rem;">Costo unitario</th>
+                        <th class="text-end costo-col" style="min-width:9.5rem;">Costo total</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody id="tablaConsumos"></tbody>
                 <tfoot>
                     <tr>
-                        <td colspan="6" class="text-end fw-bold">Total OT (neto)</td>
-                        <td class="text-end font-mono fw-bold" id="lblTotalOT">$ 0,00</td>
+                        <td colspan="6" class="text-end fw-bold">Total productos</td>
+                        <td class="text-end font-mono fw-bold text-nowrap" id="lblTotalOT">U$S 0,00</td>
                         <td></td>
                     </tr>
                 </tfoot>
@@ -123,8 +124,8 @@
         <h5 class="fw-bold">Últimas OT</h5>
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0">
-                <thead><tr><th>Nº</th><th>Fecha</th><th>Labor</th><th>Has</th><th class="text-end">Insumos</th><th class="text-end">Laboreos</th><th class="text-end">Total neto</th></tr></thead>
-                <tbody id="tablaOTHist"><tr><td colspan="7" class="text-muted text-center py-2"> - </td></tr></tbody>
+                <thead><tr><th>Nº</th><th>Fecha</th><th>Labor</th><th>Has</th><th class="text-end">Insumos U$S</th><th class="text-end">Laboreos $</th></tr></thead>
+                <tbody id="tablaOTHist"><tr><td colspan="6" class="text-muted text-center py-2"> - </td></tr></tbody>
             </table>
         </div>
     </div>
@@ -197,17 +198,27 @@ function onLoteChange() {
     recalcularLineas();
 }
 
+function moneyAr(n) {
+    return Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function escAttr(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
 function optsItems(tipo) {
     const t = (tipo || 'producto').toLowerCase();
     const list = itemsCache.filter(i => (i.tipo || 'producto') === t);
+    const vacio = `<option value="">Seleccione...</option>`;
     if (!list.length) {
-        return `<option value=""> -  Sin ${t === 'laboreo' ? 'labores' : 'productos'} con stock - </option>`;
+        return `<option value="">Sin ${t === 'laboreo' ? 'labores' : 'productos'} con stock</option>`;
     }
-    return list.map(i => {
-        const etiqueta = t === 'laboreo' ? 'labor' : 'producto';
-        return `<option value="${i.id}" data-unidad="${i.unidad||''}" data-costo="${i.costo_promedio_neto||0}" data-tipo="${i.tipo}">
-            [${etiqueta}] ${i.nombre} - stock ${Number(i.stock_cantidad||0).toFixed(2)} ${i.unidad||''} - $ ${Number(i.costo_promedio_neto||0).toFixed(2)}
-        </option>`;
+    return vacio + list.map(i => {
+        const usd = Number(i.costo_promedio_usd || 0);
+        const ars = Number(i.costo_promedio_neto || 0);
+        const enUsd = t !== 'laboreo' && usd > 0;
+        const costo = enUsd ? usd : ars;
+        const moneda = enUsd ? 'USD' : 'ARS';
+        const precio = enUsd ? ('U$S ' + moneyAr(usd)) : ('$ ' + moneyAr(ars));
+        return `<option value="${i.id}" data-unidad="${escAttr(i.unidad||'')}" data-costo="${costo}" data-moneda="${moneda}" data-tipo="${escAttr(i.tipo)}">${escAttr(i.nombre)} · stock ${Number(i.stock_cantidad||0).toLocaleString('es-AR', {maximumFractionDigits:2})} ${escAttr(i.unidad||'')} · ${precio}</option>`;
     }).join('');
 }
 
@@ -247,34 +258,51 @@ function agregarLinea(tipoInicial) {
     onTipoLineaChange(tr.querySelector('.cons-tipo'));
 }
 
+function etiquetaCosto(moneda, n) {
+    if (!n) return moneda === 'USD' ? 's/U$S' : '$ 0,00';
+    return (moneda === 'USD' ? 'U$S ' : '$ ') + moneyAr(n);
+}
 function onItemChange(sel) {
     const opt = sel.selectedOptions[0];
     const tr = sel.closest('tr');
-    if (!opt) return;
-    tr.querySelector('.cons-un').innerText = opt.dataset.unidad || ' - ';
+    if (!opt || !opt.value) {
+        tr.querySelector('.cons-un').innerText = '';
+        tr.querySelector('.cons-cu').innerText = '';
+        tr.querySelector('.cons-ct').innerText = '';
+        recalcularLineas();
+        return;
+    }
+    tr.querySelector('.cons-un').innerText = opt.dataset.unidad || '';
     const cu = Number(opt.dataset.costo || 0);
-    tr.querySelector('.cons-cu').innerText = '$ ' + cu.toLocaleString('es-AR', {minimumFractionDigits:2});
+    tr.querySelector('.cons-cu').innerText = etiquetaCosto(opt.dataset.moneda, cu);
     recalcularLineas();
 }
 
 function recalcularLineas() {
     const has = parseFloat(document.getElementById('superficie').value || 0);
-    let total = 0;
+    let totalUsd = 0;
+    let totalArs = 0;
     document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
         const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
         let cantInp = tr.querySelector('.cons-cant');
         let cant = parseFloat(cantInp.value || 0);
+        const opt = tr.querySelector('.cons-item').selectedOptions[0];
+        if (!opt || !opt.value) {
+            tr.querySelector('.cons-ct').innerText = '';
+            return;
+        }
         if (dosis > 0 && has > 0 && (!cantInp.dataset.manual || cant < 0.0001)) {
             cant = Math.round(dosis * has * 1000) / 1000;
             cantInp.value = cant;
         }
-        const opt = tr.querySelector('.cons-item').selectedOptions[0];
-        const cu = opt ? Number(opt.dataset.costo || 0) : 0;
+        const cu = Number(opt.dataset.costo || 0);
         const ct = cant * cu;
-        tr.querySelector('.cons-ct').innerText = '$ ' + ct.toLocaleString('es-AR', {minimumFractionDigits:2});
-        total += ct;
+        const moneda = opt.dataset.moneda || 'ARS';
+        tr.querySelector('.cons-ct').innerText = etiquetaCosto(moneda, ct);
+        if (moneda === 'USD') totalUsd += ct;
+        else totalArs += ct;
     });
-    document.getElementById('lblTotalOT').innerText = '$ ' + total.toLocaleString('es-AR', {minimumFractionDigits:2});
+    document.getElementById('lblTotalOT').innerText = 'U$S ' + moneyAr(totalUsd) + (totalArs ? ' · labores $ ' + moneyAr(totalArs) : '');
 }
 
 document.addEventListener('input', e => {
@@ -312,14 +340,14 @@ async function emitirOT() {
     });
     const d = await res.json().catch(()=>({}));
     if (!res.ok) return alert(d.detail || 'Error al emitir OT');
-    alert(`${d.message}\nInsumos: $ ${Number(d.costo_insumos_neto||0).toLocaleString('es-AR')}\nLaboreos: $ ${Number(d.costo_laboreos_neto||0).toLocaleString('es-AR')}\nTotal neto: $ ${Number(d.costo_total_neto||0).toLocaleString('es-AR')}`);
+    alert(`${d.message}\nInsumos: U$S ${moneyAr(d.costo_insumos_neto)}\nLaboreos: $ ${moneyAr(d.costo_laboreos_neto)}`);
     location.reload();
 }
 
 function renderHist(rows) {
     const tb = document.getElementById('tablaOTHist');
     if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-2">Sin OT aún.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="6" class="text-muted text-center py-2">Sin OT aún.</td></tr>`;
         return;
     }
     tb.innerHTML = rows.map(o => `
@@ -328,9 +356,8 @@ function renderHist(rows) {
             <td>${(o.fecha||'').split('-').reverse().join('/')}</td>
             <td>${o.tipo_labor||''}</td>
             <td class="font-mono">${Number(o.superficie_has||0).toFixed(1)}</td>
-            <td class="text-end font-mono">$ ${Number(o.costo_insumos_neto||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-            <td class="text-end font-mono">$ ${Number(o.costo_laboreos_neto||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-            <td class="text-end font-mono fw-bold">$ ${Number(o.costo_total_neto||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+            <td class="text-end font-mono">U$S ${moneyAr(o.costo_insumos_neto)}</td>
+            <td class="text-end font-mono">$ ${moneyAr(o.costo_laboreos_neto)}</td>
         </tr>`).join('');
 }
 

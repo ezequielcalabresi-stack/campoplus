@@ -1122,7 +1122,8 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
     n_lab = 0
     running: Dict[int, float] = {}
     costo_prom: Dict[int, float] = {}
-    stock_last: Dict[int, Tuple[float, float]] = {}
+    costo_prom_usd: Dict[int, float] = {}
+    stock_last: Dict[int, Tuple[float, float, float]] = {}
 
     for fecha, ida, row, producto in rows:
         key = producto.upper()
@@ -1164,6 +1165,7 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
         salida = _safe_float(row.get("SALIDA"))
         stock_xls = _safe_float(row.get("STOCK"))
         vu = _safe_float(row.get("VALOR UNITARIO"))
+        vu_usd = _safe_float(row.get("VALOR UNITARIO U$S"))
         camp = normalizar_codigo_campania(_safe_str(row.get("CAMPAÑA")))
         campania_id = asegurar_campania_activa(cur, empresa_id, camp) if camp else None
 
@@ -1190,7 +1192,18 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
         elif vu > 0 and item_id not in costo_prom:
             costo_prom[item_id] = vu
 
+        if entrada > 0 and vu_usd > 0:
+            avg_usd = costo_prom_usd.get(item_id, 0.0)
+            if prev > 0 and avg_usd > 0:
+                avg_usd = (prev * avg_usd + entrada * vu_usd) / (prev + entrada) if (prev + entrada) > 0 else vu_usd
+            else:
+                avg_usd = vu_usd
+            costo_prom_usd[item_id] = avg_usd
+        elif vu_usd > 0 and item_id not in costo_prom_usd:
+            costo_prom_usd[item_id] = vu_usd
+
         avg_out = costo_prom.get(item_id, vu)
+        avg_usd_out = costo_prom_usd.get(item_id, 0.0)
 
         mov_id = None
         if ida:
@@ -1254,20 +1267,25 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
             )
             n_mov += 1
 
-        stock_last[item_id] = (saldo, avg_out)
+        stock_last[item_id] = (saldo, avg_out, avg_usd_out)
 
-    for item_id, (stock, vu) in stock_last.items():
+    cur.execute("PRAGMA table_info(almacen_items);")
+    if "costo_promedio_usd" not in {r[1] for r in cur.fetchall()}:
+        cur.execute("ALTER TABLE almacen_items ADD COLUMN costo_promedio_usd REAL DEFAULT 0;")
+
+    for item_id, (stock, vu, vu_usd) in stock_last.items():
         cur.execute(
             """
             UPDATE almacen_items SET
                 stock_cantidad = ?,
-                costo_promedio_neto = CASE WHEN ? > 0 THEN ? ELSE costo_promedio_neto END
+                costo_promedio_neto = CASE WHEN ? > 0 THEN ? ELSE costo_promedio_neto END,
+                costo_promedio_usd = CASE WHEN ? > 0 THEN ? ELSE costo_promedio_usd END
             WHERE id = ?;
             """,
-            (stock, vu, vu, item_id),
+            (stock, vu, vu, vu_usd, vu_usd, item_id),
         )
 
-    con_stock = sum(1 for s, _ in stock_last.values() if abs(s) > 1e-6)
+    con_stock = sum(1 for s, _, _u in stock_last.values() if abs(s) > 1e-6)
     return {
         "movimientos": n_mov,
         "movimientos_actualizados": n_upd,
