@@ -18,9 +18,11 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PADRON_DB_PATH = os.path.join(BASE_DIR, "padron.db")
-PADRON_TMP_PATH = os.path.join(BASE_DIR, "padron_tmp.db")
-PADRONES_DIR = os.path.join(BASE_DIR, "padrones_arba")
+_DATA_DIR = os.environ.get("CAMPO_DATA_DIR", "").strip()
+_PADRON_ROOT = _DATA_DIR if _DATA_DIR else BASE_DIR
+PADRON_DB_PATH = os.path.join(_PADRON_ROOT, "padron.db")
+PADRON_TMP_PATH = os.path.join(_PADRON_ROOT, "padron_tmp.db")
+PADRONES_DIR = os.path.join(_PADRON_ROOT, "padrones_arba")
 JOB_STATUS_PATH = os.path.join(PADRONES_DIR, "_import_job.json")
 
 ProgressCb = Optional[Callable[[Dict[str, Any]], None]]
