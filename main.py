@@ -163,6 +163,31 @@ def _row_to_empresa(row) -> dict:
     return d
 
 
+def _separar_entidades_por_empresa(cursor) -> None:
+    """El padrón deja de ser común: cada empresa conserva su propia copia."""
+    info = list(cursor.execute("PRAGMA table_info(entidades)"))
+    names = [r[1] for r in info]
+    defs = []
+    for r in info:
+        nombre, tipo, dflt = r[1], (r[2] or "TEXT"), r[4]
+        if nombre == "cuit":
+            defs.append("cuit TEXT NOT NULL")
+            continue
+        pieza = f"{nombre} {tipo}"
+        if dflt is not None:
+            pieza += f" DEFAULT {dflt}"
+        defs.append(pieza)
+    defs.append("empresa_id INTEGER NOT NULL DEFAULT 1")
+    defs.append("PRIMARY KEY (empresa_id, cuit)")
+    cursor.execute("CREATE TABLE entidades__por_empresa (" + ", ".join(defs) + ");")
+    cols = ", ".join(names)
+    cursor.execute(
+        f"INSERT INTO entidades__por_empresa ({cols}, empresa_id) SELECT {cols}, 1 FROM entidades;"
+    )
+    cursor.execute("DROP TABLE entidades;")
+    cursor.execute("ALTER TABLE entidades__por_empresa RENAME TO entidades;")
+
+
 def get_empresa_activa_id() -> int:
     """Devuelve el id de la empresa activa validado contra la tabla empresas."""
     try:
@@ -361,6 +386,8 @@ def init_db():
         cursor.execute("ALTER TABLE entidades ADD COLUMN regimen_sicore TEXT DEFAULT '';")
     if 'es_propietario_inmueble' not in cols_entidades:
         cursor.execute("ALTER TABLE entidades ADD COLUMN es_propietario_inmueble INTEGER DEFAULT 0;")
+    if 'empresa_id' not in cols_entidades:
+        _separar_entidades_por_empresa(cursor)
 
     cursor.executemany(
         """
@@ -2076,8 +2103,13 @@ def obtener_entidades(
     """
     conn = get_db()
     cursor = conn.cursor()
-    q = "SELECT * FROM entidades WHERE 1=1"
-    params: list = []
+    cols = [r[1] for r in cursor.execute("PRAGMA table_info(entidades)")]
+    if "empresa_id" not in cols:
+        _separar_entidades_por_empresa(cursor)
+        conn.commit()
+    empresa_id = get_empresa_activa_id()
+    q = "SELECT * FROM entidades WHERE COALESCE(empresa_id, 1) = ?"
+    params: list = [empresa_id]
     rol_n = (rol or "").strip().lower()
     if rol_n in ("cliente", "clientes"):
         q += " AND COALESCE(es_cliente, 0) = 1"
@@ -2146,7 +2178,11 @@ def guardar_entidad(data: EntidadModel):
     if "es_cuenta_ajuste" not in cols:
         cursor.execute("ALTER TABLE entidades ADD COLUMN es_cuenta_ajuste INTEGER DEFAULT 0;")
 
-    cursor.execute("SELECT cuit FROM entidades WHERE REPLACE(cuit, '-', '') = ?;", (cuit_clean,))
+    empresa_id = get_empresa_activa_id()
+    cursor.execute(
+        "SELECT cuit FROM entidades WHERE REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?;",
+        (cuit_clean, empresa_id),
+    )
     existe = cursor.fetchone()
     if existe:
         cursor.execute("""
@@ -2154,20 +2190,20 @@ def guardar_entidad(data: EntidadModel):
             SET razon_social = ?, nombre_fantasia = ?, domicilio = ?, localidad = ?,
                 provincia = ?, es_proveedor = ?, es_cliente = ?, centro_costo = ?,
                 regimen_sicore = ?, es_propietario_inmueble = ?, es_cuenta_ajuste = ?
-            WHERE REPLACE(cuit, '-', '') = ?;
+            WHERE REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?;
         """, (razon, nombre, data.domicilio or "", data.localidad or "",
               data.provincia or "", data.es_proveedor, data.es_cliente, centro,
-              reg, es_prop, es_ajuste, cuit_clean))
+              reg, es_prop, es_ajuste, cuit_clean, empresa_id))
     else:
         cursor.execute("""
             INSERT INTO entidades (
                 cuit, razon_social, nombre_fantasia, domicilio, localidad, provincia,
                 es_proveedor, es_cliente, centro_costo, regimen_sicore,
-                es_propietario_inmueble, es_cuenta_ajuste
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                es_propietario_inmueble, es_cuenta_ajuste, empresa_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, (cuit_clean, razon, nombre, data.domicilio or "", data.localidad or "",
               data.provincia or "", data.es_proveedor, data.es_cliente, centro, reg,
-              es_prop, es_ajuste))
+              es_prop, es_ajuste, empresa_id))
     conn.commit()
     conn.close()
     return {
@@ -2184,7 +2220,11 @@ def eliminar_entidad(cuit: str):
     conn = get_db()
     cursor = conn.cursor()
     cuit_clean = "".join(filter(str.isdigit, str(cuit)))
-    cursor.execute("DELETE FROM entidades WHERE REPLACE(cuit, '-', '') = ?;", (cuit_clean,))
+    empresa_id = get_empresa_activa_id()
+    cursor.execute(
+        "DELETE FROM entidades WHERE REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?;",
+        (cuit_clean, empresa_id),
+    )
     conn.commit()
     conn.close()
     return {"status": "success", "message": "Entidad eliminada."}
@@ -2194,7 +2234,11 @@ def marcar_cuenta_ajuste(cuit: str, data: AjustarCuentaModel):
     conn = get_db()
     cursor = conn.cursor()
     cuit_clean = "".join(filter(str.isdigit, str(cuit)))
-    cursor.execute("UPDATE entidades SET es_cuenta_ajuste = ? WHERE REPLACE(cuit, '-', '') = ?;", (data.es_cuenta_ajuste, cuit_clean))
+    empresa_id = get_empresa_activa_id()
+    cursor.execute(
+        "UPDATE entidades SET es_cuenta_ajuste = ? WHERE REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?;",
+        (data.es_cuenta_ajuste, cuit_clean, empresa_id),
+    )
     conn.commit()
     conn.close()
     return {"status": "success", "message": "Estado de cuenta de ajuste actualizado."}
@@ -2204,15 +2248,19 @@ def marcar_centro_costo(cuit: str, data: CentroCostoModel):
     conn = get_db()
     cursor = conn.cursor()
     cuit_clean = "".join(filter(str.isdigit, str(cuit)))
-    cursor.execute("SELECT razon_social, nombre_fantasia FROM entidades WHERE REPLACE(cuit, '-', '') = ?;", (cuit_clean,))
+    empresa_id = get_empresa_activa_id()
+    cursor.execute(
+        "SELECT razon_social, nombre_fantasia FROM entidades WHERE REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?;",
+        (cuit_clean, empresa_id),
+    )
     row = cursor.fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Entidad no encontrada.")
     centro = _normalizar_centro_costo(data.centro_costo, row["razon_social"] or "", row["nombre_fantasia"] or "")
     cursor.execute(
-        "UPDATE entidades SET centro_costo = ? WHERE REPLACE(cuit, '-', '') = ?;",
-        (centro, cuit_clean),
+        "UPDATE entidades SET centro_costo = ? WHERE REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?;",
+        (centro, cuit_clean, empresa_id),
     )
     conn.commit()
     conn.close()
