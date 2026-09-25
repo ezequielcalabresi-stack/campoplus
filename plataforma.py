@@ -285,6 +285,7 @@ class TenantDBMiddleware:
             return
         raw_emp = str(headers.get("x-empresa-id") or "").strip()
         empresa_id = int(raw_emp) if raw_emp.isdigit() and int(raw_emp) > 0 else None
+        path = base_de_empresa(path, cuenta_id, empresa_id)
         t_db = db_ctx.set(path)
         t_cta = cuenta_ctx.set(cuenta_id)
         t_emp = empresa_ctx.set(empresa_id)
@@ -482,6 +483,106 @@ def _abrir_base_cuenta(master_path: str, cuenta) -> str:
         return path
     slug = (cuenta["slug"] or "").strip() or _slug(cuenta["nombre"] or "")
     return provisionar_base(master_path, slug, cuenta["nombre"] or slug)
+
+
+def base_de_empresa(cuenta_path: str, cuenta_id: Optional[int], empresa_id: Optional[int]) -> str:
+    """La empresa titular sigue en la base del grupo. Las demás tienen archivo propio."""
+    if not empresa_id or not cuenta_path or not os.path.isfile(cuenta_path):
+        return cuenta_path
+    conn = sqlite3.connect(cuenta_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        titular = conn.execute("SELECT MIN(id) AS id FROM empresas;").fetchone()
+        existe = conn.execute(
+            "SELECT id, razon_social, cuit, tenant_id, localidad FROM empresas WHERE id = ?;",
+            (int(empresa_id),),
+        ).fetchone()
+    except sqlite3.Error:
+        conn.close()
+        return cuenta_path
+    conn.close()
+    if not existe or not titular or titular["id"] is None:
+        return cuenta_path
+    if int(existe["id"]) == int(titular["id"]):
+        return cuenta_path
+    dest = os.path.join(
+        os.path.dirname(os.path.abspath(cuenta_path)),
+        "bases_empresas",
+        str(cuenta_id or 0),
+        f"empresa_{int(empresa_id)}.db",
+    )
+    if not os.path.isfile(dest):
+        _clonar_esquema(cuenta_path, dest)
+        _copiar_empresa_propia(cuenta_path, dest, int(empresa_id), existe)
+    return dest
+
+
+def _copiar_empresa_propia(origen: str, destino: str, empresa_id: int, empresa) -> None:
+    """Copia el plan de cuentas y las actividades. El resto solo si ya era de esta empresa."""
+    catalogo = {"plan_de_cuentas", "actividades"}
+    src = sqlite3.connect(origen)
+    dst = sqlite3.connect(destino)
+    src.row_factory = sqlite3.Row
+    try:
+        tablas = [
+            r[0]
+            for r in src.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';"
+            )
+        ]
+        for tabla in tablas:
+            if tabla in ("empresas", "configuracion_empresa", "usuarios_sistema", "sesiones_usuario", "cuentas_cliente"):
+                continue
+            cols = [r[1] for r in src.execute(f"PRAGMA table_info({tabla})")]
+            if not cols:
+                continue
+            if tabla in catalogo:
+                filas = src.execute(f"SELECT * FROM {tabla};").fetchall()
+            elif "empresa_id" in cols:
+                filas = src.execute(
+                    f"SELECT * FROM {tabla} WHERE empresa_id = ?;",
+                    (empresa_id,),
+                ).fetchall()
+            else:
+                continue
+            if not filas:
+                continue
+            marcas = ",".join("?" for _ in cols)
+            nombres = ",".join(cols)
+            dst.executemany(
+                f"INSERT OR IGNORE INTO {tabla} ({nombres}) VALUES ({marcas});",
+                [tuple(f) for f in filas],
+            )
+        dst.execute(
+            """
+            INSERT OR REPLACE INTO empresas (id, razon_social, cuit, tenant_id, localidad)
+            VALUES (?, ?, ?, ?, ?);
+            """,
+            (
+                int(empresa["id"]),
+                empresa["razon_social"] or "",
+                empresa["cuit"] or "",
+                empresa["tenant_id"] or "",
+                empresa["localidad"] or "",
+            ),
+        )
+        dst.execute(
+            """
+            INSERT INTO configuracion_empresa (id, razon_social, cuit, empresa_activa_id)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                razon_social = excluded.razon_social,
+                cuit = excluded.cuit,
+                empresa_activa_id = excluded.empresa_activa_id;
+            """,
+            (empresa["razon_social"] or "", empresa["cuit"] or "", int(empresa["id"])),
+        )
+        dst.commit()
+    except sqlite3.Error:
+        dst.rollback()
+    finally:
+        src.close()
+        dst.close()
 
 
 def _es_superadmin(master_path: str, request: Request) -> bool:
