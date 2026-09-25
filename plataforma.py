@@ -152,6 +152,51 @@ def _ruta_base_cuenta(master_path: str, stored: Optional[str]) -> str:
     return path
 
 
+def _nombre_empresa(razon: str) -> str:
+    t = (razon or "").upper()
+    for x in (".", ",", "-", "S.A.A. Y C.", "S.A.A.", "S.A.", "S.R.L.", "SRL"):
+        t = t.replace(x, " ")
+    return " ".join(t.split())
+
+
+def buscar_empresa_existente(master_path: str, cuit: str, razon: str) -> Optional[str]:
+    """Si el CUIT o la razón social ya están en alguna cuenta, devuelve el aviso."""
+    objetivo = _nombre_empresa(razon)
+    cuit_d = "".join(c for c in (cuit or "") if c.isdigit())
+    conn = master_connect(master_path)
+    cur = conn.cursor()
+    cur.execute("SELECT nombre, db_path FROM cuentas_cliente;")
+    cuentas = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    if not cuentas:
+        cuentas = [{"nombre": "Silo Chico", "db_path": master_path}]
+    vistos = set()
+    for cta in cuentas:
+        path = _ruta_base_cuenta(master_path, cta.get("db_path"))
+        if not path or not os.path.isfile(path) or path in vistos:
+            continue
+        vistos.add(path)
+        try:
+            base = sqlite3.connect(path)
+            base.row_factory = sqlite3.Row
+            rows = base.execute(
+                "SELECT razon_social, cuit FROM empresas;"
+            ).fetchall()
+            base.close()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            otro_cuit = "".join(c for c in (row["cuit"] or "") if c.isdigit())
+            mismo_cuit = len(cuit_d) == 11 and otro_cuit == cuit_d
+            mismo_nombre = objetivo and _nombre_empresa(row["razon_social"]) == objetivo
+            if mismo_cuit or mismo_nombre:
+                return (
+                    f"{row['razon_social']} ya existe en la cuenta {cta.get('nombre') or 'Silo Chico'} "
+                    f"(CUIT {row['cuit']}). No se creó una empresa nueva."
+                )
+    return None
+
+
 def resolver_contexto(master_path: str, token: str, cuenta_header: str):
     """Devuelve (db_path, cuenta_id, bloquear)."""
     if not token:

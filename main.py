@@ -7458,10 +7458,13 @@ def obtener_empresa(empresa_id: int):
 
 @app.post("/api/empresas")
 def crear_empresa(data: EmpresaItemModel, request: Request):
-    from plataforma import _token_from_headers, exigir_cupo_empresa
+    from plataforma import _token_from_headers, buscar_empresa_existente, exigir_cupo_empresa
 
     if not _token_from_headers({k.lower(): v for k, v in request.headers.items()}):
         raise HTTPException(status_code=401, detail="Tenés que iniciar sesión")
+    ya = buscar_empresa_existente(DB_PATH, data.cuit, data.razon_social)
+    if ya:
+        raise HTTPException(status_code=409, detail=ya)
     exigir_cupo_empresa(DB_PATH)
     conn = get_db()
     cursor = conn.cursor()
