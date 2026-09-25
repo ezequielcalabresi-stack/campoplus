@@ -128,7 +128,7 @@
             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                 <div>
                     <h5 class="fw-bold mb-0">Estructura de costos</h5>
-                    <p class="hint mb-0">Lo cargado en Access, campaña por campaña. El precio de una línea nueva sale del costo promedio neto del almacén (sin impuestos). El stock se descuenta en Órdenes de Trabajo.</p>
+                    <p class="hint mb-0">Lo cargado en Access, campaña por campaña. Una línea nueva toma el precio con el que el producto o el laboreo está en el almacén. El costo es hectáreas × dosis × ese precio. El stock se descuenta al validar la orden de trabajo.</p>
                 </div>
                 <div class="d-flex gap-2">
                     <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
@@ -193,46 +193,50 @@
                 </div>
             </div>
             <hr>
-            <h6 class="fw-bold">Cargar una línea</h6>
-            <p class="hint">Usa la campaña, el campo, el cultivo y el lote de arriba. Si elegís un producto del almacén, el precio es su costo promedio neto.</p>
+            <h6 class="fw-bold">Cargar una línea a mano</h6>
+            <p class="hint">Elegí un producto o un laboreo del almacén. El precio es el que tiene cargado ese ítem. El costo total es hectáreas × dosis × precio.</p>
+            <input type="hidden" id="lineaMoneda" value="ARS">
             <div class="row g-2 align-items-end">
                 <div class="col-md-2">
                     <label class="form-label small fw-bold mb-1">Fecha</label>
                     <input type="date" id="lineaFecha" class="form-control form-control-sm">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label small fw-bold mb-1">Laboreo</label>
-                    <input id="lineaLaboreo" class="form-control form-control-sm" list="listaLaboreos" placeholder="Siembra, cosecha...">
-                    <datalist id="listaLaboreos">
-                        <option value="SIEMBRA"></option>
-                        <option value="FERTILIZACION"></option>
-                        <option value="PULVERIZACION TERRESTRE"></option>
-                        <option value="PULVERIZACION AEREA"></option>
-                        <option value="COSECHA"></option>
-                    </datalist>
+                    <label class="form-label small fw-bold mb-1">Tipo</label>
+                    <select id="lineaTipo" class="form-select form-select-sm" onchange="cambiarTipoLinea()">
+                        <option value="producto">Producto</option>
+                        <option value="laboreo">Laboreo</option>
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold mb-1">Producto del almacén</label>
-                    <input id="lineaProducto" class="form-control form-control-sm" list="listaItemsAlmacen" placeholder="Nombre del insumo" onchange="tomarPrecioAlmacen()">
-                    <datalist id="listaItemsAlmacen"></datalist>
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold mb-1">Ítem del almacén</label>
+                    <select id="lineaItem" class="form-select form-select-sm" onchange="tomarPrecioAlmacen()">
+                        <option value="">Seleccione...</option>
+                    </select>
                 </div>
                 <div class="col-md-1">
                     <label class="form-label small fw-bold mb-1">Has</label>
-                    <input type="number" step="0.01" id="lineaHas" class="form-control form-control-sm font-mono" value="0">
+                    <input type="number" step="0.01" id="lineaHas" class="form-control form-control-sm font-mono" value="0" oninput="recalcularTotalLinea()">
                 </div>
-                <div class="col-md-1">
+                <div class="col-md-2">
                     <label class="form-label small fw-bold mb-1">Dosis/ha</label>
-                    <input type="number" step="0.0001" id="lineaDosis" class="form-control form-control-sm font-mono" value="0">
+                    <input type="number" step="0.0001" id="lineaDosis" class="form-control form-control-sm font-mono" value="0" oninput="recalcularTotalLinea()">
                 </div>
-                <div class="col-md-1">
+            </div>
+            <div class="row g-2 align-items-end mt-1">
+                <div class="col-md-2">
                     <label class="form-label small fw-bold mb-1">Precio</label>
-                    <input type="number" step="0.01" id="lineaPrecio" class="form-control form-control-sm font-mono" value="0">
+                    <input id="lineaPrecio" class="form-control form-control-sm font-mono" value="" readonly>
                 </div>
-                <div class="col-md-1">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold mb-1">Costo total</label>
+                    <input id="lineaTotal" class="form-control form-control-sm font-mono fw-bold" value="" readonly>
+                </div>
+                <div class="col-md-2">
                     <label class="form-label small fw-bold mb-1">T/C</label>
-                    <input type="number" step="0.01" id="lineaTc" class="form-control form-control-sm font-mono" value="0">
+                    <input type="number" step="0.01" id="lineaTc" class="form-control form-control-sm font-mono" value="0" oninput="recalcularTotalLinea()">
                 </div>
-                <div class="col-md-1">
+                <div class="col-md-2">
                     <button class="btn btn-sm btn-dark fw-bold w-100" onclick="guardarLineaCosto()">Guardar</button>
                 </div>
             </div>
@@ -447,10 +451,36 @@ async function prepararCostos() {
     if (!itemsAlmacen.length) {
         const res = await fetch('/api/agro/almacen/items?solo_aplica_ot=true');
         itemsAlmacen = await res.json();
-        const dl = document.getElementById('listaItemsAlmacen');
-        dl.innerHTML = itemsAlmacen.map(i => `<option value="${(i.nombre || '').replace(/"/g, '&quot;')}"></option>`).join('');
+        llenarItemsLinea();
     }
     costosListos = true;
+}
+
+function precioDeItem(item) {
+    const usd = Number(item.costo_promedio_usd || 0);
+    const ars = Number(item.costo_promedio_neto || 0);
+    if ((item.tipo || '') !== 'laboreo' && usd > 0) return { precio: usd, moneda: 'USD', unidad: item.unidad || '' };
+    return { precio: ars, moneda: 'ARS', unidad: item.unidad || '' };
+}
+
+function cambiarTipoLinea() {
+    const tipo = document.getElementById('lineaTipo').value;
+    const dosis = document.getElementById('lineaDosis');
+    if (tipo === 'laboreo' && Number(dosis.value || 0) <= 0) dosis.value = '1';
+    llenarItemsLinea();
+}
+
+function llenarItemsLinea() {
+    const tipo = document.getElementById('lineaTipo').value;
+    const sel = document.getElementById('lineaItem');
+    const list = itemsAlmacen.filter(i => (i.tipo || 'producto') === tipo);
+    const vacio = list.length ? 'Seleccione...' : (tipo === 'laboreo' ? 'Sin laboreos en el almacén' : 'Sin productos en el almacén');
+    sel.innerHTML = `<option value="">${vacio}</option>` + list.map(i => {
+        const p = precioDeItem(i);
+        const tag = p.moneda === 'USD' ? ('U$S ' + moneyAr(p.precio)) : ('$ ' + moneyAr(p.precio));
+        return `<option value="${i.id}">${escHtml(i.nombre)} · ${tag}</option>`;
+    }).join('');
+    tomarPrecioAlmacen();
 }
 
 async function cargarOpcionesCosto(nivel) {
@@ -594,13 +624,48 @@ function pintarEstructura(data, f) {
     </tr>`;
 }
 
+function itemLineaActual() {
+    const id = Number(document.getElementById('lineaItem').value || 0);
+    return itemsAlmacen.find(i => Number(i.id) === id) || null;
+}
+
 function tomarPrecioAlmacen() {
-    const nombre = document.getElementById('lineaProducto').value.trim().toUpperCase();
-    const item = itemsAlmacen.find(i => (i.nombre || '').trim().toUpperCase() === nombre);
+    const item = itemLineaActual();
+    const precio = document.getElementById('lineaPrecio');
+    const moneda = document.getElementById('lineaMoneda');
+    if (!item) {
+        precio.value = '';
+        moneda.value = 'ARS';
+        recalcularTotalLinea();
+        return;
+    }
+    const p = precioDeItem(item);
+    moneda.value = p.moneda;
+    precio.value = (p.moneda === 'USD' ? 'U$S ' : '$ ') + moneyAr(p.precio) + (p.unidad ? ' / ' + p.unidad : '');
+    recalcularTotalLinea();
+}
+
+function recalcularTotalLinea() {
+    const item = itemLineaActual();
+    const has = Number(document.getElementById('lineaHas').value || 0);
+    const dosis = Number(document.getElementById('lineaDosis').value || 0);
+    const tc = Number(document.getElementById('lineaTc').value || 0);
+    const totalBox = document.getElementById('lineaTotal');
     const msg = document.getElementById('lineaMsg');
-    if (!item) { msg.innerText = ''; return; }
-    document.getElementById('lineaPrecio').value = Number(item.costo_promedio_neto || 0);
-    msg.innerText = 'Precio del almacén: $ ' + moneyAr(item.costo_promedio_neto) + ' / ' + (item.unidad || '') + '. Stock ' + Number(item.stock_cantidad || 0).toLocaleString('es-AR') + '.';
+    if (!item) {
+        totalBox.value = '';
+        return;
+    }
+    const p = precioDeItem(item);
+    const total = has * dosis * p.precio;
+    const signo = p.moneda === 'USD' ? 'U$S ' : '$ ';
+    totalBox.value = signo + moneyAr(total);
+    if (has > 0 && dosis > 0) {
+        let extra = '';
+        if (p.moneda === 'USD' && tc > 0) extra = ' · en pesos $ ' + moneyAr(total * tc);
+        if (p.moneda === 'ARS' && tc > 0) extra = ' · en dólares U$S ' + moneyAr(total / tc);
+        msg.innerText = moneyAr(has) + ' ha × ' + String(dosis).replace('.', ',') + ' × ' + signo + moneyAr(p.precio) + ' = ' + signo + moneyAr(total) + extra + '.';
+    }
 }
 
 async function guardarLineaCosto() {
@@ -610,29 +675,37 @@ async function guardarLineaCosto() {
         msg.innerText = 'Para cargar, elegí campaña y campo arriba.';
         return;
     }
-    const nombre = document.getElementById('lineaProducto').value.trim();
-    const item = itemsAlmacen.find(i => (i.nombre || '').trim().toUpperCase() === nombre.toUpperCase());
+    const item = itemLineaActual();
+    if (!item) {
+        msg.innerText = 'Elegí un producto o un laboreo del almacén.';
+        return;
+    }
+    const has = Number(document.getElementById('lineaHas').value || 0);
+    const dosis = Number(document.getElementById('lineaDosis').value || 0);
+    if (has <= 0 || dosis <= 0) {
+        msg.innerText = 'Indicá las hectáreas y la dosis. El costo es hectáreas × dosis × precio.';
+        return;
+    }
     const body = {
         campania: f.campania,
         campo: f.campo,
         cultivo: f.cultivo,
         lote: f.lote,
         fecha: document.getElementById('lineaFecha').value,
-        laboreo: document.getElementById('lineaLaboreo').value,
-        producto: nombre,
-        cantidad_has: Number(document.getElementById('lineaHas').value || 0),
-        dosis_ha: Number(document.getElementById('lineaDosis').value || 0),
-        precio: Number(document.getElementById('lineaPrecio').value || 0),
+        tipo: document.getElementById('lineaTipo').value,
+        cantidad_has: has,
+        dosis_ha: dosis,
         tc: Number(document.getElementById('lineaTc').value || 0),
-        almacen_item_id: item ? item.id : null,
-        unidad: item ? item.unidad : '',
+        almacen_item_id: item.id,
     };
     const res = await fetch('/api/agro/costos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json();
     if (!res.ok) { msg.innerText = data.detail || 'No se pudo guardar.'; return; }
-    msg.innerText = 'Guardado. Costo $ ' + moneyAr(data.costo_ars) + ' · U$S ' + moneyAr(data.costo_usd) + '.';
-    document.getElementById('lineaProducto').value = '';
-    document.getElementById('lineaLaboreo').value = '';
+    const signo = data.moneda === 'USD' ? 'U$S ' : '$ ';
+    const principal = data.moneda === 'USD' ? data.costo_usd : data.costo_ars;
+    msg.innerText = 'Guardado. ' + moneyAr(has) + ' ha × ' + String(dosis).replace('.', ',') + ' × precio = ' + signo + moneyAr(principal) + '.';
+    document.getElementById('lineaItem').value = '';
+    tomarPrecioAlmacen();
     await verCostos('detalle');
 }
 

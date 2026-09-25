@@ -1875,19 +1875,20 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             params.append(lote)
         return sql, params
 
-    def _costo_linea(has_val, dosis, cantidad, precio, tc, laboreo, producto):
+    def _costo_linea(has_val, dosis, precio, tc, moneda):
+        """Costo de una línea manual: hectáreas × dosis × precio del almacén."""
         has_val = float(has_val or 0)
         dosis = float(dosis or 0)
-        cantidad = float(cantidad or 0)
         precio = float(precio or 0)
         tc = float(tc or 0)
-        if cantidad <= 0 and dosis > 0 and has_val > 0:
-            cantidad = round(dosis * has_val, 4)
-        if (producto or "").strip():
-            costo_ars = round(cantidad * precio, 2)
+        cantidad = round(has_val * dosis, 4)
+        total = round(cantidad * precio, 2)
+        if (moneda or "ARS") == "USD":
+            costo_usd = total
+            costo_ars = round(total * tc, 2) if tc else 0.0
         else:
-            costo_ars = round(has_val * precio, 2)
-        costo_usd = round(costo_ars / tc, 2) if tc else 0.0
+            costo_ars = total
+            costo_usd = round(total / tc, 2) if tc else 0.0
         return cantidad, round(precio, 4), round(tc, 4), costo_ars, costo_usd
 
     @app.get("/api/agro/costos/opciones")
@@ -2066,30 +2067,41 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             conn.close()
             raise HTTPException(400, "Campaña y campo son obligatorios.")
         camp = normalizar_codigo_campania(camp)
-        producto = (data.get("producto") or "").strip()
-        laboreo = (data.get("laboreo") or "").strip()
         item_id = data.get("almacen_item_id") or None
-        precio = float(data.get("precio") or 0)
-        unidad = (data.get("unidad") or "").strip()
-        if item_id:
-            cur.execute(
-                "SELECT id, nombre, unidad, costo_promedio_neto FROM almacen_items WHERE id=? AND empresa_id=?;",
-                (int(item_id), eid),
-            )
-            item = cur.fetchone()
-            if not item:
-                conn.close()
-                raise HTTPException(404, "Ese producto no está en el almacén.")
-            producto = producto or item["nombre"]
-            unidad = unidad or (item["unidad"] or "")
-            if precio <= 0:
-                precio = float(item["costo_promedio_neto"] or 0)
-        if not producto and not laboreo:
+        if not item_id:
             conn.close()
-            raise HTTPException(400, "Indicá un producto del almacén o un laboreo.")
+            raise HTTPException(400, "Elegí un producto o un laboreo del almacén.")
+        cur.execute(
+            """
+            SELECT id, nombre, unidad, tipo, costo_promedio_neto, costo_promedio_usd
+            FROM almacen_items WHERE id=? AND empresa_id=?;
+            """,
+            (int(item_id), eid),
+        )
+        item = cur.fetchone()
+        if not item:
+            conn.close()
+            raise HTTPException(404, "Ese ítem no está en el almacén.")
+        es_laboreo = (item["tipo"] or "") == "laboreo"
+        usd = float(item["costo_promedio_usd"] or 0)
+        ars = float(item["costo_promedio_neto"] or 0)
+        if not es_laboreo and usd > 0:
+            precio, moneda = usd, "USD"
+        else:
+            precio, moneda = ars, "ARS"
+        if precio <= 0:
+            conn.close()
+            raise HTTPException(400, "Ese ítem no tiene precio cargado en el almacén.")
+        producto = "" if es_laboreo else (item["nombre"] or "")
+        laboreo = (item["nombre"] or "") if es_laboreo else ""
+        unidad = item["unidad"] or ""
+        has_val = float(data.get("cantidad_has") or 0)
+        dosis = float(data.get("dosis_ha") or 0)
+        if has_val <= 0 or dosis <= 0:
+            conn.close()
+            raise HTTPException(400, "Indicá las hectáreas y la dosis. El costo es hectáreas × dosis × precio.")
         cantidad, precio, tc, costo_ars, costo_usd = _costo_linea(
-            data.get("cantidad_has"), data.get("dosis_ha"), data.get("cantidad_total"),
-            precio, data.get("tc"), laboreo, producto,
+            has_val, dosis, precio, data.get("tc"), moneda,
         )
         fecha = (data.get("fecha") or "")[:10]
         cur.execute(
@@ -2111,7 +2123,14 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         nuevo = cur.lastrowid
         conn.commit()
         conn.close()
-        return {"id": nuevo, "costo_ars": costo_ars, "costo_usd": costo_usd, "cantidad_total": cantidad}
+        return {
+            "id": nuevo,
+            "moneda": moneda,
+            "precio": precio,
+            "costo_ars": costo_ars,
+            "costo_usd": costo_usd,
+            "cantidad_total": cantidad,
+        }
 
     @app.get("/api/agro/margenes_historicos")
     def api_margenes_hist(campania: Optional[str] = None, campo: Optional[str] = None, limit: int = 500):
