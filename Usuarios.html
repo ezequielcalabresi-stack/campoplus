@@ -91,6 +91,13 @@
 
     <script>
         let _usuariosById = {};
+        let _yo = null;
+
+        function soyAdminUsuarios() {
+            if (!_yo) return false;
+            if (Number(_yo.es_superadmin)) return true;
+            return String(_yo.rol || '').trim().toLowerCase() === 'administrador total';
+        }
 
         async function cargarUsuarios() {
             const solo = document.getElementById('verInactivos').checked ? 0 : 1;
@@ -99,8 +106,16 @@
             _usuariosById = {};
             rows.forEach(u => { _usuariosById[u.id] = u; });
             const tb = document.getElementById('tbodyUsuarios');
+            const admin = soyAdminUsuarios();
+            document.getElementById('formUsuario').closest('.bg-slate-50').style.display = admin ? '' : 'none';
             tb.innerHTML = rows.map(u => {
                 const activo = Number(u.activo) === 1;
+                const dueno = Number(u.es_superadmin) === 1;
+                const puedo = admin && (!dueno || Number(_yo.id) === Number(u.id));
+                const baja = dueno ? '' : `<button onclick="toggleActivo(${u.id}, ${activo ? 0 : 1})" class="text-amber-700 hover:underline text-xs font-bold">${activo ? 'Desactivar' : 'Activar'}</button>`;
+                const acciones = !puedo
+                    ? '<span class="text-xs text-slate-400">Protegido</span>'
+                    : `<button onclick="editar(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">Editar</button> ${baja}`;
                 return `<tr class="hover:bg-slate-50">
                     <td class="p-3 font-medium text-slate-800">${esc(u.nombre)}</td>
                     <td class="p-3 font-mono text-xs text-slate-600">${esc(u.login || ' - ')}</td>
@@ -111,12 +126,7 @@
                             ${activo ? 'Activo' : 'Inactivo'}
                         </span>
                     </td>
-                    <td class="p-3 text-center space-x-2">
-                        <button onclick="editar(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">Editar</button>
-                        <button onclick="toggleActivo(${u.id}, ${activo ? 0 : 1})" class="text-amber-700 hover:underline text-xs font-bold">
-                            ${activo ? 'Desactivar' : 'Activar'}
-                        </button>
-                    </td>
+                    <td class="p-3 text-center space-x-2">${acciones}</td>
                 </tr>`;
             }).join('') || '<tr><td colspan="6" class="p-6 text-center text-slate-400">Sin usuarios</td></tr>';
         }
@@ -231,6 +241,14 @@
         }
         window.onload = async function () {
             await CampoAuth.requireAuth({ redirect: 'Usuarios.html' });
+            const me = await fetch('/api/auth/me');
+            if (me.ok) {
+                const data = await me.json();
+                _yo = data.usuario || null;
+            }
+            if (!soyAdminUsuarios()) {
+                document.getElementById('formUsuario').closest('.bg-slate-50').style.display = 'none';
+            }
             mostrarCupoUsuarios();
             await cargarUsuarios();
         };

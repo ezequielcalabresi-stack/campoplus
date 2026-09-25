@@ -312,7 +312,7 @@ def sesion_actual(get_db: Callable, request: Request) -> Optional[dict]:
     cur.execute(
         """
         SELECT s.*, u.nombre, u.email, u.login, u.rol, u.es_superadmin, u.empresa_id AS user_empresa_id,
-               u.activo AS user_activo
+               u.cuenta_id AS user_cuenta_id, u.activo AS user_activo
         FROM sesiones_usuario s
         JOIN usuarios_sistema u ON u.id = s.usuario_id
         WHERE s.token = ?;
@@ -329,6 +329,37 @@ def sesion_actual(get_db: Callable, request: Request) -> Optional[dict]:
     if not int(d.get("user_activo") or 0):
         return None
     return d
+
+
+def _nivel_rol(rol: Optional[str]) -> int:
+    n = (rol or "").strip().lower()
+    if n == "administrador total":
+        return 4
+    if n in ("administración / carga", "administracion / carga"):
+        return 3
+    if n == "operativo / campo":
+        return 2
+    if n == "consulta":
+        return 1
+    return 0
+
+
+def es_admin_de_cuenta(ses: Optional[dict]) -> bool:
+    if not ses:
+        return False
+    if int(ses.get("es_superadmin") or 0):
+        return True
+    return _nivel_rol(ses.get("rol")) >= 4
+
+
+def exigir_admin_usuarios(get_db: Callable, request: Request) -> dict:
+    """Solo Administrador Total administra usuarios. El resto no cambia roles ni suspende."""
+    ses = sesion_actual(get_db, request)
+    if not ses:
+        raise HTTPException(401, "Tenés que iniciar sesión")
+    if not es_admin_de_cuenta(ses):
+        raise HTTPException(403, "Solo un Administrador Total puede administrar usuarios")
+    return ses
 
 
 def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: Callable) -> None:
@@ -629,9 +660,8 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         from plataforma import exigir_cupo_usuario
         import main as _main
 
-        ses = sesion_actual(get_db, request)
-        if ses and not int(ses.get("es_superadmin") or 0):
-            # admin de empresa puede crear usuarios de su empresa
+        ses = exigir_admin_usuarios(get_db, request)
+        if not int(ses.get("es_superadmin") or 0):
             if data.es_superadmin:
                 raise HTTPException(403, "No podés crear superadmin")
         if not int(data.es_superadmin or 0):
@@ -674,7 +704,30 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         import main as _main
         from plataforma import master_connect
 
+        ses = sesion_actual(get_db, request)
+        if not ses:
+            raise HTTPException(401, "Tenés que iniciar sesión")
         conn = master_connect(_main.DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT id, es_superadmin, cuenta_id FROM usuarios_sistema WHERE id = ?;", (uid,))
+        target = cur.fetchone()
+        if not target:
+            conn.close()
+            raise HTTPException(404, "Usuario no encontrado")
+        target = dict(target)
+        actor_id = int(ses["usuario_id"])
+        if actor_id != int(target["id"]):
+            if not es_admin_de_cuenta(ses):
+                conn.close()
+                raise HTTPException(403, "Solo un Administrador Total puede cambiar la clave de otro usuario")
+            if int(target.get("es_superadmin") or 0):
+                conn.close()
+                raise HTTPException(403, "No podés cambiar la clave del administrador de Campo+")
+            if not int(ses.get("es_superadmin") or 0):
+                actor_cuenta = int(ses.get("user_cuenta_id") or 1)
+                if int(target.get("cuenta_id") or 1) != actor_cuenta:
+                    conn.close()
+                    raise HTTPException(403, "Ese usuario no es de tu empresa")
         conn.execute(
             "UPDATE usuarios_sistema SET password_hash = ? WHERE id = ?;",
             (_hash_password(data.password), uid),

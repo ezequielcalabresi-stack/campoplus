@@ -282,10 +282,15 @@ def register_audit_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id:
         )
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
+        for row in rows:
+            row.pop("password_hash", None)
         return rows
 
     @app.post("/api/usuarios")
     def crear_usuario(data: UsuarioCreate, request: Request):
+        from saas_auth import exigir_admin_usuarios
+
+        exigir_admin_usuarios(get_db, request)
         nombre = (data.nombre or "").strip()
         if not nombre:
             raise HTTPException(400, "Nombre obligatorio")
@@ -328,7 +333,9 @@ def register_audit_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id:
     def actualizar_usuario(uid: int, data: UsuarioUpdate, request: Request):
         import main as _main
         from plataforma import master_connect
+        from saas_auth import exigir_admin_usuarios
 
+        ses = exigir_admin_usuarios(get_db, request)
         conn = master_connect(_main.DB_PATH)
         cur = conn.cursor()
         cur.execute("SELECT * FROM usuarios_sistema WHERE id = ?;", (uid,))
@@ -336,6 +343,31 @@ def register_audit_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id:
         if not row:
             conn.close()
             raise HTTPException(404, "Usuario no encontrado")
+        target = dict(row)
+        actor_id = int(ses["usuario_id"])
+        target_super = int(target.get("es_superadmin") or 0)
+        if target_super and actor_id != int(target["id"]):
+            conn.close()
+            raise HTTPException(403, "No podés modificar al administrador de Campo+")
+        if not int(ses.get("es_superadmin") or 0):
+            actor_cuenta = int(ses.get("user_cuenta_id") or 1)
+            if int(target.get("cuenta_id") or 1) != actor_cuenta:
+                conn.close()
+                raise HTTPException(403, "Ese usuario no es de tu empresa")
+        payload = data.model_dump(exclude_unset=True)
+        if "rol" in payload and payload["rol"] is not None:
+            nuevo_rol = str(payload["rol"]).strip()
+            rol_actual = str(target.get("rol") or "").strip()
+            if nuevo_rol != rol_actual and actor_id == int(target["id"]):
+                conn.close()
+                raise HTTPException(403, "No podés cambiar tu propio rol")
+            if nuevo_rol != rol_actual and target_super:
+                conn.close()
+                raise HTTPException(403, "No se cambia el rol del administrador de Campo+")
+        if "activo" in payload and payload["activo"] is not None and not int(payload["activo"]):
+            if actor_id == int(target["id"]) or target_super:
+                conn.close()
+                raise HTTPException(403, "No se puede suspender esa cuenta")
         fields = []
         vals = []
         payload = data.model_dump(exclude_unset=True)
