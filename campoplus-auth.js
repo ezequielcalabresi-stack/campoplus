@@ -164,7 +164,35 @@
       location.href = "Login.html?blocked=1";
       return null;
     }
+    if (!veAreaEmpresa(data.usuario) && esPaginaAreaEmpresa()) {
+      location.href = "Index.html";
+      return null;
+    }
     return data;
+  }
+
+  var PAGINAS_AREA_EMPRESA = {
+    "contabilidad.html": 1,
+    "bienesuso.html": 1,
+    "empleados.html": 1,
+    "baul.html": 1,
+    "empresas.html": 1,
+    "backups.html": 1,
+    "usuarios.html": 1,
+    "auditlog.html": 1,
+    "configuracionempresa.html": 1
+  };
+
+  function esPaginaAreaEmpresa() {
+    var page = (location.pathname.split("/").pop() || "").toLowerCase();
+    return !!PAGINAS_AREA_EMPRESA[page];
+  }
+
+  function veAreaEmpresa(usuario) {
+    if (!usuario || Number(usuario.es_superadmin)) return true;
+    var rol = String(usuario.rol || "").trim().toLowerCase();
+    return rol === "" || rol === "administrador total" || rol === "consulta"
+      || rol === "administración / carga" || rol === "administracion / carga";
   }
 
   var usuarioActual = null;
@@ -258,6 +286,10 @@
     document.addEventListener("DOMContentLoaded", injectFormBrand);
   } else {
     injectFormBrand();
+  }
+
+  if (esPaginaAreaEmpresa()) {
+    requireAuth();
   }
 
   window.CampoAuth = {
