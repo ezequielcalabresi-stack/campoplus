@@ -7,6 +7,7 @@ para imputarlos a lotes vía Órdenes de Trabajo.
 """
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -146,7 +147,139 @@ def init_almacen_schema(cursor) -> None:
     cols_item = {r[1] for r in cursor.fetchall()}
     if "costo_promedio_usd" not in cols_item:
         cursor.execute("ALTER TABLE almacen_items ADD COLUMN costo_promedio_usd REAL DEFAULT 0;")
+    cursor.execute("PRAGMA table_info(almacen_movimientos);")
+    cols_mov = {r[1] for r in cursor.fetchall()}
+    if "precio_unitario_usd" not in cols_mov:
+        cursor.execute("ALTER TABLE almacen_movimientos ADD COLUMN precio_unitario_usd REAL DEFAULT 0;")
     _aplicar_costos_usd_access(cursor)
+
+
+CRITERIOS_COSTO = {
+    "peps": "Primero entrado, primero salido",
+    "ueps": "Último entrado, primero salido",
+    "ppp": "Precio promedio ponderado",
+    "ultima": "Precio de la última compra",
+}
+
+
+def criterio_costo_empresa(cursor) -> str:
+    try:
+        cursor.execute("SELECT criterio_costo FROM configuracion_empresa WHERE id=1;")
+        row = cursor.fetchone()
+    except sqlite3.OperationalError:
+        return "peps"
+    if not row:
+        return "peps"
+    valor = row["criterio_costo"] if isinstance(row, sqlite3.Row) else row[0]
+    valor = (valor or "peps").strip().lower()
+    return valor if valor in CRITERIOS_COSTO else "peps"
+
+
+def valuar_salida_insumo(cursor, empresa_id: int, item_id: int, cantidad: float, metodo: Optional[str] = None) -> Dict[str, Any]:
+    """Costo de una salida de insumo según el criterio de la empresa. Insumos en U$S."""
+    cant = float(cantidad or 0)
+    metodo = (metodo or criterio_costo_empresa(cursor) or "peps").strip().lower()
+    if metodo not in CRITERIOS_COSTO:
+        metodo = "peps"
+    cursor.execute(
+        "SELECT nombre, tipo, costo_promedio_usd, costo_promedio_neto, stock_cantidad FROM almacen_items WHERE id=? AND empresa_id=?;",
+        (item_id, empresa_id),
+    )
+    item = cursor.fetchone()
+    if not item:
+        raise ValueError("Ítem no encontrado en el almacén.")
+    item = dict(item)
+    promedio = float(item.get("costo_promedio_usd") or 0)
+    if (item.get("tipo") or "") == "laboreo" or metodo == "ppp" or promedio <= 0 and metodo == "ppp":
+        unit = promedio if (item.get("tipo") or "") != "laboreo" and promedio > 0 else float(item.get("costo_promedio_neto") or 0)
+        moneda = "USD" if (item.get("tipo") or "") != "laboreo" and promedio > 0 else "ARS"
+        if metodo != "ppp" and (item.get("tipo") or "") != "laboreo":
+            pass
+        else:
+            return {
+                "criterio": metodo,
+                "criterio_nombre": CRITERIOS_COSTO.get(metodo, metodo),
+                "moneda": moneda,
+                "cantidad": cant,
+                "costo_unitario": round(unit, 4),
+                "costo_total": round(cant * unit, 2),
+                "capas": [],
+            }
+    cursor.execute(
+        """
+        SELECT fecha, ABS(cantidad) AS qty, COALESCE(precio_unitario_usd, 0) AS usd
+        FROM almacen_movimientos
+        WHERE empresa_id=? AND item_id=? AND tipo_mov='ingreso' AND ABS(cantidad)>0
+        ORDER BY fecha, id;
+        """,
+        (empresa_id, item_id),
+    )
+    ingresos = [dict(r) for r in cursor.fetchall()]
+    cursor.execute(
+        """
+        SELECT COALESCE(SUM(ABS(cantidad)), 0) AS n
+        FROM almacen_movimientos
+        WHERE empresa_id=? AND item_id=? AND tipo_mov='egreso_ot';
+        """,
+        (empresa_id, item_id),
+    )
+    consumido = float(cursor.fetchone()["n"] or 0)
+    if metodo == "ultima":
+        con_precio = [c for c in ingresos if float(c["usd"] or 0) > 0]
+        unit = float(con_precio[-1]["usd"]) if con_precio else promedio
+        return {
+            "criterio": metodo,
+            "criterio_nombre": CRITERIOS_COSTO[metodo],
+            "moneda": "USD",
+            "cantidad": cant,
+            "costo_unitario": round(unit, 4),
+            "costo_total": round(cant * unit, 2),
+            "capas": [{"fecha": con_precio[-1]["fecha"], "cantidad": cant, "costo_unitario": round(unit, 4)}] if con_precio else [],
+        }
+    orden = list(ingresos)
+    if metodo == "ueps":
+        orden = list(reversed(ingresos))
+    restante_consumido = consumido
+    capas = []
+    for capa in orden:
+        qty = float(capa["qty"] or 0)
+        if restante_consumido >= qty - 1e-9:
+            restante_consumido -= qty
+            continue
+        if restante_consumido > 0:
+            qty -= restante_consumido
+            restante_consumido = 0
+        usd = float(capa["usd"] or 0) or promedio
+        if qty > 0 and usd > 0:
+            capas.append({"fecha": capa["fecha"], "qty": qty, "usd": usd})
+    tomar = cant
+    usadas = []
+    total = 0.0
+    for capa in capas:
+        if tomar <= 1e-9:
+            break
+        uso = min(tomar, capa["qty"])
+        total += uso * capa["usd"]
+        usadas.append({
+            "fecha": (capa["fecha"] or "")[:10],
+            "cantidad": round(uso, 4),
+            "costo_unitario": round(capa["usd"], 4),
+        })
+        tomar -= uso
+    if tomar > 1e-6 and promedio > 0:
+        total += tomar * promedio
+        usadas.append({"fecha": "", "cantidad": round(tomar, 4), "costo_unitario": round(promedio, 4)})
+        tomar = 0
+    unit = (total / cant) if cant else 0
+    return {
+        "criterio": metodo,
+        "criterio_nombre": CRITERIOS_COSTO[metodo],
+        "moneda": "USD",
+        "cantidad": cant,
+        "costo_unitario": round(unit, 4),
+        "costo_total": round(total, 2),
+        "capas": usadas,
+    }
 
 
 def _aplicar_costos_usd_access(cursor) -> None:
@@ -182,6 +315,33 @@ def _aplicar_costos_usd_access(cursor) -> None:
               AND COALESCE(costo_promedio_usd, 0) = 0;
             """,
             (round(valor, 4), str(nombre).strip()),
+        )
+    capas = Path(__file__).with_name("datos") / "capas_usd_almacen.json"
+    if not capas.exists():
+        return
+    try:
+        filas = json.loads(capas.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(filas, list):
+        return
+    for fila in filas:
+        if not isinstance(fila, (list, tuple)) or len(fila) < 2:
+            continue
+        try:
+            ida = int(fila[0])
+            usd = float(fila[1] or 0)
+        except (TypeError, ValueError):
+            continue
+        if ida <= 0 or usd <= 0:
+            continue
+        cursor.execute(
+            """
+            UPDATE almacen_movimientos
+            SET precio_unitario_usd = ?
+            WHERE id_access = ? AND COALESCE(precio_unitario_usd, 0) = 0;
+            """,
+            (round(usd, 4), ida),
         )
 
 
@@ -779,12 +939,13 @@ def emitir_ot_consumiendo_almacen(
             raise ValueError(
                 f"Stock insuficiente de '{item.get('nombre')}': hay {stock}, se piden {cant}."
             )
-        costo_usd = float(item.get("costo_promedio_usd") or 0)
-        if (item.get("tipo") or "") != "laboreo" and costo_usd > 0:
-            costo_u = costo_usd
+        if (item.get("tipo") or "") != "laboreo":
+            valuacion = valuar_salida_insumo(cursor, empresa_id, item_id, cant)
+            costo_u = float(valuacion["costo_unitario"] or 0)
+            costo_t = float(valuacion["costo_total"] or 0)
         else:
             costo_u = float(item.get("costo_promedio_neto") or 0)
-        costo_t = round(cant * costo_u, 2)
+            costo_t = round(cant * costo_u, 2)
         nuevo_stock = round(stock - cant, 6)
 
         cursor.execute(

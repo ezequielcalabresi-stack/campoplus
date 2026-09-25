@@ -1217,7 +1217,7 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
                 cur.execute(
                     """
                     UPDATE almacen_movimientos SET
-                        fecha=?, tipo_mov=?, cantidad=?, precio_unitario_neto=?,
+                        fecha=?, tipo_mov=?, cantidad=?, precio_unitario_neto=?, precio_unitario_usd=?,
                         importe_neto=?, stock_resultante=?, costo_prom_resultante=?,
                         proveedor_nombre=?, nro_comprobante=?, campania_id=?, observaciones=?
                     WHERE id=?;
@@ -1227,6 +1227,7 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
                         tipo_mov,
                         cantidad,
                         vu,
+                        vu_usd,
                         abs(cantidad) * vu,
                         saldo,
                         avg_out,
@@ -1243,10 +1244,10 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
             cur.execute(
                 """
                 INSERT INTO almacen_movimientos (
-                    empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto,
+                    empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, precio_unitario_usd,
                     importe_neto, stock_resultante, costo_prom_resultante,
                     proveedor_nombre, nro_comprobante, campania_id, observaciones, id_access
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     empresa_id,
@@ -1255,6 +1256,7 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
                     tipo_mov,
                     cantidad,
                     vu,
+                    vu_usd,
                     abs(cantidad) * vu,
                     saldo,
                     avg_out,

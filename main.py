@@ -368,6 +368,8 @@ def init_db():
         cursor.execute("ALTER TABLE configuracion_empresa ADD COLUMN sisa_estado TEXT DEFAULT '1';")
     if "sisa_caracter" not in cols_conf:
         cursor.execute("ALTER TABLE configuracion_empresa ADD COLUMN sisa_caracter TEXT DEFAULT 'productor';")
+    if "criterio_costo" not in cols_conf:
+        cursor.execute("ALTER TABLE configuracion_empresa ADD COLUMN criterio_costo TEXT DEFAULT 'peps';")
     cursor.execute("""
         UPDATE configuracion_empresa
         SET agente_retencion_iibb = COALESCE(agente_retencion_iibb, 1),
@@ -1789,6 +1791,7 @@ class ConfiguracionModel(BaseModel):
     agente_percepcion_iibb: int = 1
     sisa_estado: str = "1"
     sisa_caracter: str = "productor"
+    criterio_costo: str = "peps"
 
 class CuentaBancariaModel(BaseModel):
     nro_cta_cte: str
@@ -2093,16 +2096,17 @@ def guardar_configuracion(data: ConfiguracionModel):
         INSERT INTO configuracion_empresa (
             id, razon_social, cuit, condicion_iva, localidad, contacto_email, cit_arba,
             agente_retencion_iibb, agente_retencion_ganancias, agente_percepcion_iibb,
-            sisa_estado, sisa_caracter
+            sisa_estado, sisa_caracter, criterio_costo
         )
-        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             razon_social=excluded.razon_social, cuit=excluded.cuit, condicion_iva=excluded.condicion_iva,
             localidad=excluded.localidad, contacto_email=excluded.contacto_email, cit_arba=excluded.cit_arba,
             agente_retencion_iibb=excluded.agente_retencion_iibb,
             agente_retencion_ganancias=excluded.agente_retencion_ganancias,
             agente_percepcion_iibb=excluded.agente_percepcion_iibb,
-            sisa_estado=excluded.sisa_estado, sisa_caracter=excluded.sisa_caracter;
+            sisa_estado=excluded.sisa_estado, sisa_caracter=excluded.sisa_caracter,
+            criterio_costo=excluded.criterio_costo;
     """, (
         data.razon_social, data.cuit, data.condicion_iva, data.localidad, data.contacto_email, data.cit_arba,
         1 if data.agente_retencion_iibb else 0,
@@ -2110,6 +2114,7 @@ def guardar_configuracion(data: ConfiguracionModel):
         1 if data.agente_percepcion_iibb else 0,
         (data.sisa_estado or "1").strip() or "1",
         (data.sisa_caracter or "productor").strip() or "productor",
+        (data.criterio_costo or "peps").strip().lower() or "peps",
     ))
     conn.commit()
     conn.close()
@@ -7425,12 +7430,112 @@ def api_reimportar_proyeccion_access():
     return result
 
 
+def _kpis_actividad(cursor, empresa_id: int) -> dict:
+    """Indicadores de campo. No incluyen tesorería, deuda ni compromisos."""
+    out = {
+        "cabezas": 0,
+        "rodeos": 0,
+        "litros_7d": 0.0,
+        "vacas_ordeno": 0,
+        "has_plan": 0.0,
+        "lotes_plan": 0,
+        "costo_usd_ha": 0.0,
+        "insumos_stock": 0,
+        "campania": "",
+    }
+    def tabla(nombre: str) -> bool:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (nombre,))
+        return cursor.fetchone() is not None
+
+    if tabla("gan_animales"):
+        cursor.execute(
+            "SELECT COUNT(*) AS n FROM gan_animales WHERE empresa_id=? AND COALESCE(estado,'activo')='activo';",
+            (empresa_id,),
+        )
+        out["cabezas"] = int(cursor.fetchone()["n"] or 0)
+    if tabla("gan_rodeos"):
+        cursor.execute(
+            "SELECT COUNT(*) AS n FROM gan_rodeos WHERE empresa_id=? AND COALESCE(activo,1)=1;",
+            (empresa_id,),
+        )
+        out["rodeos"] = int(cursor.fetchone()["n"] or 0)
+    if tabla("tambo_produccion_diaria"):
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(litros_total), 0) AS litros,
+                   COALESCE(MAX(vacas_ordenadas), 0) AS vacas
+            FROM tambo_produccion_diaria
+            WHERE empresa_id=? AND fecha >= date('now', '-6 day');
+            """,
+            (empresa_id,),
+        )
+        row = cursor.fetchone()
+        out["litros_7d"] = float(row["litros"] or 0)
+        out["vacas_ordeno"] = int(row["vacas"] or 0)
+    if tabla("campanias_agro"):
+        cursor.execute(
+            "SELECT id, codigo FROM campanias_agro WHERE empresa_id=? AND activa=1 ORDER BY codigo DESC LIMIT 1;",
+            (empresa_id,),
+        )
+        camp = cursor.fetchone()
+        if camp:
+            out["campania"] = camp["codigo"] or ""
+            if tabla("planificacion_lote"):
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS n, COALESCE(SUM(superficie), 0) AS has
+                    FROM planificacion_lote
+                    WHERE campania_id=? AND TRIM(COALESCE(cultivo_planificado,''))!='';
+                    """,
+                    (camp["id"],),
+                )
+                plan = cursor.fetchone()
+                out["lotes_plan"] = int(plan["n"] or 0)
+                out["has_plan"] = float(plan["has"] or 0)
+    if tabla("margenes_access") and out["campania"] and out["has_plan"] > 0:
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(costo_usd), 0) AS usd
+            FROM margenes_access
+            WHERE empresa_id=? AND campania_codigo=?;
+            """,
+            (empresa_id, out["campania"]),
+        )
+        usd = float(cursor.fetchone()["usd"] or 0)
+        out["costo_usd_ha"] = round(usd / out["has_plan"], 2)
+    if tabla("almacen_items"):
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS n FROM almacen_items
+            WHERE empresa_id=? AND COALESCE(tipo,'producto')='producto' AND ABS(COALESCE(stock_cantidad,0))>0.0001;
+            """,
+            (empresa_id,),
+        )
+        out["insumos_stock"] = int(cursor.fetchone()["n"] or 0)
+    return out
+
+
+def _rol_ve_numeros_empresa(rol: str, es_superadmin: int) -> bool:
+    if es_superadmin:
+        return True
+    r = (rol or "").strip().lower()
+    return r in ("", "administrador total", "consulta", "administración / carga", "administracion / carga")
+
+
 @app.get("/api/dashboard/kpis")
-def dashboard_kpis():
-    """KPIs del Index filtrados por la empresa activa."""
+def dashboard_kpis(request: Request):
+    """KPIs del inicio. El ingeniero y el veterinario no reciben números de tesorería."""
+    from saas_auth import sesion_actual
     empresa_id = get_empresa_activa_id()
+    ses = sesion_actual(get_db, request) or {}
+    rol = str(ses.get("rol") or "")
+    ve_empresa = _rol_ve_numeros_empresa(rol, int(ses.get("es_superadmin") or 0))
     conn = get_db()
     cursor = conn.cursor()
+    if not ve_empresa:
+        actividad = _kpis_actividad(cursor, empresa_id)
+        conn.close()
+        return {"vista": "actividad", "rol": rol, "empresa_id": empresa_id, **actividad}
 
     cursor.execute("""
         SELECT COALESCE(SUM(s.saldo), 0.0) AS total
@@ -7499,6 +7604,7 @@ def dashboard_kpis():
 
     conn.close()
     return {
+        "vista": "empresa",
         "empresa_id": empresa_id,
         "compromisos_ars": compromisos,
         "fci_activos_ars": fci_activo,

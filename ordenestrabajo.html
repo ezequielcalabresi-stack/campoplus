@@ -84,7 +84,7 @@
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
             <div>
                 <h5 class="fw-bold mb-0">Consumos desde almacén</h5>
-                <span class="hint">Los productos se costean en U$S, el valor constante que vino de Access. Las labores siguen en pesos.</span>
+                <span class="hint" id="criterioCosto">Los productos se costean en U$S según el criterio de la empresa. Las labores siguen en pesos.</span>
             </div>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="agregarLinea('producto')">+ Producto</button>
@@ -157,6 +157,16 @@ async function init() {
     selCampo.innerHTML = '<option value="">Seleccione...</option>' +
         camposCache.map(c => `<option value="${c.id}">${c.nombre} (${c.tipo})</option>`).join('');
     renderHist(ots || []);
+    fetch('/api/configuracion').then(r => r.json()).then(cfg => {
+        const nombres = {
+            peps: 'Primero entrado, primero salido',
+            ueps: 'Último entrado, primero salido',
+            ppp: 'Precio promedio ponderado',
+            ultima: 'Precio de la última compra'
+        };
+        const el = document.getElementById('criterioCosto');
+        if (el) el.textContent = 'Criterio de la empresa: ' + (nombres[cfg.criterio_costo] || nombres.peps) + '. Los insumos salen en U$S; las labores, en pesos.';
+    }).catch(() => {});
     agregarLinea('producto');
     if (selC.value) await cargarPlanCampania();
     selC.addEventListener('change', cargarPlanCampania);
@@ -278,30 +288,47 @@ function onItemChange(sel) {
     recalcularLineas();
 }
 
-function recalcularLineas() {
+async function recalcularLineas() {
     const has = parseFloat(document.getElementById('superficie').value || 0);
     let totalUsd = 0;
     let totalArs = 0;
-    document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
+    const filas = [...document.querySelectorAll('#tablaConsumos tr')];
+    for (const tr of filas) {
         const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
-        let cantInp = tr.querySelector('.cons-cant');
+        const cantInp = tr.querySelector('.cons-cant');
         let cant = parseFloat(cantInp.value || 0);
         const opt = tr.querySelector('.cons-item').selectedOptions[0];
         if (!opt || !opt.value) {
             tr.querySelector('.cons-ct').innerText = '';
-            return;
+            continue;
         }
         if (dosis > 0 && has > 0 && (!cantInp.dataset.manual || cant < 0.0001)) {
             cant = Math.round(dosis * has * 1000) / 1000;
             cantInp.value = cant;
         }
+        const moneda = opt.dataset.moneda || 'ARS';
+        if (moneda === 'USD' && opt.dataset.tipo !== 'laboreo') {
+            const pedir = cant > 0 ? cant : 1;
+            try {
+                const res = await fetch('/api/agro/almacen/valuacion?item_id=' + opt.value + '&cantidad=' + pedir);
+                const data = await res.json();
+                if (res.ok) {
+                    tr.querySelector('.cons-cu').innerText = etiquetaCosto('USD', data.costo_unitario);
+                    const total = cant > 0 ? Number(data.costo_total || 0) : 0;
+                    tr.querySelector('.cons-ct').innerText = etiquetaCosto('USD', total);
+                    totalUsd += total;
+                    const capas = (data.capas || []).filter(c => c.fecha);
+                    tr.title = capas.map(c => c.fecha.split('-').reverse().join('/') + ' · ' + c.cantidad + ' × U$S ' + moneyAr(c.costo_unitario)).join(' | ');
+                    continue;
+                }
+            } catch (e) { /* sigue con el promedio */ }
+        }
         const cu = Number(opt.dataset.costo || 0);
         const ct = cant * cu;
-        const moneda = opt.dataset.moneda || 'ARS';
         tr.querySelector('.cons-ct').innerText = etiquetaCosto(moneda, ct);
         if (moneda === 'USD') totalUsd += ct;
         else totalArs += ct;
-    });
+    }
     document.getElementById('lblTotalOT').innerText = 'U$S ' + moneyAr(totalUsd) + (totalArs ? ' · labores $ ' + moneyAr(totalArs) : '');
 }
 

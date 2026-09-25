@@ -597,6 +597,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         actualizar_item_clasificacion,
         ingresar_almacen,
         emitir_ot_consumiendo_almacen,
+        valuar_salida_insumo,
         siguiente_nro_ot,
         costos_por_lote_campania,
     )
@@ -763,6 +764,19 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         )
         conn.close()
         return rows
+
+    @app.get("/api/agro/almacen/valuacion")
+    def api_almacen_valuacion(item_id: int, cantidad: float = 1):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            data = valuar_salida_insumo(cur, empresa_id, item_id, cantidad)
+        except ValueError as e:
+            conn.close()
+            raise HTTPException(400, str(e))
+        conn.close()
+        return data
 
     @app.post("/api/agro/almacen/ingreso")
     def api_almacen_ingreso(data: AlmacenIngresoModel):

@@ -27,16 +27,16 @@
                     <select id="selectTenantHeader" class="form-select text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1" onchange="cambiarTenantHeader(this.value)"></select>
                     <span id="userSessionLabel" class="text-xs text-slate-500 px-1"></span>
                     <a id="linkPlataforma" href="Plataforma.html" class="hidden text-xs bg-slate-900 text-white px-2.5 py-1 rounded font-bold hover:bg-black transition">Clientes Campo+</a>
-                    <a href="Empresas.html" class="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded font-bold hover:bg-emerald-700 transition" title="Administrar empresas">Empresas</a>
-                    <a href="Usuarios.html" class="text-xs bg-slate-700 text-white px-2.5 py-1 rounded font-bold hover:bg-slate-800 transition">Usuarios</a>
-                    <a href="AuditLog.html" class="text-xs bg-amber-600 text-white px-2.5 py-1 rounded font-bold hover:bg-amber-700 transition">Log</a>
+                    <a id="linkEmpresas" href="Empresas.html" class="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded font-bold hover:bg-emerald-700 transition" title="Administrar empresas">Empresas</a>
+                    <a id="linkUsuarios" href="Usuarios.html" class="text-xs bg-slate-700 text-white px-2.5 py-1 rounded font-bold hover:bg-slate-800 transition">Usuarios</a>
+                    <a id="linkLog" href="AuditLog.html" class="text-xs bg-amber-600 text-white px-2.5 py-1 rounded font-bold hover:bg-amber-700 transition">Log</a>
                     <button type="button" onclick="cerrarSesion()" class="text-xs bg-rose-100 text-rose-800 px-2.5 py-1 rounded font-bold hover:bg-rose-200 transition">Salir</button>
                 </div>
             </div>
         </div>
 
         <!-- TARJETAS RESUMEN GENERAL (KPIs DINÁMICOS) -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div id="kpiEmpresa" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-sm">
                 <span class="text-xs font-bold text-emerald-800 uppercase">Compromisos a Pagar (ARS)</span>
                 <h3 id="kpiCompromisos" class="text-2xl font-extrabold text-emerald-900 mt-1">Cargando...</h3>
@@ -56,6 +56,28 @@
                 <span class="text-xs font-bold text-slate-700 uppercase">Alquileres (Kilos Soja)</span>
                 <h3 id="kpiAlquileres" class="text-2xl font-extrabold text-slate-900 mt-1">Cargando...</h3>
                 <span id="kpiAlquileresSub" class="text-xs text-slate-500 mt-1 block">Kilos pactados, campaña activa</span>
+            </div>
+        </div>
+        <div id="kpiActividad" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8" style="display:none">
+            <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-sm">
+                <span id="act1Lbl" class="text-xs font-bold text-emerald-800 uppercase">Indicador</span>
+                <h3 id="act1" class="text-2xl font-extrabold text-emerald-900 mt-1">—</h3>
+                <span id="act1Sub" class="text-xs text-emerald-700 mt-1 block"></span>
+            </div>
+            <div class="bg-teal-50 border border-teal-200 p-4 rounded-xl shadow-sm">
+                <span id="act2Lbl" class="text-xs font-bold text-teal-800 uppercase">Indicador</span>
+                <h3 id="act2" class="text-2xl font-extrabold text-teal-900 mt-1">—</h3>
+                <span id="act2Sub" class="text-xs text-teal-700 mt-1 block"></span>
+            </div>
+            <div class="bg-sky-50 border border-sky-200 p-4 rounded-xl shadow-sm">
+                <span id="act3Lbl" class="text-xs font-bold text-sky-800 uppercase">Indicador</span>
+                <h3 id="act3" class="text-2xl font-extrabold text-sky-900 mt-1">—</h3>
+                <span id="act3Sub" class="text-xs text-sky-700 mt-1 block"></span>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl shadow-sm">
+                <span id="act4Lbl" class="text-xs font-bold text-amber-800 uppercase">Indicador</span>
+                <h3 id="act4" class="text-2xl font-extrabold text-amber-900 mt-1">—</h3>
+                <span id="act4Sub" class="text-xs text-amber-700 mt-1 block"></span>
             </div>
         </div>
 
@@ -270,6 +292,44 @@
             }
         }
 
+        function rolVeNumerosEmpresa(u) {
+            if (!u || Number(u.es_superadmin)) return true;
+            const r = String(u.rol || '').trim().toLowerCase();
+            return ['', 'administrador total', 'consulta', 'administración / carga', 'administracion / carga'].includes(r);
+        }
+
+        function pintarKpiActividad(kpis, rol) {
+            const r = String(rol || '').toLowerCase();
+            const gan = r.includes('ganad') || r.includes('operativo');
+            const agro = r.includes('agro') || r.includes('operativo') || r.includes('campo');
+            const n = (v) => Number(v || 0).toLocaleString('es-AR', { maximumFractionDigits: 1 });
+            const slots = gan && !agro
+                ? [
+                    ['Cabezas activas', n(kpis.cabezas), 'Animales en rodeos'],
+                    ['Rodeos', n(kpis.rodeos), 'Rodeos activos'],
+                    ['Leche 7 días', n(kpis.litros_7d) + ' L', 'Producción del tambo'],
+                    ['Vacas en ordeño', n(kpis.vacas_ordeno), 'Último control del período'],
+                ]
+                : agro && !gan
+                ? [
+                    ['Hectáreas planificadas', n(kpis.has_plan) + ' ha', kpis.campania ? 'Campaña ' + kpis.campania : 'Campaña activa'],
+                    ['Lotes con cultivo', n(kpis.lotes_plan), 'Plan de la campaña'],
+                    ['Costo U$S / ha', 'U$S ' + n(kpis.costo_usd_ha), 'Costos cargados / has del plan'],
+                    ['Insumos con stock', n(kpis.insumos_stock), 'Productos en almacén'],
+                ]
+                : [
+                    ['Hectáreas planificadas', n(kpis.has_plan) + ' ha', kpis.campania ? 'Campaña ' + kpis.campania : ''],
+                    ['Cabezas activas', n(kpis.cabezas), 'Ganadería'],
+                    ['Leche 7 días', n(kpis.litros_7d) + ' L', 'Tambo'],
+                    ['Insumos con stock', n(kpis.insumos_stock), 'Almacén'],
+                ];
+            slots.forEach((s, i) => {
+                document.getElementById('act' + (i + 1) + 'Lbl').innerText = s[0];
+                document.getElementById('act' + (i + 1)).innerText = s[1];
+                document.getElementById('act' + (i + 1) + 'Sub').innerText = s[2];
+            });
+        }
+
         async function cargarMetricasBackend() {
             const fmtArs = (n) => "$ " + Math.abs(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
             const fmtUsd = (n) => "USD " + Math.abs(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
@@ -278,6 +338,13 @@
                 const res = await fetch('/api/dashboard/kpis');
                 if (!res.ok) throw new Error('KPI offline');
                 const kpis = await res.json();
+                const veEmpresa = kpis.vista !== 'actividad';
+                document.getElementById('kpiEmpresa').style.display = veEmpresa ? '' : 'none';
+                document.getElementById('kpiActividad').style.display = veEmpresa ? 'none' : '';
+                if (!veEmpresa) {
+                    pintarKpiActividad(kpis, kpis.rol);
+                    return;
+                }
                 document.getElementById('kpiCompromisos').innerText = fmtArs(kpis.compromisos_neto_fci_ars != null ? kpis.compromisos_neto_fci_ars : kpis.compromisos_ars);
                 const subComp = document.getElementById('kpiCompromisosSub');
                 if (subComp) {
@@ -365,6 +432,11 @@
                 }
             }
             refrescarBranding(ses.empresa);
+            const veNums = rolVeNumerosEmpresa(u);
+            ['linkEmpresas', 'linkUsuarios', 'linkLog'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !veNums) el.classList.add('hidden');
+            });
             await cargarEmpresasHeader();
             cargarMetricasBackend();
         };

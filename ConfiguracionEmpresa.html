@@ -116,6 +116,18 @@
                 </div>
             </div>
 
+            <div class="bg-white border border-slate-200 p-5 rounded-lg space-y-3 text-xs">
+                <h3 class="font-bold text-slate-800 uppercase tracking-wide border-b pb-2 text-sm">Criterio de costeo del almacén</h3>
+                <p class="text-slate-600">Define cómo se valúa un insumo al pasarlo a una orden de trabajo. Ejemplo: glifosato comprado en marzo a U$S 3,80 y en abril a U$S 4,00. Con primero entrado, primero salido sale primero el de marzo.</p>
+                <label class="block font-medium text-slate-800 mb-1">Método</label>
+                <select id="cfgCriterioCosto" class="w-full md:w-1/2 rounded border border-slate-300 p-2 bg-white">
+                    <option value="peps">Primero entrado, primero salido (PEPS)</option>
+                    <option value="ueps">Último entrado, primero salido (UEPS)</option>
+                    <option value="ppp">Precio promedio ponderado</option>
+                    <option value="ultima">Precio de la última compra</option>
+                </select>
+            </div>
+
             <!-- SECCIÓN 3: ESTADO DE LA LICENCIA -->
             <div class="bg-emerald-50 border border-emerald-200 p-5 rounded-lg flex justify-between items-center text-xs">
                 <div>
@@ -150,6 +162,7 @@
                 document.getElementById('cfgAgentePercIibb').checked = r.agente_percepcion_iibb !== 0 && r.agente_percepcion_iibb !== false;
                 document.getElementById('cfgSisaEstado').value = r.sisa_estado || '1';
                 document.getElementById('cfgSisaCaracter').value = r.sisa_caracter || 'productor';
+                document.getElementById('cfgCriterioCosto').value = r.criterio_costo || 'peps';
             } catch (e) {
                 console.error(e);
                 document.getElementById('estado-db').innerText = "Error de conexión con el backend.";
@@ -170,7 +183,8 @@
                 agente_retencion_ganancias: document.getElementById('cfgAgenteSicore').checked ? 1 : 0,
                 agente_percepcion_iibb: document.getElementById('cfgAgentePercIibb').checked ? 1 : 0,
                 sisa_estado: document.getElementById('cfgSisaEstado').value,
-                sisa_caracter: document.getElementById('cfgSisaCaracter').value
+                sisa_caracter: document.getElementById('cfgSisaCaracter').value,
+                criterio_costo: document.getElementById('cfgCriterioCosto').value
             };
 
             try {
