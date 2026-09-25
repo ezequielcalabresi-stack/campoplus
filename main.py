@@ -20,6 +20,7 @@ from motor_contable import (
     asiento_para_factura_venta,
     eliminar_cascada_movimiento_banco,
     listar_asientos_plano,
+    corte_parcial_rt54,
     recalcular_asientos_movimientos_bancarios,
     ejercicios_disponibles,
     ejercicio_desde_fecha,
@@ -3047,6 +3048,18 @@ def api_listar_asientos(limit: int = 500, ejercicio: Optional[str] = None):
     rows = listar_asientos_plano(cursor, empresa_id=empresa_id, limit=limit, ejercicio=ejercicio)
     conn.close()
     return rows
+
+@app.get("/api/contabilidad/corte")
+def api_corte_parcial(fecha: str):
+    """Corte parcial de estados contables a una fecha (RT 54). No es el cierre anual."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    init_contabilidad(cursor)
+    conn.commit()
+    data = corte_parcial_rt54(cursor, empresa_id, fecha)
+    conn.close()
+    return data
 
 @app.get("/api/asientos/ejercicios")
 def api_ejercicios_contables():

@@ -94,6 +94,9 @@ def init_contabilidad(cursor) -> None:
         cursor.execute("ALTER TABLE asientos_contables ADD COLUMN ejercicio TEXT;")
     if "centro_costo" not in cols_asi:
         cursor.execute("ALTER TABLE asientos_contables ADD COLUMN centro_costo TEXT DEFAULT '1';")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_asientos_emp_fecha ON asientos_contables (empresa_id, anulado, fecha, id);"
+    )
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS detalles_asiento (
@@ -107,6 +110,9 @@ def init_contabilidad(cursor) -> None:
             FOREIGN KEY (cuenta_id) REFERENCES plan_de_cuentas(id)
         );
     """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_detalles_asiento_id ON detalles_asiento (asiento_id);"
+    )
 
     # Configuración de cierre EECC (por defecto 30/06)
     cursor.execute("PRAGMA table_info(configuracion_empresa);")
@@ -741,6 +747,122 @@ def listar_asientos_plano(
         params,
     )
     return [dict(r) for r in cursor.fetchall()]
+
+
+def _rubro_rt54(codigo: str, tipo: str = "", nombre: str = "") -> str:
+    """Agrupa el plan real de Campo+ según la presentación de la RT 54.
+
+    En este plan, 1.1 y 1.2 son activo corriente (caja, créditos, existencias,
+    IVA crédito y percepciones). Bienes de uso y cuentas 1.3 / 3.x se separan.
+    """
+    c = (codigo or "").strip()
+    t = (tipo or "").strip().lower()
+    n = (nombre or "").strip().lower()
+    if c.startswith("3.") or t in ("patrimonio", "pn"):
+        return "patrimonio"
+    if c.startswith("4.") or c.startswith("5.") or t in ("resultado", "ingreso", "gasto"):
+        if c.startswith("4.2") or c.startswith("5.") or t == "gasto" or n.startswith("gasto"):
+            return "gastos"
+        return "ingresos"
+    if c.startswith("2.") or t == "pasivo":
+        if c.startswith("2.2") or "no corriente" in n or "largo plazo" in n:
+            return "pasivo_no_corriente"
+        return "pasivo_corriente"
+    if (
+        c.startswith("1.3")
+        or "bienes de uso" in n
+        or "no corriente" in n
+    ):
+        return "activo_no_corriente"
+    return "activo_corriente"
+
+
+def corte_parcial_rt54(cursor, empresa_id: int, fecha: str) -> Dict[str, Any]:
+    """Saldos acumulados a una fecha, presentados como corte parcial (RT 54).
+
+    No cierra resultados contra patrimonio: el resultado del período queda abierto,
+    que es lo que corresponde a un corte que no es el cierre anual.
+    """
+    fecha = _fecha_iso_contable(fecha)
+    cursor.execute(
+        """
+        SELECT p.codigo_cuenta, p.nombre_cuenta, p.tipo_cuenta,
+               COALESCE(SUM(d.debe), 0) AS debe,
+               COALESCE(SUM(d.haber), 0) AS haber
+        FROM plan_de_cuentas p
+        JOIN detalles_asiento d ON d.cuenta_id = p.id
+        JOIN asientos_contables a ON a.id = d.asiento_id
+        WHERE COALESCE(a.anulado, 0) = 0
+          AND COALESCE(a.centro_costo, '1') = '1'
+          AND a.empresa_id = ?
+          AND (
+            CASE
+              WHEN length(trim(COALESCE(a.fecha, ''))) >= 10
+                   AND substr(trim(a.fecha), 3, 1) = '/'
+                THEN substr(trim(a.fecha), 7, 4) || '-' || substr(trim(a.fecha), 4, 2) || '-' || substr(trim(a.fecha), 1, 2)
+              ELSE substr(trim(COALESCE(a.fecha, '')), 1, 10)
+            END
+          ) <= ?
+          AND COALESCE(p.activa, 1) = 1
+        GROUP BY p.id
+        HAVING ROUND(COALESCE(SUM(d.debe), 0) - COALESCE(SUM(d.haber), 0), 2) != 0
+        ORDER BY p.codigo_cuenta;
+        """,
+        (empresa_id, fecha),
+    )
+    rubros = {
+        "activo_corriente": [],
+        "activo_no_corriente": [],
+        "pasivo_corriente": [],
+        "pasivo_no_corriente": [],
+        "patrimonio": [],
+        "ingresos": [],
+        "gastos": [],
+        "otros": [],
+    }
+    acreedoras = {"pasivo_corriente", "pasivo_no_corriente", "patrimonio", "ingresos"}
+    for r in cursor.fetchall():
+        debe = float(r["debe"] or 0)
+        haber = float(r["haber"] or 0)
+        rubro = _rubro_rt54(r["codigo_cuenta"], r["tipo_cuenta"], r["nombre_cuenta"])
+        saldo = (haber - debe) if rubro in acreedoras else (debe - haber)
+        if round(saldo, 2) == 0:
+            continue
+        rubros[rubro].append({
+            "codigo": r["codigo_cuenta"],
+            "nombre": r["nombre_cuenta"],
+            "saldo": round(saldo, 2),
+        })
+
+    def total(clave: str) -> float:
+        return round(sum(x["saldo"] for x in rubros[clave]), 2)
+
+    activo = round(total("activo_corriente") + total("activo_no_corriente"), 2)
+    pasivo = round(total("pasivo_corriente") + total("pasivo_no_corriente"), 2)
+    patrimonio = total("patrimonio")
+    ingresos = total("ingresos")
+    gastos = total("gastos")
+    resultado = round(ingresos - gastos, 2)
+    # Activo = Pasivo + PN + resultado del período (si el diario balancea).
+    control = round(activo - pasivo - patrimonio - resultado - total("otros"), 2)
+    return {
+        "fecha": fecha,
+        "norma": "RT 54 FACPCE",
+        "rubros": rubros,
+        "totales": {
+            "activo": activo,
+            "activo_corriente": total("activo_corriente"),
+            "activo_no_corriente": total("activo_no_corriente"),
+            "pasivo": pasivo,
+            "pasivo_corriente": total("pasivo_corriente"),
+            "pasivo_no_corriente": total("pasivo_no_corriente"),
+            "patrimonio": patrimonio,
+            "ingresos": ingresos,
+            "gastos": gastos,
+            "resultado_periodo": resultado,
+            "control": control,
+        },
+    }
 
 
 def _inferir_tipo_movimiento(mov: Dict[str, Any]) -> str:
