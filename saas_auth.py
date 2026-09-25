@@ -566,14 +566,14 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
     @app.put("/api/empresas/{empresa_id}/saas")
     def api_upd_empresa_saas(empresa_id: int, data: EmpresaSaasModel, request: Request):
         ses = sesion_actual(get_db, request)
-        if ses and not int(ses.get("es_superadmin") or 0):
-            # Solo superadmin cambia bloqueo/plan
-            if data.acceso_habilitado == 0 or data.plan:
-                pass  # allow módulo tweaks for now; block only superadmin for acceso
-            if int(data.acceso_habilitado) == 0:
-                raise HTTPException(403, "Solo superadmin puede suspender acceso")
+        if not ses or not int(ses.get("es_superadmin") or 0):
+            raise HTTPException(
+                403,
+                "No tenés rango para cambiar el plan ni los módulos. Eso lo hace el administrador de Campo+.",
+            )
+        from plataforma import conexion_grupo
 
-        conn = get_db()
+        conn = conexion_grupo() or get_db()
         cur = conn.cursor()
         cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
         if not cur.fetchone():

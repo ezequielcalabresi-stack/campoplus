@@ -7575,7 +7575,9 @@ def listar_empresas(request: Request):
 
 @app.get("/api/empresas/{empresa_id}")
 def obtener_empresa(empresa_id: int):
-    conn = get_db()
+    from plataforma import conexion_grupo
+
+    conn = conexion_grupo() or get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
     row = cursor.fetchone()

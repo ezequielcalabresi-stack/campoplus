@@ -34,6 +34,7 @@
         <div id="cupoEmpresas" class="alert alert-light border small mb-3" style="display:none;"></div>
         <div class="main-card">
             <h5 class="fw-bold mb-3" id="formTitulo">Registrar / configurar empresa cliente</h5>
+            <p id="avisoRango" class="d-none small text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">No tenés rango para cambiar el plan ni los módulos. Eso lo hace el administrador de Campo+.</p>
             <form id="formEmpresa" onsubmit="guardarEmpresa(event)">
                 <input type="hidden" id="editId" value="">
                 <div class="row g-3">
@@ -279,8 +280,21 @@
             return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
 
+        function bloquearConfigComercial() {
+            document.getElementById('avisoRango').classList.remove('d-none');
+            document.querySelectorAll('#formEmpresa input, #formEmpresa select, #formEmpresa textarea, #formEmpresa button').forEach(el => {
+                el.disabled = true;
+            });
+        }
+
         async function guardarEmpresa(e) {
             e.preventDefault();
+            const me = await CampoAuth.me();
+            if (!me || !Number(me.usuario && me.usuario.es_superadmin)) {
+                bloquearConfigComercial();
+                alert('No tenés rango para cambiar el plan ni los módulos. Eso lo hace el administrador de Campo+.');
+                return;
+            }
             const editId = document.getElementById('editId').value;
             const body = payloadSaas();
             if (!body.razon_social || !body.cuit || !body.tenant_id) {
@@ -431,7 +445,8 @@
             alert(res.ok ? 'Pedido enviado al administrador de Campo+.' : 'No se pudo enviar el pedido.');
         }
         window.onload = async function () {
-            await CampoAuth.requireAuth({ redirect: 'Empresas.html' });
+            const me = await CampoAuth.requireAuth({ redirect: 'Empresas.html' });
+            if (!me || !Number(me.usuario && me.usuario.es_superadmin)) bloquearConfigComercial();
             mostrarCupo();
             await cargarPlanes();
             buildModChecks(planPresets.full || null);
