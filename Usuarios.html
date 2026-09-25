@@ -48,10 +48,12 @@
                 <div>
                     <label class="block text-sm font-medium text-slate-700">Rol / Permisos</label>
                     <select id="rol" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white font-medium text-emerald-800">
-                        <option>Administrador Total</option>
-                        <option>Administración / Carga</option>
-                        <option>Operativo / Campo</option>
-                        <option>Consulta</option>
+                        <option value="Administrador Total">Administrador de la empresa</option>
+                        <option value="Administración / Carga">Administrativo</option>
+                        <option value="Gestión agropecuaria">Gestión agropecuaria</option>
+                        <option value="Ganadería">Ganadería</option>
+                        <option value="Operativo / Campo">Operativo / Campo</option>
+                        <option value="Consulta">Consulta</option>
                     </select>
                 </div>
                 <div class="flex items-end gap-2">
@@ -61,7 +63,8 @@
                     <button type="button" onclick="cancelarEdicion()" class="px-3 py-2.5 text-sm text-slate-600 hover:underline">Cancelar</button>
                 </div>
             </form>
-            <p class="text-xs text-slate-400 mt-3">Si no indicás contraseña al crear, queda <code class="bg-white border px-1 rounded">campo+</code>. En edición, dejá vacío para no cambiarla.</p>
+            <p class="text-xs text-slate-500 mt-3">El administrador de la empresa da de alta usuarios y les asigna el área: administrativo, ingeniero (gestión agropecuaria), veterinario o responsable de ganadería, operativo o consulta. El paquete de módulos que se paga lo define solo Campo+.</p>
+            <p class="text-xs text-slate-400 mt-1">Si no indicás contraseña al crear, queda <code class="bg-white border px-1 rounded">campo+</code>. En edición, dejá vacío para no cambiarla.</p>
         </div>
 
         <div class="border rounded-lg p-4 bg-white">
@@ -120,7 +123,7 @@
                     <td class="p-3 font-medium text-slate-800">${esc(u.nombre)}</td>
                     <td class="p-3 font-mono text-xs text-slate-600">${esc(u.login || ' - ')}</td>
                     <td class="p-3 text-slate-600">${esc(u.email || ' - ')}</td>
-                    <td class="p-3 font-semibold text-emerald-700">${esc(u.rol || '')}</td>
+                    <td class="p-3 font-semibold text-emerald-700">${esc(etiquetaRol(u.rol))}</td>
                     <td class="p-3 text-center">
                         <span class="${activo ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'} text-xs px-2 py-0.5 rounded-full font-medium">
                             ${activo ? 'Activo' : 'Inactivo'}
@@ -129,6 +132,18 @@
                     <td class="p-3 text-center space-x-2">${acciones}</td>
                 </tr>`;
             }).join('') || '<tr><td colspan="6" class="p-6 text-center text-slate-400">Sin usuarios</td></tr>';
+        }
+
+        function etiquetaRol(rol) {
+            const mapa = {
+                'Administrador Total': 'Administrador de la empresa',
+                'Administración / Carga': 'Administrativo',
+                'Gestión agropecuaria': 'Gestión agropecuaria',
+                'Ganadería': 'Ganadería',
+                'Operativo / Campo': 'Operativo / Campo',
+                'Consulta': 'Consulta',
+            };
+            return mapa[rol] || rol || '';
         }
 
         function esc(s) {

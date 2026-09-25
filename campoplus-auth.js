@@ -153,6 +153,7 @@
     var page = (location.pathname.split("/").pop() || "").toLowerCase();
     if (page === "login.html") return null;
     var data = await me();
+    if (data && data.usuario) usuarioActual = data.usuario;
     if (!data) {
       var next = opts.redirect || page || "Index.html";
       location.href = "Login.html?next=" + encodeURIComponent(next);
@@ -166,11 +167,33 @@
     return data;
   }
 
-  function moduloOn(emp, key) {
+  var usuarioActual = null;
+  var ROL_MODULOS = {
+    "administración / carga": ["mod_bancos", "mod_contabilidad", "mod_sicore", "mod_arba", "mod_liquidaciones", "es_agente_retencion"],
+    "administracion / carga": ["mod_bancos", "mod_contabilidad", "mod_sicore", "mod_arba", "mod_liquidaciones", "es_agente_retencion"],
+    "gestión agropecuaria": ["mod_agro", "mod_almacen", "mod_liquidaciones"],
+    "gestion agropecuaria": ["mod_agro", "mod_almacen", "mod_liquidaciones"],
+    "ganadería": ["mod_ganaderia", "mod_tambo"],
+    "ganaderia": ["mod_ganaderia", "mod_tambo"],
+    "operativo / campo": ["mod_agro", "mod_ganaderia", "mod_tambo", "mod_almacen"]
+  };
+
+  function moduloPagado(emp, key) {
     if (!emp) return true;
     var v = emp[key];
     if (v === undefined || v === null) return true;
     return Number(v) === 1;
+  }
+
+  function moduloOn(emp, key) {
+    if (!moduloPagado(emp, key)) return false;
+    var u = usuarioActual;
+    if (!u || Number(u.es_superadmin)) return true;
+    var rol = String(u.rol || "").trim().toLowerCase();
+    if (rol === "administrador total" || rol === "consulta") return true;
+    var permitidos = ROL_MODULOS[rol];
+    if (!permitidos) return true;
+    return permitidos.indexOf(key) >= 0;
   }
 
   /** Oculta nodos con data-mod="mod_xxx" según empresa. */

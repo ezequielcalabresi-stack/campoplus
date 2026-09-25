@@ -338,7 +338,7 @@ def _nivel_rol(rol: Optional[str]) -> int:
         return 4
     if n in ("administración / carga", "administracion / carga"):
         return 3
-    if n == "operativo / campo":
+    if n in ("operativo / campo", "gestión agropecuaria", "gestion agropecuaria", "ganadería", "ganaderia"):
         return 2
     if n == "consulta":
         return 1
@@ -359,7 +359,7 @@ def exigir_admin_usuarios(get_db: Callable, request: Request) -> dict:
     if not ses:
         raise HTTPException(401, "Tenés que iniciar sesión")
     if not es_admin_de_cuenta(ses):
-        raise HTTPException(403, "Solo un Administrador Total puede administrar usuarios")
+        raise HTTPException(403, "Solo un administrador de la empresa puede administrar usuarios")
     return ses
 
 
