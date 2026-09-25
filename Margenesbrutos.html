@@ -31,7 +31,7 @@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
         <div>
             <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Márgenes brutos - Campaña</small></h4>
-            <p class="hint mb-0">1) Cargar campos y lotes | 2) Contratos de arrendamiento | 3) Planificar con antecesor y rotación.</p>
+            <p class="hint mb-0">1) Campos y lotes | 2) Planificar la campaña | 3) Costos por campo, cultivo y lote, con el precio del almacén.</p>
         </div>
         <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">Dashboard</a>
     </div>
@@ -40,6 +40,7 @@
         <li class="nav-item"><button class="nav-link active" data-tab="tabCampos" onclick="verTabAgro(this)">1. Campos y lotes</button></li>
         <li class="nav-item"><button class="nav-link" data-tab="tabPlan" onclick="verTabAgro(this)">2. Planificación campaña</button></li>
         <li class="nav-item"><button class="nav-link" data-tab="tabRotacion" onclick="verTabAgro(this)">Rotación ideal</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="tabCostos" onclick="verTabAgro(this)">3. Costos</button></li>
     </ul>
 
     <!-- TAB CAMPOS -->
@@ -118,6 +119,124 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- TAB COSTOS -->
+    <div id="tabCostos" class="tab-agro" style="display:none;">
+        <div class="main-card">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold mb-0">Estructura de costos</h5>
+                    <p class="hint mb-0">Lo cargado en Access, campaña por campaña. El precio de una línea nueva sale del costo promedio neto del almacén (sin impuestos). El stock se descuenta en Órdenes de Trabajo.</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
+                    <a href="ordenestrabajo.html" class="btn btn-sm btn-outline-dark fw-bold">Órdenes de trabajo</a>
+                </div>
+            </div>
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Campaña</label>
+                    <select id="costoCampania" class="form-select form-select-sm" onchange="cambiarFiltroCosto('campania')"></select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold mb-1">Campo</label>
+                    <select id="costoCampo" class="form-select form-select-sm" onchange="cambiarFiltroCosto('campo')"></select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Cultivo</label>
+                    <select id="costoCultivo" class="form-select form-select-sm" onchange="cambiarFiltroCosto('cultivo')"></select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Lote</label>
+                    <select id="costoLote" class="form-select form-select-sm"></select>
+                </div>
+                <div class="col-md-3 d-flex gap-2">
+                    <button class="btn btn-sm btn-dark fw-bold flex-fill" onclick="verCostos('detalle')">Detalle</button>
+                    <button class="btn btn-sm fw-bold flex-fill" style="background:#0f766e;color:#fff;" onclick="verCostos('estructura')">Estructura</button>
+                </div>
+            </div>
+            <p id="costoEstado" class="hint mb-2">Elegí campaña y campo.</p>
+            <div id="costoDetalle" class="table-responsive" style="max-height:520px;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-dark" style="position:sticky;top:0;">
+                        <tr>
+                            <th>Fecha</th><th>Lote</th><th>Cultivo</th><th>Producto / laboreo</th>
+                            <th class="text-end">Has</th><th class="text-end">Dosis</th><th class="text-end">Cant.</th>
+                            <th class="text-end">Precio</th><th class="text-end">Costo $</th><th class="text-end">Costo U$S</th>
+                            <th class="text-end">Almacén</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaCostosBody"></tbody>
+                </table>
+            </div>
+            <div id="costoEstructura" style="display:none;">
+                <div class="d-flex justify-content-between mb-2">
+                    <div>
+                        <div class="fw-bold" id="estTitulo"></div>
+                        <div class="hint" id="estSub"></div>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height:520px;">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-dark" style="position:sticky;top:0;">
+                            <tr>
+                                <th>Producto</th><th>Laboreo</th><th>Lote</th>
+                                <th class="text-end">Has</th><th class="text-end">Dosis/ha</th><th class="text-end">Und. total</th>
+                                <th class="text-end">Precio prom.</th><th class="text-end">Costo $</th><th class="text-end">Costo U$S</th><th class="text-end">T/C</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaEstructuraBody"></tbody>
+                        <tfoot id="tablaEstructuraFoot" class="table-dark"></tfoot>
+                    </table>
+                </div>
+            </div>
+            <hr>
+            <h6 class="fw-bold">Cargar una línea</h6>
+            <p class="hint">Usa la campaña, el campo, el cultivo y el lote de arriba. Si elegís un producto del almacén, el precio es su costo promedio neto.</p>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Fecha</label>
+                    <input type="date" id="lineaFecha" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Laboreo</label>
+                    <input id="lineaLaboreo" class="form-control form-control-sm" list="listaLaboreos" placeholder="Siembra, cosecha...">
+                    <datalist id="listaLaboreos">
+                        <option value="SIEMBRA"></option>
+                        <option value="FERTILIZACION"></option>
+                        <option value="PULVERIZACION TERRESTRE"></option>
+                        <option value="PULVERIZACION AEREA"></option>
+                        <option value="COSECHA"></option>
+                    </datalist>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold mb-1">Producto del almacén</label>
+                    <input id="lineaProducto" class="form-control form-control-sm" list="listaItemsAlmacen" placeholder="Nombre del insumo" onchange="tomarPrecioAlmacen()">
+                    <datalist id="listaItemsAlmacen"></datalist>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small fw-bold mb-1">Has</label>
+                    <input type="number" step="0.01" id="lineaHas" class="form-control form-control-sm font-mono" value="0">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small fw-bold mb-1">Dosis/ha</label>
+                    <input type="number" step="0.0001" id="lineaDosis" class="form-control form-control-sm font-mono" value="0">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small fw-bold mb-1">Precio</label>
+                    <input type="number" step="0.01" id="lineaPrecio" class="form-control form-control-sm font-mono" value="0">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small fw-bold mb-1">T/C</label>
+                    <input type="number" step="0.01" id="lineaTc" class="form-control form-control-sm font-mono" value="0">
+                </div>
+                <div class="col-md-1">
+                    <button class="btn btn-sm btn-dark fw-bold w-100" onclick="guardarLineaCosto()">Guardar</button>
+                </div>
+            </div>
+            <p id="lineaMsg" class="hint mt-2 mb-0"></p>
         </div>
     </div>
 
@@ -280,6 +399,241 @@ function verTabAgro(btn) {
     btn.classList.add('active');
     if (btn.dataset.tab === 'tabPlan') { cargarCampanias(); }
     if (btn.dataset.tab === 'tabRotacion') { initRotacionDemo(); }
+    if (btn.dataset.tab === 'tabCostos') { prepararCostos(); }
+}
+
+let itemsAlmacen = [];
+let costosListos = false;
+
+function escHtml(s) {
+    return String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function moneyAr(n) {
+    return Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fechaCorta(v) {
+    const s = (v || '').toString().slice(0, 10);
+    if (s.length === 10 && s[4] === '-') return s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);
+    return s || '';
+}
+function opt(sel, valor, texto) {
+    const o = document.createElement('option');
+    o.value = valor;
+    o.textContent = texto;
+    sel.appendChild(o);
+}
+function filtrosCosto() {
+    return {
+        campania: document.getElementById('costoCampania').value,
+        campo: document.getElementById('costoCampo').value,
+        cultivo: document.getElementById('costoCultivo').value,
+        lote: document.getElementById('costoLote').value,
+    };
+}
+function qsFiltros(f) {
+    const p = new URLSearchParams();
+    if (f.campania) p.set('campania', f.campania);
+    if (f.campo) p.set('campo', f.campo);
+    if (f.cultivo) p.set('cultivo', f.cultivo);
+    if (f.lote) p.set('lote', f.lote);
+    return p.toString();
+}
+
+async function prepararCostos() {
+    if (!document.getElementById('lineaFecha').value) {
+        document.getElementById('lineaFecha').value = new Date().toISOString().slice(0, 10);
+    }
+    await cargarOpcionesCosto();
+    if (!itemsAlmacen.length) {
+        const res = await fetch('/api/agro/almacen/items?solo_aplica_ot=true');
+        itemsAlmacen = await res.json();
+        const dl = document.getElementById('listaItemsAlmacen');
+        dl.innerHTML = itemsAlmacen.map(i => `<option value="${(i.nombre || '').replace(/"/g, '&quot;')}"></option>`).join('');
+    }
+    costosListos = true;
+}
+
+async function cargarOpcionesCosto(nivel) {
+    const f = filtrosCosto();
+    const p = new URLSearchParams();
+    if (nivel !== 'campania' && f.campania) p.set('campania', f.campania);
+    if (nivel === 'cultivo' || nivel === 'lote') {
+        if (f.campo) p.set('campo', f.campo);
+    }
+    if (nivel === 'lote' && f.cultivo) p.set('cultivo', f.cultivo);
+    const res = await fetch('/api/agro/costos/opciones?' + p.toString());
+    const data = await res.json();
+    if (!res.ok) {
+        document.getElementById('costoEstado').innerText = data.detail || 'No se pudieron leer los costos.';
+        return;
+    }
+    if (!nivel || nivel === 'campania') {
+        const sel = document.getElementById('costoCampania');
+        const prev = sel.value;
+        sel.innerHTML = '';
+        opt(sel, '', 'Elegí campaña');
+        (data.campanias || []).forEach(c => {
+            const cod = c.codigo || '__sin__';
+            const et = c.codigo ? c.codigo : '(sin campaña)';
+            opt(sel, cod, et + ' (' + c.n + ')');
+        });
+        if (prev) sel.value = prev;
+    }
+    const poner = (id, lista, vacio, prevKeep) => {
+        const sel = document.getElementById(id);
+        const prev = prevKeep ? sel.value : '';
+        sel.innerHTML = '';
+        opt(sel, '', vacio);
+        (lista || []).forEach(v => opt(sel, v, v));
+        if (prev) sel.value = prev;
+    };
+    if (!nivel || nivel === 'campania' || nivel === 'campo') {
+        poner('costoCampo', data.campos, 'Todos los campos', nivel !== 'campania');
+    }
+    if (!nivel || nivel !== 'lote') {
+        poner('costoCultivo', data.cultivos, 'Todos los cultivos', nivel === 'cultivo' || nivel === 'lote');
+    }
+    poner('costoLote', data.lotes, 'Todos los lotes', true);
+}
+
+async function cambiarFiltroCosto(nivel) {
+    if (nivel === 'campania') {
+        document.getElementById('costoCampo').value = '';
+        document.getElementById('costoCultivo').value = '';
+        document.getElementById('costoLote').value = '';
+        await cargarOpcionesCosto('campo');
+    } else if (nivel === 'campo') {
+        document.getElementById('costoCultivo').value = '';
+        document.getElementById('costoLote').value = '';
+        await cargarOpcionesCosto('cultivo');
+    } else {
+        document.getElementById('costoLote').value = '';
+        await cargarOpcionesCosto('lote');
+    }
+}
+
+async function verCostos(vista) {
+    const f = filtrosCosto();
+    const estado = document.getElementById('costoEstado');
+    if (!f.campania && !f.campo) {
+        estado.innerText = 'Elegí al menos una campaña o un campo.';
+        return;
+    }
+    document.getElementById('costoDetalle').style.display = vista === 'detalle' ? 'block' : 'none';
+    document.getElementById('costoEstructura').style.display = vista === 'estructura' ? 'block' : 'none';
+    estado.innerText = 'Buscando...';
+    if (vista === 'estructura') {
+        if (!f.campania || !f.campo) {
+            estado.innerText = 'Para la estructura elegí campaña y campo.';
+            return;
+        }
+        const res = await fetch('/api/agro/costos/estructura?' + qsFiltros(f));
+        const data = await res.json();
+        if (!res.ok) { estado.innerText = data.detail || 'No se pudo armar la estructura.'; return; }
+        pintarEstructura(data, f);
+        return;
+    }
+    const res = await fetch('/api/agro/costos?' + qsFiltros(f));
+    const data = await res.json();
+    if (!res.ok) { estado.innerText = data.detail || 'No se pudo leer el detalle.'; return; }
+    pintarDetalle(data);
+}
+
+function pintarDetalle(data) {
+    const filas = data.filas || [];
+    const estado = document.getElementById('costoEstado');
+    const extra = data.total_filas > filas.length ? ' Mostrando ' + filas.length + ' de ' + data.total_filas + '. Afiná cultivo o lote.' : '';
+    estado.innerText = data.total_filas + ' líneas. Costo $ ' + moneyAr(data.costo_ars) + ' · U$S ' + moneyAr(data.costo_usd) + '.' + extra;
+    const tb = document.getElementById('tablaCostosBody');
+    if (!filas.length) {
+        tb.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">No hay costos con ese filtro.</td></tr>';
+        return;
+    }
+    tb.innerHTML = filas.map(r => {
+        const que = escHtml(r.producto || r.laboreo || '');
+        const alm = r.item_id ? ('$ ' + moneyAr(r.costo_almacen) + (r.stock_cantidad != null ? ' · stock ' + Number(r.stock_cantidad).toLocaleString('es-AR') : '')) : '';
+        return `<tr>
+            <td class="font-mono">${fechaCorta(r.fecha_aplicacion || r.fecha_orden)}</td>
+            <td>${escHtml(r.lote)}</td>
+            <td>${escHtml(r.cultivo)}</td>
+            <td>${que}${r.producto && r.laboreo ? ' <span class="hint">' + escHtml(r.laboreo) + '</span>' : ''}</td>
+            <td class="text-end font-mono">${moneyAr(r.cantidad_has)}</td>
+            <td class="text-end font-mono">${Number(r.dosis_ha || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}</td>
+            <td class="text-end font-mono">${Number(r.cantidad_total || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>
+            <td class="text-end font-mono">${moneyAr(r.precio)}</td>
+            <td class="text-end font-mono">${moneyAr(r.costo_ars)}</td>
+            <td class="text-end font-mono">${moneyAr(r.costo_usd)}</td>
+            <td class="text-end font-mono small">${alm}</td>
+        </tr>`;
+    }).join('');
+}
+
+function pintarEstructura(data, f) {
+    const t = data.totales || {};
+    document.getElementById('estTitulo').innerText = (f.campo || '') + (f.cultivo ? ' · ' + f.cultivo : '') + (f.lote ? ' · lote ' + f.lote : '');
+    document.getElementById('estSub').innerText = 'Campaña ' + (data.campania || f.campania) + ' · Has siembra ' + moneyAr(t.has_siembra) + ' · U$S/ha ' + moneyAr(t.usd_por_ha);
+    document.getElementById('costoEstado').innerText = (data.lineas || []).length + ' renglones en la estructura.';
+    const tb = document.getElementById('tablaEstructuraBody');
+    tb.innerHTML = (data.lineas || []).map(r => `<tr>
+        <td>${escHtml(r.producto)}</td>
+        <td>${escHtml(r.laboreo)}</td>
+        <td>${escHtml(r.lote)}</td>
+        <td class="text-end font-mono">${moneyAr(r.has)}</td>
+        <td class="text-end font-mono">${Number(r.dosis_ha || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}</td>
+        <td class="text-end font-mono">${Number(r.und_total || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>
+        <td class="text-end font-mono">${moneyAr(r.precio_prom)}</td>
+        <td class="text-end font-mono">${moneyAr(r.costo_ars)}</td>
+        <td class="text-end font-mono">${moneyAr(r.costo_usd)}</td>
+        <td class="text-end font-mono">${moneyAr(r.tc)}</td>
+    </tr>`).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">Sin costos para armar la estructura.</td></tr>';
+    document.getElementById('tablaEstructuraFoot').innerHTML = `<tr>
+        <th colspan="7">Suma total</th>
+        <th class="text-end font-mono">$ ${moneyAr(t.costo_ars)}</th>
+        <th class="text-end font-mono">U$S ${moneyAr(t.costo_usd)}</th>
+        <th class="text-end font-mono">${moneyAr(t.tc)}</th>
+    </tr>`;
+}
+
+function tomarPrecioAlmacen() {
+    const nombre = document.getElementById('lineaProducto').value.trim().toUpperCase();
+    const item = itemsAlmacen.find(i => (i.nombre || '').trim().toUpperCase() === nombre);
+    const msg = document.getElementById('lineaMsg');
+    if (!item) { msg.innerText = ''; return; }
+    document.getElementById('lineaPrecio').value = Number(item.costo_promedio_neto || 0);
+    msg.innerText = 'Precio del almacén: $ ' + moneyAr(item.costo_promedio_neto) + ' / ' + (item.unidad || '') + '. Stock ' + Number(item.stock_cantidad || 0).toLocaleString('es-AR') + '.';
+}
+
+async function guardarLineaCosto() {
+    const f = filtrosCosto();
+    const msg = document.getElementById('lineaMsg');
+    if (!f.campania || f.campania === '__sin__' || !f.campo) {
+        msg.innerText = 'Para cargar, elegí campaña y campo arriba.';
+        return;
+    }
+    const nombre = document.getElementById('lineaProducto').value.trim();
+    const item = itemsAlmacen.find(i => (i.nombre || '').trim().toUpperCase() === nombre.toUpperCase());
+    const body = {
+        campania: f.campania,
+        campo: f.campo,
+        cultivo: f.cultivo,
+        lote: f.lote,
+        fecha: document.getElementById('lineaFecha').value,
+        laboreo: document.getElementById('lineaLaboreo').value,
+        producto: nombre,
+        cantidad_has: Number(document.getElementById('lineaHas').value || 0),
+        dosis_ha: Number(document.getElementById('lineaDosis').value || 0),
+        precio: Number(document.getElementById('lineaPrecio').value || 0),
+        tc: Number(document.getElementById('lineaTc').value || 0),
+        almacen_item_id: item ? item.id : null,
+        unidad: item ? item.unidad : '',
+    };
+    const res = await fetch('/api/agro/costos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) { msg.innerText = data.detail || 'No se pudo guardar.'; return; }
+    msg.innerText = 'Guardado. Costo $ ' + moneyAr(data.costo_ars) + ' · U$S ' + moneyAr(data.costo_usd) + '.';
+    document.getElementById('lineaProducto').value = '';
+    document.getElementById('lineaLaboreo').value = '';
+    await verCostos('detalle');
 }
 
 async function inicializar() {

@@ -1800,6 +1800,277 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             "modalidades": cats.get("modalidades", 0),
         }
 
+    def _asegurar_margenes(cur):
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='margenes_access'")
+        if not cur.fetchone():
+            raise HTTPException(404, "En esta base todavía no están los costos importados de Access.")
+        cols = [r[1] for r in cur.execute("PRAGMA table_info(margenes_access)").fetchall()]
+        if "almacen_item_id" not in cols:
+            cur.execute("ALTER TABLE margenes_access ADD COLUMN almacen_item_id INTEGER;")
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_margenes_filtro
+            ON margenes_access(empresa_id, campania_codigo, campo);
+            """
+        )
+
+    def _where_costos(eid, campania, campo, cultivo, lote):
+        sql = " WHERE m.empresa_id=? "
+        params: list = [eid]
+        if campania == "__sin__":
+            sql += " AND TRIM(COALESCE(m.campania_codigo,''))='' "
+        elif campania:
+            sql += " AND m.campania_codigo=? "
+            params.append(normalizar_codigo_campania(campania))
+        if campo:
+            sql += " AND UPPER(TRIM(m.campo))=UPPER(TRIM(?)) "
+            params.append(campo)
+        if cultivo:
+            sql += " AND UPPER(TRIM(m.cultivo))=UPPER(TRIM(?)) "
+            params.append(cultivo)
+        if lote:
+            sql += " AND UPPER(TRIM(m.lote))=UPPER(TRIM(?)) "
+            params.append(lote)
+        return sql, params
+
+    def _costo_linea(has_val, dosis, cantidad, precio, tc, laboreo, producto):
+        has_val = float(has_val or 0)
+        dosis = float(dosis or 0)
+        cantidad = float(cantidad or 0)
+        precio = float(precio or 0)
+        tc = float(tc or 0)
+        if cantidad <= 0 and dosis > 0 and has_val > 0:
+            cantidad = round(dosis * has_val, 4)
+        if (producto or "").strip():
+            costo_ars = round(cantidad * precio, 2)
+        else:
+            costo_ars = round(has_val * precio, 2)
+        costo_usd = round(costo_ars / tc, 2) if tc else 0.0
+        return cantidad, round(precio, 4), round(tc, 4), costo_ars, costo_usd
+
+    @app.get("/api/agro/costos/opciones")
+    def api_costos_opciones(
+        campania: Optional[str] = None,
+        campo: Optional[str] = None,
+        cultivo: Optional[str] = None,
+    ):
+        conn = get_db()
+        cur = conn.cursor()
+        _asegurar_margenes(cur)
+        conn.commit()
+        eid = get_empresa_activa_id()
+        cur.execute(
+            """
+            SELECT campania_codigo, COUNT(*) n
+            FROM margenes_access
+            WHERE empresa_id=?
+            GROUP BY campania_codigo
+            ORDER BY campania_codigo DESC;
+            """,
+            (eid,),
+        )
+        campanias = [{"codigo": r["campania_codigo"] or "", "n": r["n"]} for r in cur.fetchall()]
+        where, params = _where_costos(eid, campania, None, None, None)
+        cur.execute(
+            f"SELECT DISTINCT TRIM(campo) AS v FROM margenes_access m {where} AND TRIM(COALESCE(campo,''))!='' ORDER BY 1;",
+            params,
+        )
+        campos = [r["v"] for r in cur.fetchall()]
+        where, params = _where_costos(eid, campania, campo, None, None)
+        cur.execute(
+            f"SELECT DISTINCT TRIM(cultivo) AS v FROM margenes_access m {where} AND TRIM(COALESCE(cultivo,''))!='' ORDER BY 1;",
+            params,
+        )
+        cultivos = [r["v"] for r in cur.fetchall()]
+        where, params = _where_costos(eid, campania, campo, cultivo, None)
+        cur.execute(
+            f"SELECT DISTINCT TRIM(lote) AS v FROM margenes_access m {where} AND TRIM(COALESCE(lote,''))!='' ORDER BY 1;",
+            params,
+        )
+        lotes = [r["v"] for r in cur.fetchall()]
+        conn.close()
+        return {"campanias": campanias, "campos": campos, "cultivos": cultivos, "lotes": lotes}
+
+    @app.get("/api/agro/costos")
+    def api_costos_detalle(
+        campania: Optional[str] = None,
+        campo: Optional[str] = None,
+        cultivo: Optional[str] = None,
+        lote: Optional[str] = None,
+        limit: int = 800,
+    ):
+        if not campania and not campo:
+            raise HTTPException(400, "Elegí al menos una campaña o un campo.")
+        conn = get_db()
+        cur = conn.cursor()
+        _asegurar_margenes(cur)
+        eid = get_empresa_activa_id()
+        where, params = _where_costos(eid, campania, campo, cultivo, lote)
+        cur.execute(f"SELECT COUNT(*) AS n, COALESCE(SUM(costo_ars),0) AS ars, COALESCE(SUM(costo_usd),0) AS usd FROM margenes_access m {where};", params)
+        tot = dict(cur.fetchone())
+        cur.execute(
+            f"""
+            SELECT m.id, m.id_access, m.campania_codigo, m.campo, m.lote, m.cultivo,
+                   m.fecha_orden, m.fecha_aplicacion, m.cantidad_has, m.laboreo, m.producto,
+                   m.dosis_ha, m.cantidad_total, m.precio, m.tc, m.costo_ars, m.costo_usd,
+                   m.unidad, m.contratista, m.almacen_item_id,
+                   i.id AS item_id, i.costo_promedio_neto AS costo_almacen, i.stock_cantidad, i.unidad AS unidad_almacen
+            FROM margenes_access m
+            LEFT JOIN almacen_items i
+              ON i.id = (
+                SELECT ii.id FROM almacen_items ii
+                WHERE ii.empresa_id = m.empresa_id
+                  AND TRIM(COALESCE(m.producto,'')) != ''
+                  AND UPPER(TRIM(ii.nombre)) = UPPER(TRIM(m.producto))
+                ORDER BY ii.id LIMIT 1
+              )
+            {where}
+            ORDER BY m.fecha_aplicacion, m.lote, m.id
+            LIMIT ?;
+            """,
+            params + [max(1, min(limit, 2000))],
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return {"total_filas": tot["n"], "costo_ars": tot["ars"], "costo_usd": tot["usd"], "filas": rows}
+
+    @app.get("/api/agro/costos/estructura")
+    def api_costos_estructura(
+        campania: str,
+        campo: str,
+        cultivo: Optional[str] = None,
+        lote: Optional[str] = None,
+    ):
+        conn = get_db()
+        cur = conn.cursor()
+        _asegurar_margenes(cur)
+        eid = get_empresa_activa_id()
+        where, params = _where_costos(eid, campania, campo, cultivo, lote)
+        cur.execute(
+            f"""
+            SELECT
+                TRIM(lote) AS lote,
+                CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN TRIM(producto) ELSE '' END AS producto,
+                CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN '' ELSE TRIM(COALESCE(laboreo,'')) END AS laboreo,
+                MAX(cantidad_has) AS has,
+                AVG(NULLIF(dosis_ha, 0)) AS dosis_ha,
+                SUM(cantidad_total) AS und_total,
+                SUM(costo_ars) AS costo_ars,
+                SUM(costo_usd) AS costo_usd,
+                COUNT(*) AS lineas
+            FROM margenes_access m
+            {where}
+            GROUP BY 1, 2, 3
+            ORDER BY lote, CASE WHEN producto = '' THEN 1 ELSE 0 END, producto, laboreo;
+            """,
+            params,
+        )
+        lineas = []
+        for r in cur.fetchall():
+            d = dict(r)
+            und = float(d["und_total"] or 0)
+            has_val = float(d["has"] or 0)
+            ars = float(d["costo_ars"] or 0)
+            usd = float(d["costo_usd"] or 0)
+            if und > 0:
+                d["precio_prom"] = round(ars / und, 2)
+            elif has_val > 0:
+                d["precio_prom"] = round(ars / has_val, 2)
+            else:
+                d["precio_prom"] = 0
+            d["tc"] = round(ars / usd, 2) if usd else 0
+            d["costo_ars"] = round(ars, 2)
+            d["costo_usd"] = round(usd, 2)
+            d["dosis_ha"] = round(float(d["dosis_ha"] or 0), 4)
+            lineas.append(d)
+        cur.execute(
+            f"""
+            SELECT COALESCE(SUM(has), 0) AS has_siembra FROM (
+                SELECT MAX(cantidad_has) AS has
+                FROM margenes_access m
+                {where} AND UPPER(TRIM(laboreo))='SIEMBRA'
+                GROUP BY TRIM(lote)
+            );
+            """,
+            params,
+        )
+        has_siembra = float(cur.fetchone()["has_siembra"] or 0)
+        conn.close()
+        ars = round(sum(x["costo_ars"] for x in lineas), 2)
+        usd = round(sum(x["costo_usd"] for x in lineas), 2)
+        return {
+            "campania": normalizar_codigo_campania(campania) if campania != "__sin__" else "",
+            "campo": campo,
+            "cultivo": cultivo or "",
+            "lineas": lineas,
+            "totales": {
+                "costo_ars": ars,
+                "costo_usd": usd,
+                "tc": round(ars / usd, 2) if usd else 0,
+                "has_siembra": round(has_siembra, 2),
+                "usd_por_ha": round(usd / has_siembra, 2) if has_siembra else 0,
+            },
+        }
+
+    @app.post("/api/agro/costos")
+    def api_costos_alta(data: dict = Body(...)):
+        conn = get_db()
+        cur = conn.cursor()
+        _asegurar_margenes(cur)
+        eid = get_empresa_activa_id()
+        camp = (data.get("campania") or "").strip()
+        campo = (data.get("campo") or "").strip()
+        if not camp or not campo:
+            conn.close()
+            raise HTTPException(400, "Campaña y campo son obligatorios.")
+        camp = normalizar_codigo_campania(camp)
+        producto = (data.get("producto") or "").strip()
+        laboreo = (data.get("laboreo") or "").strip()
+        item_id = data.get("almacen_item_id") or None
+        precio = float(data.get("precio") or 0)
+        unidad = (data.get("unidad") or "").strip()
+        if item_id:
+            cur.execute(
+                "SELECT id, nombre, unidad, costo_promedio_neto FROM almacen_items WHERE id=? AND empresa_id=?;",
+                (int(item_id), eid),
+            )
+            item = cur.fetchone()
+            if not item:
+                conn.close()
+                raise HTTPException(404, "Ese producto no está en el almacén.")
+            producto = producto or item["nombre"]
+            unidad = unidad or (item["unidad"] or "")
+            if precio <= 0:
+                precio = float(item["costo_promedio_neto"] or 0)
+        if not producto and not laboreo:
+            conn.close()
+            raise HTTPException(400, "Indicá un producto del almacén o un laboreo.")
+        cantidad, precio, tc, costo_ars, costo_usd = _costo_linea(
+            data.get("cantidad_has"), data.get("dosis_ha"), data.get("cantidad_total"),
+            precio, data.get("tc"), laboreo, producto,
+        )
+        fecha = (data.get("fecha") or "")[:10]
+        cur.execute(
+            """
+            INSERT INTO margenes_access (
+                empresa_id, id_access, campania_codigo, cultivo, campo, lote, cantidad_has,
+                fecha_orden, fecha_aplicacion, laboreo, producto, dosis_ha, cantidad_total,
+                precio, costo_ars, tc, costo_usd, unidad, contratista, almacen_item_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+            """,
+            (
+                eid, None, camp, (data.get("cultivo") or "").strip(), campo,
+                (data.get("lote") or "").strip(), float(data.get("cantidad_has") or 0),
+                fecha, fecha, laboreo, producto, float(data.get("dosis_ha") or 0), cantidad,
+                precio, costo_ars, tc, costo_usd, unidad,
+                (data.get("contratista") or "").strip(), int(item_id) if item_id else None,
+            ),
+        )
+        nuevo = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return {"id": nuevo, "costo_ars": costo_ars, "costo_usd": costo_usd, "cantidad_total": cantidad}
+
     @app.get("/api/agro/margenes_historicos")
     def api_margenes_hist(campania: Optional[str] = None, campo: Optional[str] = None, limit: int = 500):
         conn = get_db()
