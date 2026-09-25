@@ -11,17 +11,26 @@
     <script src="/campoplus-fechas.js"></script>
     <style>
         .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .print-only { display: none; }
+        .solapa-btn { border-bottom: 2px solid transparent; color: #64748b; }
+        .solapa-btn.activa { border-bottom-color: #1a4332; color: #1a4332; }
         @media print {
-            .no-print { display: none !important; }
+            @page { size: A4 landscape; margin: 12mm; }
+            .no-print, .screen-only { display: none !important; }
+            .print-only { display: block !important; }
             body { background: #fff; }
-            .print-card { box-shadow: none !important; border: 1px solid #ccc !important; }
+            .print-card { box-shadow: none !important; border: none !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
+            .print-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            .print-table th, .print-table td { border-bottom: 1px solid #e2e8f0; padding: 4px 6px; vertical-align: top; }
+            .print-table thead { display: table-header-group; }
+            .print-table tr { break-inside: avoid; page-break-inside: avoid; }
         }
     </style>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800">
 
 <div class="max-w-[1500px] mx-auto p-4 my-4 bg-white rounded-xl shadow-lg print-card">
-    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 mb-4 border-b pb-3">
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 mb-4 border-b pb-3 screen-only">
         <div>
             <h2 class="text-xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Bienes de Uso / Patrimonio</span></h2>
             <p class="text-xs text-slate-500 mt-1">Valor histórico (EECC en $) - Valor comercial en U$S (× tipo de cambio) - Amortización lineal</p>
@@ -33,6 +42,16 @@
         </div>
     </div>
 
+    <div class="flex gap-4 border-b mb-4 no-print">
+        <button type="button" id="tabInventario" class="solapa-btn activa px-1 pb-2 text-sm font-bold" onclick="mostrarSolapa('inventario')">Inventario</button>
+        <button type="button" id="tabResumen" class="solapa-btn px-1 pb-2 text-sm font-bold" onclick="mostrarSolapa('resumen')">Resumen por categoría</button>
+    </div>
+
+    <div id="solapaResumen" class="hidden mb-4 no-print">
+        <div id="resumenCats" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2"></div>
+    </div>
+
+    <div id="solapaInventario" class="screen-only">
     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
         <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg">
             <span class="font-bold text-slate-600 uppercase block text-[10px]">Bienes activos</span>
@@ -53,12 +72,7 @@
         </div>
     </div>
 
-    <div class="mb-4 no-print">
-        <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">Resumen por categoría</div>
-        <div id="resumenCats" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2"></div>
-    </div>
-
-    <div class="flex flex-wrap gap-2 items-end mb-3 no-print text-xs">
+    <div class="flex flex-wrap gap-2 items-end mb-3 text-xs">
         <div>
             <label class="block text-[10px] font-bold uppercase text-slate-500">T/C comercial $/U$S</label>
             <input type="text" id="tipoCambioCom" class="rounded-md border border-emerald-300 p-2 w-28 text-right font-mono font-bold"
@@ -105,6 +119,33 @@
             <tbody id="tbodyBienes">
                 <tr><td colspan="10" class="p-6 text-center text-slate-400">Cargando...</td></tr>
             </tbody>
+        </table>
+    </div>
+
+    </div>
+
+    <div id="hojaBanco" class="print-only">
+        <div class="flex justify-between items-end border-b pb-2 mb-3" style="border-color:#1a4332">
+            <div>
+                <div id="printEmpresa" class="text-sm font-bold" style="color:#1a4332">Empresa</div>
+                <div class="text-xs text-slate-600">Anexo de bienes — valor comercial</div>
+            </div>
+            <div id="printFecha" class="text-xs text-slate-500"></div>
+        </div>
+        <table class="print-table">
+            <thead>
+                <tr style="background:#1a4332;color:#fff">
+                    <th class="text-left">Categoría</th>
+                    <th class="text-left">Detalle del bien</th>
+                    <th class="text-left">Patente</th>
+                    <th class="text-left">Año</th>
+                    <th class="text-right">Valor comercial U$S</th>
+                    <th class="text-right">T/C</th>
+                    <th class="text-right">Valor comercial $</th>
+                </tr>
+            </thead>
+            <tbody id="tbodyPrint"></tbody>
+            <tfoot id="tfootPrint"></tfoot>
         </table>
     </div>
 
@@ -359,7 +400,55 @@ async function cargarResumenCats() {
     } catch (_) {}
 }
 
+function mostrarSolapa(cual) {
+    const inv = cual === 'inventario';
+    document.getElementById('solapaInventario').classList.toggle('hidden', !inv);
+    document.getElementById('solapaResumen').classList.toggle('hidden', inv);
+    document.getElementById('tabInventario').classList.toggle('activa', inv);
+    document.getElementById('tabResumen').classList.toggle('activa', !inv);
+}
+
+function detalleBien(b) {
+    return [b.marca, b.modelo || b.detalle].filter(Boolean).join(' ') || b.tipo_rodado || '—';
+}
+
+function renderImpresion(rows) {
+    const body = document.getElementById('tbodyPrint');
+    const foot = document.getElementById('tfootPrint');
+    document.getElementById('printFecha').textContent = new Date().toLocaleDateString('es-AR');
+    if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="7">Sin bienes para informar.</td></tr>';
+        foot.innerHTML = '';
+        return;
+    }
+    let usd = 0, ars = 0;
+    body.innerHTML = rows.map(b => {
+        const u = Number(b.valor_comercial_usd || 0);
+        const p = Number(b.valor_comercial_ars || b.valor_comercial || 0);
+        const tc = Number(b.tipo_cambio_comercial || 0);
+        usd += u;
+        ars += p;
+        const anio = String(b.anio || '').replace(/\.0$/, '') || '—';
+        return `<tr>
+            <td>${esc(b.categoria || '')}</td>
+            <td>${esc(detalleBien(b))}</td>
+            <td>${esc(b.nro_patente || '—')}</td>
+            <td>${esc(anio)}</td>
+            <td class="text-right">${moneyUsd(u)}</td>
+            <td class="text-right">${tc ? tc.toLocaleString('es-AR') : '—'}</td>
+            <td class="text-right">${money(p)}</td>
+        </tr>`;
+    }).join('');
+    foot.innerHTML = `<tr style="font-weight:700;border-top:2px solid #1a4332">
+        <td colspan="4">Totales (${rows.length} bienes)</td>
+        <td class="text-right">${moneyUsd(usd)}</td>
+        <td></td>
+        <td class="text-right">${money(ars)}</td>
+    </tr>`;
+}
+
 function renderTabla(rows) {
+    renderImpresion(rows);
     const tbody = document.getElementById('tbodyBienes');
     if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-slate-400">Sin bienes. Usá «+ Alta bien» o importá el anexo comercial.</td></tr>`;
@@ -548,6 +637,10 @@ window.onload = () => {
     document.getElementById('bienTc')?.addEventListener('input', recalcComArs);
     document.getElementById('bienComUsd')?.addEventListener('blur', recalcComArs);
     document.getElementById('bienTc')?.addEventListener('blur', recalcComArs);
+    fetch('/api/configuracion').then(r => r.ok ? r.json() : {}).then(cfg => {
+        const nombre = (cfg && cfg.razon_social) || '';
+        if (nombre) document.getElementById('printEmpresa').textContent = nombre;
+    }).catch(() => {});
     cargarBienes();
 };
 </script>
