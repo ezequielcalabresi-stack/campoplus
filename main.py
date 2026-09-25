@@ -2112,6 +2112,7 @@ def obtener_entidades(
 ):
     """
     rol=cliente → solo es_cliente=1 (pueden ser también proveedores).
+    rol=comprador → cliente de granos: es_cliente=1, sin arrendadores S/P.
     rol=proveedor → solo es_proveedor=1.
     Por defecto oculta cuentas de ajuste / banco (es_cuenta_ajuste=1).
     incluir_ajuste=true → incluye todas.
@@ -2127,9 +2128,16 @@ def obtener_entidades(
     q = "SELECT * FROM entidades WHERE COALESCE(empresa_id, 1) = ?"
     params: list = [empresa_id]
     rol_n = (rol or "").strip().lower()
-    if rol_n in ("cliente", "clientes"):
+    if rol_n in ("cliente", "clientes", "comprador"):
         q += " AND COALESCE(es_cliente, 0) = 1"
-    elif rol_n in ("proveedor", "proveedores"):
+    if rol_n == "comprador":
+        q += (
+            " AND COALESCE(es_propietario_inmueble, 0) = 0"
+            " AND COALESCE(es_locador, 0) = 0"
+            " AND UPPER(COALESCE(centro_costo, '')) NOT IN ('SP', 'S/P')"
+            " AND UPPER(COALESCE(nombre_fantasia, '') || ' ' || COALESCE(razon_social, '')) NOT LIKE '%S/P%'"
+        )
+    if rol_n in ("proveedor", "proveedores"):
         q += " AND COALESCE(es_proveedor, 0) = 1"
     if solo_ajuste:
         q += " AND COALESCE(es_cuenta_ajuste, 0) = 1"

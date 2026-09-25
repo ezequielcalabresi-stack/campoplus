@@ -435,10 +435,18 @@
         }
 
         async function cargarEntidades() {
-            const rows = await fetch('/api/entidades?rol=cliente').then(r => r.ok ? r.json() : []);
+            const rows = await fetch('/api/entidades?rol=comprador').then(r => r.ok ? r.json() : []);
+            const compradores = rows.filter(e => {
+                const n = `${e.nombre_fantasia || ''} ${e.razon_social || ''}`.trim();
+                if (!/[A-Za-zÁÉÍÓÚáéíóúÑñ]/.test(n)) return false;
+                if (/S\/P/i.test(n)) return false;
+                if (Number(e.es_propietario_inmueble) || Number(e.es_locador)) return false;
+                if (String(e.centro_costo || '').toUpperCase() === 'SP') return false;
+                return Number(e.es_cliente) === 1;
+            });
             const sel = document.getElementById('entidad');
             sel.innerHTML = '<option value=""> -  Solo entidades marcadas como cliente - </option>';
-            rows.forEach(e => {
+            compradores.forEach(e => {
                 const o = document.createElement('option');
                 o.value = (e.cuit || '').replace(/\D/g, '');
                 o.textContent = e.nombre_fantasia || e.razon_social || e.cuit;
@@ -446,7 +454,7 @@
                 sel.appendChild(o);
             });
             document.getElementById('estado-db').textContent =
-                `${rows.length} compradores (es_cliente) - % Access: comisión 2,5% - IIBB 0,8% - sellados 0,9% - ret IVA 5%`;
+                `${compradores.length} compradores (solo clientes, sin S/P) - % Access: comisión 2,5% - IIBB 0,8% - sellados 0,9% - ret IVA 5%`;
             document.getElementById('estado-db').className = 'text-xs text-emerald-600 mt-1';
         }
 
