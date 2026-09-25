@@ -71,11 +71,21 @@
 
         async function cargarSaldos() {
             try {
+                const guardada = localStorage.getItem('campoplus_tenant_activo');
+                if (guardada) {
+                    await fetch('/api/empresa_activa', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ empresa_activa_id: Number(guardada) })
+                    });
+                }
+                const empRes = await fetch('/api/empresa_activa');
+                const emp = empRes.ok ? await empRes.json() : {};
                 const res = await fetch('/api/saldos_proveedores');
                 datosProveedores = await res.json();
                 modoPadron = false;
-                document.getElementById('tituloListado').innerText = 'Proveedores con saldo a pagar';
-                document.getElementById('subtituloListado').innerText = 'Listado de pendientes. Escribí en el buscador para consultar todo el padrón y revisar cualquier cta cte.';
+                document.getElementById('tituloListado').innerText = 'Proveedores con saldo a pagar — ' + (emp.razon_social || '');
+                document.getElementById('subtituloListado').innerText = 'Solo la cuenta corriente de esta empresa.';
                 renderizarTabla(datosProveedores, false);
             } catch (e) {
                 console.error("Error al cargar saldos:", e);

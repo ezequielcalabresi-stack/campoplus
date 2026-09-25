@@ -6008,10 +6008,11 @@ def obtener_saldos_proveedores():
         WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
           AND COALESCE(e.es_cuenta_bancaria, 0) = 0
           AND COALESCE(e.es_proveedor, 0) = 1
+          AND COALESCE(e.empresa_id, 1) = ?
         GROUP BY e.cuit, proveedor, centro_costo
         HAVING ROUND(saldo_neto, 2) >= 0.01
         ORDER BY proveedor ASC;
-    """, (*_TIPOS_PAGO, *_TIPOS_PAGO, *_TIPOS_PAGO, empresa_id))
+    """, (*_TIPOS_PAGO, *_TIPOS_PAGO, *_TIPOS_PAGO, empresa_id, empresa_id))
     rows = []
     for r in cursor.fetchall():
         d = dict(r)
@@ -6054,11 +6055,12 @@ def obtener_saldos_clientes():
         WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
           AND COALESCE(e.es_cuenta_bancaria, 0) = 0
           AND COALESCE(e.es_cliente, 0) = 1
+          AND COALESCE(e.empresa_id, 1) = ?
         GROUP BY e.cuit, cliente, centro_costo
         HAVING ROUND(saldo_neto, 2) >= 0.01
         ORDER BY cliente COLLATE NOCASE ASC;
         """,
-        (empresa_id,),
+        (empresa_id, empresa_id),
     )
     rows = []
     for r in cursor.fetchall():
@@ -6334,6 +6336,7 @@ def consultar_padron_proveedores(q: str = ""):
         WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
           AND COALESCE(e.es_cuenta_bancaria, 0) = 0
           AND COALESCE(e.es_proveedor, 0) = 1
+          AND COALESCE(e.empresa_id, 1) = ?
           AND (
                 COALESCE(e.razon_social, '') LIKE ?
                 OR COALESCE(e.nombre_fantasia, '') LIKE ?
@@ -6343,7 +6346,7 @@ def consultar_padron_proveedores(q: str = ""):
         ORDER BY proveedor ASC
         LIMIT 80;
         """,
-        (empresa_id, like, like, f"%{digitos}%" if digitos else like),
+        (empresa_id, empresa_id, like, like, f"%{digitos}%" if digitos else like),
     )
     rows = []
     for r in cursor.fetchall():
@@ -6383,6 +6386,7 @@ def consultar_padron_clientes(q: str = ""):
         WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
           AND COALESCE(e.es_cuenta_bancaria, 0) = 0
           AND COALESCE(e.es_cliente, 0) = 1
+          AND COALESCE(e.empresa_id, 1) = ?
           AND (
                 COALESCE(e.razon_social, '') LIKE ?
                 OR COALESCE(e.nombre_fantasia, '') LIKE ?
@@ -6392,7 +6396,7 @@ def consultar_padron_clientes(q: str = ""):
         ORDER BY cliente COLLATE NOCASE
         LIMIT 40;
         """,
-        (empresa_id, like, like, f"%{digitos}%" if digitos else like),
+        (empresa_id, empresa_id, like, like, f"%{digitos}%" if digitos else like),
     )
     rows = []
     for r in cursor.fetchall():
