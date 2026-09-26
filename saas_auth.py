@@ -391,7 +391,11 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         user_key = (data.usuario or "").strip().lower()
         if not user_key or not data.password:
             raise HTTPException(400, "Usuario y contraseña obligatorios")
-        conn = get_db()
+        # Siempre la base master: con X-Cuenta-Id el get_db() apunta a otra DB y el login falla.
+        import main as _main
+        from plataforma import master_connect
+
+        conn = master_connect(_main.DB_PATH)
         cur = conn.cursor()
         cur.execute(
             """
@@ -412,8 +416,7 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
 
         user = dict(user)
 
-        from plataforma import abrir_base_cuenta, master_connect
-        import main as _main
+        from plataforma import abrir_base_cuenta
         try:
             conn.commit()
             conn.close()
@@ -464,7 +467,7 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
             ahora = datetime.now()
             expira = (ahora + timedelta(days=7)).isoformat(timespec="seconds")
             ip = request.client.host if request.client else ""
-            conn = _main.get_db()
+            conn = master_connect(_main.DB_PATH)
             cur = conn.cursor()
             cur.execute(
                 """

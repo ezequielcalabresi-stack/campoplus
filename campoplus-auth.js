@@ -70,7 +70,7 @@
     return h;
   }
 
-  // Inyecta token en fetch /api/
+  // Inyecta token en fetch /api/ (excepto login: debe ir siempre a la base master)
   if (!window.__campoplusAuthFetchPatched) {
     window.__campoplusAuthFetchPatched = true;
     var _fetch = window.fetch.bind(window);
@@ -80,7 +80,9 @@
       var isApi =
         url.indexOf("/api/") === 0 ||
         url.indexOf(location.origin + "/api/") === 0;
-      if (isApi) {
+      var isLogin =
+        url.indexOf("/api/auth/login") >= 0;
+      if (isApi && !isLogin) {
         var hdrs = new Headers(init.headers || {});
         var t = getToken();
         if (t && !hdrs.has("Authorization")) {
@@ -102,6 +104,12 @@
   }
 
   async function login(usuario, password, empresaId) {
+    // Sin sesión/cuenta previa: si no, el middleware apunta a otra base y falla el login.
+    clearSession();
+    try {
+      localStorage.removeItem("campoplus_cuenta_impersonada");
+      localStorage.removeItem("campoplus_tenant_activo");
+    } catch (_) {}
     var body = { usuario: usuario, password: password };
     if (empresaId) body.empresa_id = Number(empresaId);
     var res = await fetch("/api/auth/login", {
