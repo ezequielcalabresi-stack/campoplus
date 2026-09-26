@@ -205,8 +205,8 @@
 
   var usuarioActual = null;
   var ROL_MODULOS = {
-    "administración / carga": ["mod_bancos", "mod_contabilidad", "mod_sicore", "mod_arba", "mod_liquidaciones", "es_agente_retencion"],
-    "administracion / carga": ["mod_bancos", "mod_contabilidad", "mod_sicore", "mod_arba", "mod_liquidaciones", "es_agente_retencion"],
+    "administración / carga": ["mod_bancos", "mod_contabilidad", "mod_sicore", "mod_arba", "mod_cm05", "mod_liquidaciones", "es_agente_retencion"],
+    "administracion / carga": ["mod_bancos", "mod_contabilidad", "mod_sicore", "mod_arba", "mod_cm05", "mod_liquidaciones", "es_agente_retencion"],
     "gestión agropecuaria": ["mod_agro", "mod_almacen"],
     "gestion agropecuaria": ["mod_agro", "mod_almacen"],
     "ganadería": ["mod_ganaderia", "mod_tambo", "mod_porcino", "mod_aviar"],

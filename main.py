@@ -154,7 +154,7 @@ def _row_to_empresa(row) -> dict:
         "plan", "acceso_habilitado", "vencimiento_licencia", "logo_path", "notas_comerciales",
         "mod_bancos", "mod_agro", "mod_almacen", "mod_ganaderia", "mod_tambo",
         "mod_porcino", "mod_aviar",
-        "mod_sicore", "mod_arba", "mod_contabilidad", "mod_liquidaciones", "es_agente_retencion",
+        "mod_sicore", "mod_arba", "mod_cm05", "mod_contabilidad", "mod_liquidaciones", "es_agente_retencion",
     ):
         if k in keys:
             d[k] = row[k]
@@ -8086,6 +8086,8 @@ from porcino_api import register_porcino_routes
 register_porcino_routes(app, get_db, get_empresa_activa_id)
 from aviar_api import register_aviar_routes
 register_aviar_routes(app, get_db, get_empresa_activa_id)
+from cm05_api import register_cm05_routes
+register_cm05_routes(app, get_db, get_empresa_activa_id)
 from actividades_api import register_actividades_routes
 register_actividades_routes(app, get_db, get_empresa_activa_id)
 from liquidaciones_api import register_liquidaciones_routes

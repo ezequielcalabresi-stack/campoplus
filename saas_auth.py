@@ -30,6 +30,7 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_aviar": 1,
         "mod_sicore": 1,
         "mod_arba": 1,
+        "mod_cm05": 1,
         "mod_contabilidad": 1,
         "mod_liquidaciones": 1,
         "es_agente_retencion": 1,
@@ -44,6 +45,7 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_aviar": 0,
         "mod_sicore": 1,
         "mod_arba": 1,
+        "mod_cm05": 1,
         "mod_contabilidad": 1,
         "mod_liquidaciones": 1,
         "es_agente_retencion": 1,
@@ -58,6 +60,7 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_aviar": 1,
         "mod_sicore": 0,
         "mod_arba": 0,
+        "mod_cm05": 0,
         "mod_contabilidad": 1,
         "mod_liquidaciones": 1,
         "es_agente_retencion": 0,
@@ -72,6 +75,7 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_aviar": 0,
         "mod_sicore": 1,
         "mod_arba": 1,
+        "mod_cm05": 1,
         "mod_contabilidad": 1,
         "mod_liquidaciones": 0,
         "es_agente_retencion": 1,
@@ -86,6 +90,7 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_aviar": 1,
         "mod_sicore": 1,
         "mod_arba": 1,
+        "mod_cm05": 1,
         "mod_contabilidad": 1,
         "mod_liquidaciones": 1,
         "es_agente_retencion": 1,
@@ -102,6 +107,7 @@ MOD_KEYS = [
     "mod_aviar",
     "mod_sicore",
     "mod_arba",
+    "mod_cm05",
     "mod_contabilidad",
     "mod_liquidaciones",
     "es_agente_retencion",
@@ -155,6 +161,7 @@ def init_saas_schema(cursor: sqlite3.Cursor) -> None:
         ("mod_sicore", "INTEGER DEFAULT 1"),
 
         ("mod_arba", "INTEGER DEFAULT 1"),
+        ("mod_cm05", "INTEGER DEFAULT 1"),
         ("mod_contabilidad", "INTEGER DEFAULT 1"),
         ("mod_liquidaciones", "INTEGER DEFAULT 1"),
         ("es_agente_retencion", "INTEGER DEFAULT 1"),
@@ -290,6 +297,7 @@ class EmpresaSaasModel(BaseModel):
     mod_aviar: Optional[int] = None
     mod_sicore: Optional[int] = None
     mod_arba: Optional[int] = None
+    mod_cm05: Optional[int] = None
     mod_contabilidad: Optional[int] = None
     mod_liquidaciones: Optional[int] = None
     es_agente_retencion: Optional[int] = None
