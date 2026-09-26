@@ -1495,6 +1495,118 @@ def importar_eventos_masivo(
     return {"ok": ok, "errores": errores, "total": len(filas)}
 
 
+def _resolver_animal_tambo(conn, empresa_id: int, data: dict) -> int:
+    """Busca animal de tambo por caravana/EID/RP; reclasifica Holando si hace falta."""
+    reclasificar_animales_lecheros(conn, empresa_id)
+    animal_id = data.get("animal_id")
+    cur = conn.cursor()
+    if animal_id:
+        cur.execute(
+            """
+            SELECT id, es_tambo, sistema_actual, raza FROM gan_animales
+            WHERE empresa_id = ? AND id = ?;
+            """,
+            (empresa_id, int(animal_id)),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("Animal no encontrado")
+        animal = dict(row)
+    else:
+        car = (data.get("caravana") or data.get("caravana_visual") or "").strip()
+        eid = (data.get("eid") or data.get("caravana_electronica") or "").strip()
+        rp = (data.get("rp") or "").strip()
+        row = None
+        if eid:
+            cur.execute(
+                """
+                SELECT id, es_tambo, sistema_actual, raza FROM gan_animales
+                WHERE empresa_id = ? AND caravana_electronica = ?;
+                """,
+                (empresa_id, eid),
+            )
+            row = cur.fetchone()
+        if not row and car:
+            cur.execute(
+                """
+                SELECT id, es_tambo, sistema_actual, raza FROM gan_animales
+                WHERE empresa_id = ? AND LOWER(TRIM(caravana_visual)) = LOWER(?);
+                """,
+                (empresa_id, car),
+            )
+            row = cur.fetchone()
+        if not row and rp:
+            cur.execute(
+                """
+                SELECT id, es_tambo, sistema_actual, raza FROM gan_animales
+                WHERE empresa_id = ? AND LOWER(TRIM(COALESCE(rp,''))) = LOWER(?);
+                """,
+                (empresa_id, rp),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise ValueError("Animal no encontrado en plantel de tambo (caravana/EID/RP)")
+        animal = dict(row)
+    if not (
+        int(animal.get("es_tambo") or 0) == 1
+        or animal.get("sistema_actual") == "tambo"
+        or es_raza_lechera(animal.get("raza"))
+    ):
+        raise ValueError(
+            f"El animal #{animal['id']} no es de tambo (raza carne). Usá Ganadería para ese plantel."
+        )
+    if int(animal.get("es_tambo") or 0) != 1:
+        cur.execute(
+            "UPDATE gan_animales SET es_tambo = 1, sistema_actual = 'tambo' WHERE id = ?;",
+            (animal["id"],),
+        )
+        conn.commit()
+    return int(animal["id"])
+
+
+def importar_masivo_tambo(conn, empresa_id: int, filas: List[dict], usuario: str = "") -> dict:
+    """
+    Carga masiva exclusiva de tambo.
+    - tipo control / control_lechero → control lechero individual
+    - resto → eventos repro/productivos (celo, iatf, parto, secado, etc.)
+    """
+    TIPOS_CONTROL = {"control", "control_lechero", "lechero"}
+    TIPOS_OK = set(TIPOS_EVENTO) | TIPOS_CONTROL | {"nota"}
+    ok = 0
+    errores = []
+    for i, raw in enumerate(filas, start=1):
+        try:
+            data = dict(raw)
+            tipo = (data.get("tipo") or "").strip().lower()
+            if not tipo:
+                raise ValueError("Falta tipo de evento")
+            if tipo not in TIPOS_OK and tipo not in TIPOS_CONTROL:
+                raise ValueError(f"Tipo no permitido en tambo: {tipo}")
+            aid = _resolver_animal_tambo(conn, empresa_id, data)
+            data["animal_id"] = aid
+            data["origen_dato"] = data.get("origen_dato") or "import_tambo"
+            if tipo in TIPOS_CONTROL:
+                registrar_control_lechero(
+                    conn,
+                    empresa_id,
+                    {
+                        "animal_id": aid,
+                        "fecha": data.get("fecha"),
+                        "litros": data.get("litros") or data.get("resultado"),
+                        "grasa_pct": data.get("grasa_pct"),
+                        "proteina_pct": data.get("proteina_pct"),
+                        "rcs": data.get("rcs"),
+                        "observaciones": data.get("detalle") or data.get("tecnico") or "",
+                    },
+                )
+            else:
+                registrar_evento(conn, empresa_id, data, usuario=usuario)
+            ok += 1
+        except Exception as exc:
+            errores.append({"fila": i, "error": str(exc), "dato": raw})
+    return {"ok": ok, "errores": errores, "total": len(filas)}
+
+
 def composicion_rodeos_tambo(conn, empresa_id: int) -> List[dict]:
     """Cabezas activas por rodeo de sistema tambo (+ sin rodeo)."""
     cur = conn.cursor()

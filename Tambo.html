@@ -18,12 +18,46 @@
         </div>
         <div class="flex gap-2">
             <a href="liquidacionesleche.html" class="bg-sky-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-sky-800">Liquidaciones leche</a>
+            <button type="button" onclick="showCargaMasiva()" class="bg-violet-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-violet-800">Carga masiva</button>
             <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
         </div>
     </div>
 
     <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
     <div id="compRodeos" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6"></div>
+
+    <div id="panelCargaMasiva" class="hidden mb-6 border-2 border-violet-200 rounded-xl p-4 bg-violet-50/40">
+        <div class="flex justify-between items-start gap-2 mb-3">
+            <div>
+                <h2 class="font-bold text-violet-900">Carga masiva de tambo</h2>
+                <p class="text-xs text-violet-800/80 mt-1">Solo plantel lechero. No abre Ganadería.</p>
+            </div>
+            <button type="button" onclick="document.getElementById('panelCargaMasiva').classList.add('hidden')" class="text-xs text-slate-500 font-bold">Cerrar</button>
+        </div>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div>
+                <h3 class="text-sm font-bold text-slate-700 mb-1">Eventos productivos / reproductivos</h3>
+                <p class="text-[11px] text-slate-500 mb-2">
+                    Formato: <code class="bg-white px-1 rounded">caravana;tipo;fecha;resultado;toro_o_pajuela;tecnico;detalle</code><br>
+                    Tipos: celo, iatf, inseminacion, diagnostico_prenez, parto, secado, aborto, pesada…
+                </p>
+                <textarea id="imp_eventos" rows="8" class="w-full border rounded p-2 font-mono text-xs"
+                    placeholder="AA30;celo;2026-09-20;Celo observado;;;Visual&#10;AA30;inseminacion;2026-09-21;;Holstein Elite;Juan;1er servicio&#10;AA150;secado;2026-09-15;;;;Fin lactancia"></textarea>
+            </div>
+            <div>
+                <h3 class="text-sm font-bold text-slate-700 mb-1">Controles lecheros individuales</h3>
+                <p class="text-[11px] text-slate-500 mb-2">
+                    Formato: <code class="bg-white px-1 rounded">caravana;control;fecha;litros;grasa;proteina;rcs</code>
+                </p>
+                <textarea id="imp_controles" rows="8" class="w-full border rounded p-2 font-mono text-xs"
+                    placeholder="AA30;control;2026-09-26;28.5;3.6;3.2;180000&#10;AA150;control;2026-09-26;22.0;3.8;3.1;150000"></textarea>
+            </div>
+        </div>
+        <div class="flex gap-2 mt-3">
+            <button type="button" onclick="importarTambo()" class="bg-violet-700 text-white px-4 py-2 rounded text-sm font-bold hover:bg-violet-800">Importar a tambo</button>
+        </div>
+        <pre id="imp_result" class="mt-3 text-xs bg-white border rounded p-3 hidden"></pre>
+    </div>
 
     <div class="mb-6 border rounded-xl p-4 bg-slate-50 flex flex-wrap gap-2 items-end">
         <div class="flex-1 min-w-[200px]">
@@ -180,6 +214,58 @@
 
 <script>
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function showCargaMasiva() {
+    const panel = document.getElementById('panelCargaMasiva');
+    panel.classList.remove('hidden');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function importarTambo() {
+    const filas = [];
+    const parseLines = (texto, esControl) => {
+        (texto || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(line => {
+            const p = line.split(/[;,\t]/).map(x => x.trim());
+            if (esControl || (p[1] || '').toLowerCase().startsWith('control')) {
+                filas.push({
+                    caravana: p[0],
+                    tipo: 'control',
+                    fecha: p[2] || new Date().toISOString().slice(0,10),
+                    litros: p[3] ? Number(p[3]) : null,
+                    grasa_pct: p[4] ? Number(p[4]) : null,
+                    proteina_pct: p[5] ? Number(p[5]) : null,
+                    rcs: p[6] ? Number(p[6]) : null,
+                    origen_dato: 'import_tambo',
+                });
+            } else {
+                filas.push({
+                    caravana: p[0],
+                    tipo: (p[1] || '').toLowerCase(),
+                    fecha: p[2] || new Date().toISOString().slice(0,10),
+                    resultado: p[3] || '',
+                    toro_nombre: p[4] || '',
+                    semen_lote: p[4] || '',
+                    tecnico: p[5] || '',
+                    detalle: p[6] || '',
+                    origen_dato: 'import_tambo',
+                });
+            }
+        });
+    };
+    parseLines(document.getElementById('imp_eventos').value, false);
+    parseLines(document.getElementById('imp_controles').value, true);
+    if (!filas.length) { alert('Pegá al menos una línea'); return; }
+    const res = await fetch('/api/tambo/importar', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ eventos: filas })
+    });
+    const data = await res.json().catch(() => ({}));
+    const box = document.getElementById('imp_result');
+    box.classList.remove('hidden');
+    box.textContent = JSON.stringify(data, null, 2);
+    if (!res.ok) { alert(data.detail || 'Error al importar'); return; }
+    await Promise.all([cargarResumen(), cargarProd(), cargarVacas(), cargarPlantel()]);
+}
 
 async function boot() {
     const hoy = new Date().toISOString().slice(0,10);

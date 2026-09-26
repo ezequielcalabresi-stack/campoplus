@@ -20,6 +20,7 @@ from ganaderia import (
     ficha_animal,
     importar_eventos_masivo,
     importar_lecturas_eid,
+    importar_masivo_tambo,
     init_ganaderia_schema,
     listar_categorias,
     listar_eventos,
@@ -129,6 +130,9 @@ class EventoModel(BaseModel):
     medicamento: Optional[str] = ""
     dosis: Optional[str] = ""
     litros: Optional[float] = None
+    grasa_pct: Optional[float] = None
+    proteina_pct: Optional[float] = None
+    rcs: Optional[float] = None
     costo: float = 0
     detalle: Optional[str] = ""
     sistema_destino: Optional[str] = ""
@@ -472,5 +476,21 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
             return {"id": cid, "status": "ok"}
         except Exception as exc:
             raise HTTPException(400, str(exc)) from exc
+        finally:
+            conn.close()
+
+    @app.post("/api/tambo/importar")
+    def api_tambo_importar(data: ImportEventosModel, request: Request):
+        if not data.eventos:
+            raise HTTPException(400, "Sin filas para importar")
+        conn = get_db()
+        try:
+            result = importar_masivo_tambo(
+                conn,
+                get_empresa_activa_id(),
+                [x.model_dump() for x in data.eventos],
+                usuario=_firma(request),
+            )
+            return {"status": "ok", **result}
         finally:
             conn.close()
