@@ -568,20 +568,23 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         from plataforma import conexion_grupo
 
         conn = conexion_grupo() or get_db()
-        cur = conn.cursor()
-        if ses and int(ses.get("es_superadmin") or 0):
-            cur.execute("SELECT * FROM empresas ORDER BY razon_social COLLATE NOCASE;")
-        elif ses and ses.get("user_empresa_id"):
-            cur.execute(
-                "SELECT * FROM empresas WHERE id = ?;",
-                (ses["user_empresa_id"],),
-            )
-        else:
+        try:
+            init_saas_schema(conn.cursor())
+            conn.commit()
+            cur = conn.cursor()
+            if ses and int(ses.get("es_superadmin") or 0):
+                cur.execute("SELECT * FROM empresas ORDER BY razon_social COLLATE NOCASE;")
+            elif ses and ses.get("user_empresa_id"):
+                cur.execute(
+                    "SELECT * FROM empresas WHERE id = ?;",
+                    (ses["user_empresa_id"],),
+                )
+            else:
+                raise HTTPException(401, "Tenés que iniciar sesión")
+            rows = [empresa_to_dict(r) for r in cur.fetchall()]
+            return rows
+        finally:
             conn.close()
-            raise HTTPException(401, "Tenés que iniciar sesión")
-        rows = [empresa_to_dict(r) for r in cur.fetchall()]
-        conn.close()
-        return rows
 
     @app.put("/api/empresas/{empresa_id}/saas")
     def api_upd_empresa_saas(empresa_id: int, data: EmpresaSaasModel, request: Request):
@@ -594,54 +597,66 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         from plataforma import conexion_grupo
 
         conn = conexion_grupo() or get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
-        if not cur.fetchone():
+        try:
+            # Migrar columnas SaaS (p.ej. mod_porcino/mod_aviar) en la DB del grupo
+            init_saas_schema(conn.cursor())
+            conn.commit()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+            if not cur.fetchone():
+                raise HTTPException(404, "Empresa no encontrada")
+
+            payload = data.model_dump()
+            if data.aplicar_plan_modulos:
+                payload["_force_plan"] = True
+                payload = aplicar_plan(payload)
+
+            cuit = "".join(c for c in (data.cuit or "") if c.isdigit())
+            fields = [
+                "razon_social=?",
+                "cuit=?",
+                "tenant_id=?",
+                "localidad=?",
+                "plan=?",
+                "acceso_habilitado=?",
+                "vencimiento_licencia=?",
+                "notas_comerciales=?",
+            ]
+            vals: list = [
+                data.razon_social.strip(),
+                cuit,
+                data.tenant_id.strip().lower(),
+                (data.localidad or "").strip(),
+                (payload.get("plan") or "full"),
+                int(payload.get("acceso_habilitado", 1)),
+                data.vencimiento_licencia or "",
+                data.notas_comerciales or "",
+            ]
+            # Solo columnas que realmente existen en esta DB
+            cols = {r[1] for r in cur.execute("PRAGMA table_info(empresas)")}
+            for k in MOD_KEYS:
+                if k not in cols:
+                    continue
+                v = payload.get(k)
+                if v is None:
+                    v = 1
+                fields.append(f"{k}=?")
+                vals.append(int(v))
+            vals.append(empresa_id)
+            cur.execute(
+                f"UPDATE empresas SET {', '.join(fields)} WHERE id = ?;",
+                vals,
+            )
+            conn.commit()
+            cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+            emp = empresa_to_dict(cur.fetchone())
+            return {"status": "ok", "empresa": emp}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(500, f"No se pudo guardar la configuración: {exc}") from exc
+        finally:
             conn.close()
-            raise HTTPException(404, "Empresa no encontrada")
-
-        payload = data.model_dump()
-        if data.aplicar_plan_modulos:
-            payload["_force_plan"] = True
-            payload = aplicar_plan(payload)
-
-        cuit = "".join(c for c in (data.cuit or "") if c.isdigit())
-        fields = [
-            "razon_social=?",
-            "cuit=?",
-            "tenant_id=?",
-            "localidad=?",
-            "plan=?",
-            "acceso_habilitado=?",
-            "vencimiento_licencia=?",
-            "notas_comerciales=?",
-        ]
-        vals: list = [
-            data.razon_social.strip(),
-            cuit,
-            data.tenant_id.strip().lower(),
-            (data.localidad or "").strip(),
-            (payload.get("plan") or "full"),
-            int(payload.get("acceso_habilitado", 1)),
-            data.vencimiento_licencia or "",
-            data.notas_comerciales or "",
-        ]
-        for k in MOD_KEYS:
-            v = payload.get(k)
-            if v is None:
-                v = 1
-            fields.append(f"{k}=?")
-            vals.append(int(v))
-        vals.append(empresa_id)
-        cur.execute(
-            f"UPDATE empresas SET {', '.join(fields)} WHERE id = ?;",
-            vals,
-        )
-        conn.commit()
-        cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
-        emp = empresa_to_dict(cur.fetchone())
-        conn.close()
-        return {"status": "ok", "empresa": emp}
 
     @app.post("/api/empresas/{empresa_id}/logo")
     async def api_logo(empresa_id: int, file: UploadFile = File(...)):
