@@ -8117,11 +8117,12 @@ app.add_middleware(AuditMiddleware, get_db=get_db, get_empresa_activa_id=get_emp
 app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
 
 def _restablecer_clave_eze_una_vez() -> None:
-    """Solo en el disco del servidor, una vez: la clave de eze vuelve a campo+."""
+    """Solo en el disco del servidor, una vez: la clave de eze vuelve a campo+.
+    Flag v2: el reset anterior ya corrió y la pass de eze quedó desfasada."""
     data = os.environ.get("CAMPO_DATA_DIR", "").strip()
     if not data or not os.path.exists(DB_PATH):
         return
-    flag = os.path.join(data, ".clave_eze_lista")
+    flag = os.path.join(data, ".clave_eze_lista_v2")
     if os.path.exists(flag):
         return
     from saas_auth import _hash_password
