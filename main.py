@@ -8117,18 +8117,21 @@ app.add_middleware(AuditMiddleware, get_db=get_db, get_empresa_activa_id=get_emp
 app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
 
 def _restablecer_clave_eze_una_vez() -> None:
-    """Solo en el disco del servidor, una vez: la clave de eze vuelve a campo+.
-    Flag v2: el reset anterior ya corrió y la pass de eze quedó desfasada."""
-    data = os.environ.get("CAMPO_DATA_DIR", "").strip()
-    if not data or not os.path.exists(DB_PATH):
+    """Una vez por versión de flag: la clave de eze vuelve a campo+.
+    Corre siempre (local o Render). Flag v3: el reset anterior no aplicó
+    porque dependía de CAMPO_DATA_DIR o la pass del seed no era campo+.
+    """
+    if not os.path.exists(DB_PATH):
         return
-    flag = os.path.join(data, ".clave_eze_lista_v2")
+    flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(DB_PATH)
+    os.makedirs(flag_dir, exist_ok=True)
+    flag = os.path.join(flag_dir, ".clave_eze_lista_v3")
     if os.path.exists(flag):
         return
     from saas_auth import _hash_password
     conn = sqlite3.connect(DB_PATH)
     try:
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE usuarios_sistema
             SET password_hash = ?
@@ -8138,7 +8141,12 @@ def _restablecer_clave_eze_una_vez() -> None:
             (_hash_password("campo+"),),
         )
         conn.commit()
-    except sqlite3.OperationalError:
+        actualizados = cur.rowcount
+        print(f"[auth] reset clave eze: {actualizados} fila(s) en {DB_PATH}")
+        if actualizados <= 0:
+            return
+    except sqlite3.OperationalError as exc:
+        print(f"[auth] reset clave eze falló: {exc}")
         return
     finally:
         conn.close()
