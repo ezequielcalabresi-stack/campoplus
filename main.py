@@ -8118,13 +8118,13 @@ app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
 
 def _restablecer_clave_eze_una_vez() -> None:
     """Desbloqueo de emergencia: asegura usuario eze con pass campo+ en la DB activa.
-    Corre en cada arranque hasta que exista el flag v4 (así no depende del seed)."""
+    Flag v5: la clave se cambió tras el login y quedó inaccesible otra vez."""
     if not os.path.exists(DB_PATH):
         print(f"[auth] reset eze: no existe DB {DB_PATH}")
         return
     flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
     os.makedirs(flag_dir, exist_ok=True)
-    flag = os.path.join(flag_dir, ".clave_eze_lista_v4")
+    flag = os.path.join(flag_dir, ".clave_eze_lista_v5")
     if os.path.exists(flag):
         return
     from saas_auth import _hash_password
@@ -8165,12 +8165,12 @@ def _restablecer_clave_eze_una_vez() -> None:
                 ),
             )
             actualizados = cur.rowcount
-            print(f"[auth] reset eze: INSERT nuevo usuario ({actualizados}) en {DB_PATH}")
+            print(f"[auth] reset eze v5: INSERT ({actualizados}) en {DB_PATH}")
         else:
-            print(f"[auth] reset eze: UPDATE {actualizados} fila(s) en {DB_PATH}")
+            print(f"[auth] reset eze v5: UPDATE {actualizados} fila(s) en {DB_PATH}")
         conn.commit()
     except sqlite3.OperationalError as exc:
-        print(f"[auth] reset eze falló: {exc}")
+        print(f"[auth] reset eze v5 falló: {exc}")
         return
     finally:
         conn.close()
