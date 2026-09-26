@@ -54,6 +54,16 @@
                 <option value="ciclo_completo">Ciclo completo</option>
                 <option value="tambo">Tambo</option>
             </select>
+            <select id="filtroAaa" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
+                <option value="">Registro AAA</option>
+                <option value="PP">PP · Puro de Pedigree</option>
+                <option value="PC">PC · Puro Controlado</option>
+                <option value="SR">SR · Sin registro</option>
+            </select>
+            <select id="filtroRaza" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
+                <option value="">Todas las razas</option>
+                <option value="Angus">Angus</option>
+            </select>
             <select id="filtroRodeo" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
                 <option value="">Todos los rodeos</option>
             </select>
@@ -66,6 +76,7 @@
                         <th class="p-2">Caravana</th>
                         <th class="p-2">EID</th>
                         <th class="p-2">Sexo</th>
+                        <th class="p-2">Raza / AAA</th>
                         <th class="p-2">Categoría</th>
                         <th class="p-2">Sistema</th>
                         <th class="p-2">Rodeo</th>
@@ -136,6 +147,68 @@
             </div>
             <div class="flex items-end gap-2">
                 <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="a_tambo"> Es animal de tambo</label>
+            </div>
+
+            <div class="md:col-span-3 border-t pt-3 mt-1">
+                <h3 class="text-sm font-bold text-rose-900 mb-1">Genética · Asociación Argentina de Angus (AAA)</h3>
+                <p class="text-[11px] text-slate-500 mb-3">Para rodeos Angus: categoría PP/PC, nº de registro, criador y DEPs básicos.</p>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Categoría AAA</label>
+                <select id="a_cat_aaa" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option value=""> - </option>
+                    <option value="PP">PP · Puro de Pedigree</option>
+                    <option value="PC">PC · Puro Controlado</option>
+                    <option value="SR">SR · Sin registro / comercial</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Nº registro AAA</label>
+                <input id="a_reg_aaa" class="mt-1 w-full border rounded p-2 text-sm font-mono">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Color de capa</label>
+                <select id="a_color_capa" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option value=""> - </option>
+                    <option>Negro</option>
+                    <option>Colorado</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Prefijo cabaña</label>
+                <input id="a_prefijo" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Ej. LA SIESTA">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Criador AAA</label>
+                <input id="a_criador" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Fecha registro AAA</label>
+                <input id="a_fecha_reg" type="date" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Madre (ID)</label>
+                <input id="a_madre" type="number" class="mt-1 w-full border rounded p-2 text-sm" placeholder="ID animal madre">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Padre (ID)</label>
+                <input id="a_padre" type="number" class="mt-1 w-full border rounded p-2 text-sm" placeholder="ID animal padre">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">DEP PN</label>
+                <input id="a_dep_pn" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">DEP PD</label>
+                <input id="a_dep_pd" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">DEP PF</label>
+                <input id="a_dep_pf" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">DEP Leche</label>
+                <input id="a_dep_leche" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-sm">
             </div>
             <div class="md:col-span-3">
                 <label class="text-xs font-bold text-slate-600">Observaciones</label>
@@ -447,16 +520,29 @@ async function cargarAnimales() {
     const q = document.getElementById('filtroQ').value.trim();
     const sistema = document.getElementById('filtroSistema').value;
     const rodeo_id = document.getElementById('filtroRodeo').value;
+    const categoria_aaa = document.getElementById('filtroAaa').value;
+    const raza = document.getElementById('filtroRaza').value;
     const params = new URLSearchParams({ estado: 'activo', limit: '500' });
     if (q) params.set('q', q);
     if (sistema) params.set('sistema', sistema);
     if (rodeo_id) params.set('rodeo_id', rodeo_id);
+    if (categoria_aaa) params.set('categoria_aaa', categoria_aaa);
+    if (raza) params.set('raza', raza);
     const rows = await fetch('/api/ganaderia/animales?' + params).then(r => r.json());
+    const badgeAaa = (a) => {
+        const c = (a.categoria_aaa || '').toUpperCase();
+        if (!c) return '';
+        const cls = c === 'PP' ? 'bg-amber-100 text-amber-900' : c === 'PC' ? 'bg-sky-100 text-sky-900' : 'bg-slate-100 text-slate-700';
+        return `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${cls}">${esc(c)}</span>`;
+    };
     document.getElementById('tbodyAnimales').innerHTML = rows.map(a => `
         <tr class="hover:bg-slate-50">
             <td class="p-2 font-semibold">${esc(a.caravana_visual||' - ')}</td>
             <td class="p-2 font-mono text-xs text-slate-500">${esc(a.caravana_electronica||'')}</td>
             <td class="p-2">${esc(a.sexo)}</td>
+            <td class="p-2 text-xs">${esc(a.raza||'')} ${badgeAaa(a)}
+                ${a.registro_aaa ? '<div class="font-mono text-[10px] text-slate-500">' + esc(a.registro_aaa) + '</div>' : ''}
+            </td>
             <td class="p-2">${esc(a.categoria_nombre||'')}</td>
             <td class="p-2"><span class="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-semibold">${esc(a.sistema_actual)}</span></td>
             <td class="p-2 text-slate-600">${esc(a.rodeo_nombre||'')}</td>
@@ -465,7 +551,7 @@ async function cargarAnimales() {
                 <button onclick="usarAnimal(${a.id})" class="text-emerald-700 text-xs font-bold hover:underline">Evento</button>
                 <button onclick="verFicha(${a.id})" class="text-slate-600 text-xs font-bold hover:underline ml-2">Ficha</button>
             </td>
-        </tr>`).join('') || '<tr><td colspan="8" class="p-6 text-center text-slate-400">Sin animales. Cargá altas o importá EID.</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="9" class="p-6 text-center text-slate-400">Sin animales. Cargá altas o importá EID.</td></tr>';
 }
 
 function usarAnimal(id) {
@@ -479,12 +565,16 @@ async function verFicha(id) {
 
 async function guardarAnimal(ev) {
     ev.preventDefault();
+    const numOrNull = (id) => {
+        const v = document.getElementById(id).value;
+        return v === '' || v == null ? null : Number(v);
+    };
     const body = {
         caravana_visual: document.getElementById('a_visual').value.trim(),
         caravana_electronica: document.getElementById('a_eid').value.trim(),
         senasa_id: document.getElementById('a_senasa').value.trim(),
         sexo: document.getElementById('a_sexo').value,
-        raza: document.getElementById('a_raza').value.trim(),
+        raza: document.getElementById('a_raza').value.trim() || 'Angus',
         fecha_nacimiento: document.getElementById('a_nac').value,
         sistema_actual: document.getElementById('a_sistema').value,
         categoria_id: Number(document.getElementById('a_categoria').value) || null,
@@ -493,12 +583,25 @@ async function guardarAnimal(ev) {
         origen: document.getElementById('a_origen').value.trim(),
         observaciones: document.getElementById('a_obs').value.trim(),
         es_tambo: document.getElementById('a_tambo').checked ? 1 : 0,
+        madre_id: numOrNull('a_madre'),
+        padre_id: numOrNull('a_padre'),
+        categoria_aaa: document.getElementById('a_cat_aaa').value || null,
+        registro_aaa: document.getElementById('a_reg_aaa').value.trim() || null,
+        color_capa: document.getElementById('a_color_capa').value || null,
+        prefijo_cabana: document.getElementById('a_prefijo').value.trim() || null,
+        criador_aaa: document.getElementById('a_criador').value.trim() || null,
+        fecha_registro_aaa: document.getElementById('a_fecha_reg').value || null,
+        dep_pn: numOrNull('a_dep_pn'),
+        dep_pd: numOrNull('a_dep_pd'),
+        dep_pf: numOrNull('a_dep_pf'),
+        dep_leche: numOrNull('a_dep_leche'),
     };
     const res = await fetch('/api/ganaderia/animales', {
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
-    alert('Animal guardado #' + (await res.json()).id);
+    const out = await res.json();
+    alert('Animal guardado #' + out.id);
     showTab('stock');
     await Promise.all([cargarResumen(), cargarAnimales()]);
     return false;

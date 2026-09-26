@@ -110,6 +110,22 @@
     </section>
 
     <section id="tab-genetica" class="tab-panel hidden">
+        <div id="aaaBanner" class="hidden mb-4 rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 to-stone-50 p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <p class="text-[11px] font-bold uppercase tracking-wide text-amber-800">Asociación Argentina de Angus</p>
+                    <h2 class="text-lg font-extrabold text-stone-900" id="aaaTitulo">—</h2>
+                    <p class="text-xs text-stone-600" id="aaaSub">Trazabilidad genética del animal</p>
+                </div>
+                <div id="aaaBadge" class="text-sm font-black px-3 py-1.5 rounded-lg bg-white border border-amber-200"></div>
+            </div>
+            <dl id="aaaBox" class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"></dl>
+            <div id="depsBox" class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+        </div>
+
+        <h3 class="font-bold text-sm text-slate-700 mb-2">Árbol de pedigree (hasta 3 generaciones)</h3>
+        <div id="pedigreeTree" class="border rounded-xl p-4 bg-slate-50 overflow-x-auto mb-4"></div>
+
         <div class="grid md:grid-cols-2 gap-4 mb-4">
             <div class="border rounded-xl p-4">
                 <h3 class="font-bold text-slate-800 mb-2">Madre</h3>
@@ -160,9 +176,54 @@ function kv(label, value) {
 function linkAnimal(a) {
     if (!a) return '<span class="text-slate-400">Sin dato</span>';
     const nom = a.caravana_visual || a.nombre || ('#' + a.id);
-    return `<a class="text-sky-700 font-bold hover:underline" href="AnimalFicha.html?id=${a.id}">${esc(nom)}</a>
-        <div class="text-xs text-slate-500">${esc(a.caravana_electronica || '')} ${esc(a.raza || '')}</div>`;
+    const aaa = a.categoria_aaa ? ` · <span class="font-bold">${esc(a.categoria_aaa)}</span>` : '';
+    return `<a class="text-sky-700 font-bold hover:underline" href="AnimalFicha.html?id=${a.id}">${esc(nom)}</a>${aaa}
+        <div class="text-xs text-slate-500">${esc(a.registro_aaa || '')} ${esc(a.caravana_electronica || '')} ${esc(a.raza || '')}</div>`;
 }
+
+function nodoPedigree(n, nivel) {
+    if (!n) return `<div class="text-xs text-slate-400 italic pl-${Math.min(nivel,3)*2}">—</div>`;
+    const cat = n.categoria_aaa
+        ? `<span class="text-[10px] font-bold px-1 rounded ${n.categoria_aaa==='PP'?'bg-amber-100 text-amber-900':n.categoria_aaa==='PC'?'bg-sky-100 text-sky-900':'bg-slate-100'}">${esc(n.categoria_aaa)}</span>`
+        : '';
+    const link = n.id
+        ? `<a class="font-bold text-stone-800 hover:text-sky-700 hover:underline" href="AnimalFicha.html?id=${n.id}">${esc(n.etiqueta)}</a>`
+        : `<span class="font-bold">${esc(n.etiqueta)}</span>`;
+    return `
+      <div class="min-w-[160px] border rounded-lg bg-white p-2 shadow-sm">
+        <div class="flex items-center gap-1 flex-wrap">${link} ${cat}</div>
+        <div class="text-[10px] text-slate-500 font-mono">${esc(n.registro_aaa || '')}</div>
+        <div class="text-[10px] text-slate-500">${esc([n.sexo, n.color_capa, n.prefijo_cabana].filter(Boolean).join(' · '))}</div>
+      </div>`;
+}
+
+function renderPedigree(p) {
+    if (!p || !p.etiqueta) {
+        return '<p class="text-sm text-slate-400">Sin pedigree cargado. Completá madre/padre en el alta o edición del animal.</p>';
+    }
+    const abuelaM = p.madre && p.madre.madre;
+    const abueloM = p.madre && p.madre.padre;
+    const abuelaP = p.padre && p.padre.madre;
+    const abueloP = p.padre && p.padre.padre;
+    return `
+    <div class="flex flex-col items-center gap-4 min-w-[640px]">
+      <div class="flex justify-center gap-8">
+        ${nodoPedigree(abuelaM, 2)}
+        ${nodoPedigree(abueloM, 2)}
+        ${nodoPedigree(abuelaP, 2)}
+        ${nodoPedigree(abueloP, 2)}
+      </div>
+      <div class="text-[10px] uppercase tracking-wide text-slate-400">Abuelos</div>
+      <div class="flex justify-center gap-16">
+        ${nodoPedigree(p.madre, 1)}
+        ${nodoPedigree(p.padre, 1)}
+      </div>
+      <div class="text-[10px] uppercase tracking-wide text-slate-400">Padres</div>
+      <div class="flex justify-center">${nodoPedigree(p, 0)}</div>
+      <div class="text-[10px] uppercase tracking-wide text-slate-400">Animal</div>
+    </div>`;
+}
+
 function irEvento() {
     location.href = 'Ganaderia.html?evento=' + animalId;
 }
@@ -221,6 +282,7 @@ function render() {
         kv('SENASA', esc(a.senasa_id)),
         kv('Nombre', esc(a.nombre)),
         kv('Raza', esc(a.raza)),
+        kv('AAA', esc((a.categoria_aaa || '') + (a.registro_aaa ? ' · ' + a.registro_aaa : ''))),
         kv('Nacimiento', esc(a.fecha_nacimiento)),
     ].join('');
 
@@ -304,6 +366,39 @@ function render() {
             <td class="p-2 text-xs">${esc(c.estado)}</td>
             <td class="p-2"><a class="text-sky-700 text-xs font-bold" href="AnimalFicha.html?id=${c.id}">Ver</a></td>
         </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin crías cargadas</td></tr>';
+
+    const aaa = g.aaa || {};
+    const showAaa = aaa.es_angus || aaa.categoria || aaa.registro;
+    const banner = document.getElementById('aaaBanner');
+    banner.classList.toggle('hidden', !showAaa);
+    if (showAaa) {
+        document.getElementById('aaaTitulo').textContent =
+            (aaa.prefijo ? aaa.prefijo + ' · ' : '') + (a.caravana_visual || a.nombre || ('#' + a.id));
+        document.getElementById('aaaSub').textContent =
+            (aaa.categoria_nombre || aaa.categoria || 'Sin categoría') +
+            (aaa.color_capa ? ' · ' + aaa.color_capa : '') +
+            (aaa.criador ? ' · Criador: ' + aaa.criador : '');
+        document.getElementById('aaaBadge').textContent = aaa.categoria || 'SR';
+        document.getElementById('aaaBox').innerHTML = [
+            kv('Registro AAA', esc(aaa.registro)),
+            kv('Categoría', esc((aaa.categoria || '') + (aaa.categoria_nombre ? ' · ' + aaa.categoria_nombre : ''))),
+            kv('Color', esc(aaa.color_capa)),
+            kv('Prefijo', esc(aaa.prefijo)),
+            kv('Criador', esc(aaa.criador)),
+            kv('Fecha registro', esc(aaa.fecha_registro)),
+            kv('Pedigree texto', esc(a.pedigree)),
+            kv('RP interno', esc(a.rp)),
+        ].join('');
+        const deps = aaa.deps || {};
+        document.getElementById('depsBox').innerHTML = [
+            ['PN', deps.pn], ['PD', deps.pd], ['PF', deps.pf], ['Leche', deps.leche]
+        ].map(([lab, v]) => `
+            <div class="bg-white border rounded-lg px-3 py-2 text-center">
+                <div class="text-[10px] font-bold uppercase text-slate-500">DEP ${lab}</div>
+                <div class="text-lg font-extrabold text-stone-800">${v != null ? Number(v).toFixed(2) : '—'}</div>
+            </div>`).join('');
+    }
+    document.getElementById('pedigreeTree').innerHTML = renderPedigree(g.pedigree);
 }
 
 window.onload = boot;

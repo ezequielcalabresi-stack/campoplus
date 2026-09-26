@@ -8,6 +8,8 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ganaderia import (
+    CATEGORIAS_AAA,
+    COLORES_ANGUS,
     SISTEMAS,
     TIPOS_EVENTO,
     actualizar_animal,
@@ -65,6 +67,18 @@ class AnimalModel(BaseModel):
     color: Optional[str] = ""
     observaciones: Optional[str] = ""
     es_tambo: int = 0
+    rp: Optional[str] = ""
+    pedigree: Optional[str] = ""
+    registro_aaa: Optional[str] = ""
+    categoria_aaa: Optional[str] = ""
+    color_capa: Optional[str] = ""
+    criador_aaa: Optional[str] = ""
+    prefijo_cabana: Optional[str] = ""
+    fecha_registro_aaa: Optional[str] = ""
+    dep_pn: Optional[float] = None
+    dep_pd: Optional[float] = None
+    dep_pf: Optional[float] = None
+    dep_leche: Optional[float] = None
 
 
 class AnimalUpdateModel(BaseModel):
@@ -85,6 +99,18 @@ class AnimalUpdateModel(BaseModel):
     color: Optional[str] = None
     observaciones: Optional[str] = None
     es_tambo: Optional[int] = None
+    rp: Optional[str] = None
+    pedigree: Optional[str] = None
+    registro_aaa: Optional[str] = None
+    categoria_aaa: Optional[str] = None
+    color_capa: Optional[str] = None
+    criador_aaa: Optional[str] = None
+    prefijo_cabana: Optional[str] = None
+    fecha_registro_aaa: Optional[str] = None
+    dep_pn: Optional[float] = None
+    dep_pd: Optional[float] = None
+    dep_pf: Optional[float] = None
+    dep_leche: Optional[float] = None
 
 
 class EventoModel(BaseModel):
@@ -190,6 +216,8 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
         return {
             "sistemas": list(SISTEMAS),
             "tipos_evento": list(TIPOS_EVENTO),
+            "categorias_aaa": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_AAA],
+            "colores_angus": list(COLORES_ANGUS),
         }
 
     @app.get("/api/ganaderia/resumen")
@@ -236,6 +264,8 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
         rodeo_id: Optional[int] = None,
         estado: str = "activo",
         es_tambo: Optional[int] = None,
+        categoria_aaa: Optional[str] = None,
+        raza: Optional[str] = None,
         limit: int = 500,
     ):
         conn = get_db()
@@ -248,6 +278,8 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
                 rodeo_id=rodeo_id,
                 estado=estado,
                 es_tambo=es_tambo,
+                categoria_aaa=categoria_aaa,
+                raza=raza,
                 limit=limit,
             )
         finally:

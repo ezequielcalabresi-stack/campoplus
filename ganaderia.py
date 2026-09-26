@@ -60,7 +60,27 @@ ANIMAL_EXTRA_COLS = (
     ("pedigree", "TEXT"),
     ("condicion_corporal", "REAL"),
     ("estado_repro", "TEXT"),
+    # Genética / Asociación Argentina de Angus (AAA)
+    ("registro_aaa", "TEXT"),
+    ("categoria_aaa", "TEXT"),
+    ("color_capa", "TEXT"),
+    ("criador_aaa", "TEXT"),
+    ("prefijo_cabana", "TEXT"),
+    ("fecha_registro_aaa", "TEXT"),
+    ("dep_pn", "REAL"),
+    ("dep_pd", "REAL"),
+    ("dep_pf", "REAL"),
+    ("dep_leche", "REAL"),
 )
+
+# Nomenclatura de registro usada por la Asociación Argentina de Angus
+CATEGORIAS_AAA = (
+    ("PP", "Puro de Pedigree"),
+    ("PC", "Puro Controlado"),
+    ("SR", "Sin registro AAA / comercial"),
+)
+
+COLORES_ANGUS = ("Negro", "Colorado")
 
 TIPOS_EVENTO = (
     "alta",
@@ -512,12 +532,14 @@ def buscar_animales(
     rodeo_id: Optional[int] = None,
     estado: str = "activo",
     es_tambo: Optional[int] = None,
+    categoria_aaa: Optional[str] = None,
+    raza: Optional[str] = None,
     limit: int = 500,
 ) -> List[dict]:
     cur = conn.cursor()
     where = ["a.empresa_id = ?"]
     params: list = [empresa_id]
-    if estado:
+    if estado and estado != "todos":
         where.append("a.estado = ?")
         params.append(estado)
     if sistema:
@@ -529,13 +551,24 @@ def buscar_animales(
     if es_tambo is not None:
         where.append("a.es_tambo = ?")
         params.append(int(es_tambo))
+    if categoria_aaa:
+        where.append("UPPER(TRIM(COALESCE(a.categoria_aaa,''))) = ?")
+        params.append(categoria_aaa.strip().upper())
+    if raza:
+        where.append("LOWER(COALESCE(a.raza,'')) LIKE ?")
+        params.append(f"%{raza.strip().lower()}%")
     if q:
+        like = f"%{q.strip()}%"
         where.append(
-            "(a.caravana_visual LIKE ? OR a.caravana_electronica LIKE ? "
-            "OR a.nombre LIKE ? OR a.senasa_id LIKE ?)"
+            """(
+                a.caravana_visual LIKE ? OR a.caravana_electronica LIKE ?
+                OR a.nombre LIKE ? OR a.senasa_id LIKE ?
+                OR COALESCE(a.rp,'') LIKE ? OR COALESCE(a.registro_aaa,'') LIKE ?
+                OR COALESCE(a.prefijo_cabana,'') LIKE ?
+            )"""
         )
-        like = f"%{q}%"
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like, like, like])
+    params.append(max(1, min(int(limit or 500), 2000)))
     sql = f"""
         SELECT a.*,
                c.nombre AS categoria_nombre,
@@ -544,10 +577,9 @@ def buscar_animales(
         LEFT JOIN gan_categorias c ON c.id = a.categoria_id
         LEFT JOIN gan_rodeos r ON r.id = a.rodeo_id
         WHERE {' AND '.join(where)}
-        ORDER BY a.caravana_visual COLLATE NOCASE, a.id DESC
+        ORDER BY a.id DESC
         LIMIT ?;
     """
-    params.append(max(1, min(int(limit or 500), 2000)))
     cur.execute(sql, params)
     return [dict(r) for r in cur.fetchall()]
 
@@ -568,6 +600,47 @@ def obtener_animal(conn, empresa_id: int, animal_id: int) -> Optional[dict]:
     )
     row = cur.fetchone()
     return dict(row) if row else None
+
+
+def _aplicar_campos_geneticos(cur, animal_id: int, data: dict) -> None:
+    """Actualiza campos de genética AAA / pedigree si vinieron en el payload."""
+    cat = (data.get("categoria_aaa") or "").strip().upper()
+    if cat:
+        codes = {c[0] for c in CATEGORIAS_AAA}
+        if cat not in codes:
+            for code, nombre in CATEGORIAS_AAA:
+                if cat in nombre.upper() or nombre.upper() in cat:
+                    cat = code
+                    break
+            else:
+                cat = None
+
+    candidatos = {
+        "rp": (data.get("rp") or "").strip() or None,
+        "pedigree": (data.get("pedigree") or "").strip() or None,
+        "registro_aaa": (data.get("registro_aaa") or "").strip() or None,
+        "categoria_aaa": cat,
+        "color_capa": (data.get("color_capa") or data.get("color") or "").strip() or None,
+        "criador_aaa": (data.get("criador_aaa") or "").strip() or None,
+        "prefijo_cabana": (data.get("prefijo_cabana") or "").strip() or None,
+        "fecha_registro_aaa": (data.get("fecha_registro_aaa") or "").strip() or None,
+        "dep_pn": data.get("dep_pn"),
+        "dep_pd": data.get("dep_pd"),
+        "dep_pf": data.get("dep_pf"),
+        "dep_leche": data.get("dep_leche"),
+    }
+    sets, vals = [], []
+    for k, v in candidatos.items():
+        if k not in data and not (k == "color_capa" and data.get("color")):
+            continue
+        if k.startswith("dep_") and data.get(k) is None:
+            continue
+        sets.append(f"{k} = ?")
+        vals.append(v)
+    if not sets:
+        return
+    vals.append(animal_id)
+    cur.execute(f"UPDATE gan_animales SET {', '.join(sets)} WHERE id = ?;", vals)
 
 
 def crear_animal(conn, empresa_id: int, data: dict, usuario: str = "") -> int:
@@ -607,6 +680,7 @@ def crear_animal(conn, empresa_id: int, data: dict, usuario: str = "") -> int:
         ),
     )
     aid = int(cur.lastrowid)
+    _aplicar_campos_geneticos(cur, aid, data)
     _insert_evento(
         cur,
         empresa_id,
@@ -667,6 +741,20 @@ def actualizar_animal(conn, empresa_id: int, animal_id: int, data: dict) -> None
         "color",
         "observaciones",
         "es_tambo",
+        "rp",
+        "pedigree",
+        "condicion_corporal",
+        "estado_repro",
+        "registro_aaa",
+        "categoria_aaa",
+        "color_capa",
+        "criador_aaa",
+        "prefijo_cabana",
+        "fecha_registro_aaa",
+        "dep_pn",
+        "dep_pd",
+        "dep_pf",
+        "dep_leche",
     )
     for k in allowed:
         if k in data:
@@ -1157,7 +1245,33 @@ def ficha_animal(conn, empresa_id: int, animal_id: int) -> Optional[dict]:
 
     return {
         "animal": animal,
-        "genetica": {"madre": madre, "padre": padre, "crias": crias},
+        "genetica": {
+            "madre": madre,
+            "padre": padre,
+            "crias": crias,
+            "pedigree": _armar_pedigree(conn, empresa_id, animal, profundidad=3),
+            "aaa": {
+                "categorias": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_AAA],
+                "colores": list(COLORES_ANGUS),
+                "registro": animal.get("registro_aaa"),
+                "categoria": animal.get("categoria_aaa"),
+                "categoria_nombre": next(
+                    (n for c, n in CATEGORIAS_AAA if c == (animal.get("categoria_aaa") or "")),
+                    None,
+                ),
+                "color_capa": animal.get("color_capa") or animal.get("color"),
+                "criador": animal.get("criador_aaa"),
+                "prefijo": animal.get("prefijo_cabana"),
+                "fecha_registro": animal.get("fecha_registro_aaa"),
+                "deps": {
+                    "pn": animal.get("dep_pn"),
+                    "pd": animal.get("dep_pd"),
+                    "pf": animal.get("dep_pf"),
+                    "leche": animal.get("dep_leche"),
+                },
+                "es_angus": "angus" in (animal.get("raza") or "").lower(),
+            },
+        },
         "resumen_repro": {
             "estado_repro": animal.get("estado_repro"),
             "ultimo_celo": _ultimo({"celo"}),
@@ -1184,6 +1298,47 @@ def ficha_animal(conn, empresa_id: int, animal_id: int) -> Optional[dict]:
             ),
         },
     }
+
+
+def _nodo_pedigree(conn, empresa_id: int, animal: Optional[dict], profundidad: int) -> Optional[dict]:
+    if not animal or profundidad < 0:
+        return None
+    cur = conn.cursor()
+
+    def _load(aid):
+        if not aid:
+            return None
+        cur.execute(
+            """
+            SELECT id, caravana_visual, nombre, registro_aaa, categoria_aaa,
+                   raza, color_capa, sexo, prefijo_cabana, madre_id, padre_id
+            FROM gan_animales WHERE empresa_id = ? AND id = ?;
+            """,
+            (empresa_id, aid),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    madre = _load(animal.get("madre_id"))
+    padre = _load(animal.get("padre_id"))
+    return {
+        "id": animal.get("id"),
+        "etiqueta": animal.get("caravana_visual")
+        or animal.get("nombre")
+        or (f"#{animal.get('id')}" if animal.get("id") else "—"),
+        "registro_aaa": animal.get("registro_aaa"),
+        "categoria_aaa": animal.get("categoria_aaa"),
+        "raza": animal.get("raza"),
+        "color_capa": animal.get("color_capa"),
+        "sexo": animal.get("sexo"),
+        "prefijo_cabana": animal.get("prefijo_cabana"),
+        "madre": _nodo_pedigree(conn, empresa_id, madre, profundidad - 1) if profundidad > 0 else None,
+        "padre": _nodo_pedigree(conn, empresa_id, padre, profundidad - 1) if profundidad > 0 else None,
+    }
+
+
+def _armar_pedigree(conn, empresa_id: int, animal: dict, profundidad: int = 3) -> dict:
+    return _nodo_pedigree(conn, empresa_id, animal, profundidad) or {}
 
 
 def importar_eventos_masivo(
