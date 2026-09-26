@@ -8117,36 +8117,60 @@ app.add_middleware(AuditMiddleware, get_db=get_db, get_empresa_activa_id=get_emp
 app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
 
 def _restablecer_clave_eze_una_vez() -> None:
-    """Una vez por versión de flag: la clave de eze vuelve a campo+.
-    Corre siempre (local o Render). Flag v3: el reset anterior no aplicó
-    porque dependía de CAMPO_DATA_DIR o la pass del seed no era campo+.
-    """
+    """Desbloqueo de emergencia: asegura usuario eze con pass campo+ en la DB activa.
+    Corre en cada arranque hasta que exista el flag v4 (así no depende del seed)."""
     if not os.path.exists(DB_PATH):
+        print(f"[auth] reset eze: no existe DB {DB_PATH}")
         return
-    flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(DB_PATH)
+    flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
     os.makedirs(flag_dir, exist_ok=True)
-    flag = os.path.join(flag_dir, ".clave_eze_lista_v3")
+    flag = os.path.join(flag_dir, ".clave_eze_lista_v4")
     if os.path.exists(flag):
         return
     from saas_auth import _hash_password
+    from datetime import datetime
+
+    ph = _hash_password("campo+")
+    ahora = datetime.now().isoformat(timespec="seconds")
     conn = sqlite3.connect(DB_PATH)
     try:
-        cur = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             UPDATE usuarios_sistema
-            SET password_hash = ?
-            WHERE LOWER(TRIM(COALESCE(login, ''))) = 'eze'
-               OR LOWER(TRIM(COALESCE(email, ''))) = 'ezequielcalabresi@gmail.com';
+            SET password_hash = ?, login = 'eze', activo = 1, es_superadmin = 1,
+                email = COALESCE(NULLIF(TRIM(email), ''), 'ezequielcalabresi@gmail.com')
+            WHERE LOWER(TRIM(COALESCE(login, ''))) IN ('eze', 'ezequielcalabresi@gmail.com')
+               OR LOWER(TRIM(COALESCE(email, ''))) = 'ezequielcalabresi@gmail.com'
+               OR id = 1
+               OR LOWER(TRIM(COALESCE(nombre, ''))) LIKE '%ezequiel%calabresi%';
             """,
-            (_hash_password("campo+"),),
+            (ph,),
         )
-        conn.commit()
         actualizados = cur.rowcount
-        print(f"[auth] reset clave eze: {actualizados} fila(s) en {DB_PATH}")
         if actualizados <= 0:
-            return
+            cur.execute(
+                """
+                INSERT INTO usuarios_sistema (
+                    nombre, email, rol, activo, created_at,
+                    password_hash, empresa_id, es_superadmin, login, cuenta_id
+                ) VALUES (?, ?, ?, 1, ?, ?, NULL, 1, 'eze', NULL);
+                """,
+                (
+                    "Ezequiel Calabresi",
+                    "ezequielcalabresi@gmail.com",
+                    "Administrador Total",
+                    ahora,
+                    ph,
+                ),
+            )
+            actualizados = cur.rowcount
+            print(f"[auth] reset eze: INSERT nuevo usuario ({actualizados}) en {DB_PATH}")
+        else:
+            print(f"[auth] reset eze: UPDATE {actualizados} fila(s) en {DB_PATH}")
+        conn.commit()
     except sqlite3.OperationalError as exc:
-        print(f"[auth] reset clave eze falló: {exc}")
+        print(f"[auth] reset eze falló: {exc}")
         return
     finally:
         conn.close()
