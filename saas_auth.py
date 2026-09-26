@@ -26,6 +26,8 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_almacen": 1,
         "mod_ganaderia": 1,
         "mod_tambo": 1,
+        "mod_porcino": 1,
+        "mod_aviar": 1,
         "mod_sicore": 1,
         "mod_arba": 1,
         "mod_contabilidad": 1,
@@ -38,6 +40,8 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_almacen": 1,
         "mod_ganaderia": 0,
         "mod_tambo": 0,
+        "mod_porcino": 0,
+        "mod_aviar": 0,
         "mod_sicore": 1,
         "mod_arba": 1,
         "mod_contabilidad": 1,
@@ -50,6 +54,8 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_almacen": 0,
         "mod_ganaderia": 1,
         "mod_tambo": 1,
+        "mod_porcino": 1,
+        "mod_aviar": 1,
         "mod_sicore": 0,
         "mod_arba": 0,
         "mod_contabilidad": 1,
@@ -62,6 +68,8 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_almacen": 0,
         "mod_ganaderia": 0,
         "mod_tambo": 0,
+        "mod_porcino": 0,
+        "mod_aviar": 0,
         "mod_sicore": 1,
         "mod_arba": 1,
         "mod_contabilidad": 1,
@@ -74,6 +82,8 @@ PLANES: Dict[str, Dict[str, int]] = {
         "mod_almacen": 1,
         "mod_ganaderia": 1,
         "mod_tambo": 1,
+        "mod_porcino": 1,
+        "mod_aviar": 1,
         "mod_sicore": 1,
         "mod_arba": 1,
         "mod_contabilidad": 1,
@@ -88,6 +98,8 @@ MOD_KEYS = [
     "mod_almacen",
     "mod_ganaderia",
     "mod_tambo",
+    "mod_porcino",
+    "mod_aviar",
     "mod_sicore",
     "mod_arba",
     "mod_contabilidad",
@@ -138,7 +150,10 @@ def init_saas_schema(cursor: sqlite3.Cursor) -> None:
         ("mod_almacen", "INTEGER DEFAULT 1"),
         ("mod_ganaderia", "INTEGER DEFAULT 1"),
         ("mod_tambo", "INTEGER DEFAULT 1"),
+        ("mod_porcino", "INTEGER DEFAULT 1"),
+        ("mod_aviar", "INTEGER DEFAULT 1"),
         ("mod_sicore", "INTEGER DEFAULT 1"),
+
         ("mod_arba", "INTEGER DEFAULT 1"),
         ("mod_contabilidad", "INTEGER DEFAULT 1"),
         ("mod_liquidaciones", "INTEGER DEFAULT 1"),
@@ -271,6 +286,8 @@ class EmpresaSaasModel(BaseModel):
     mod_almacen: Optional[int] = None
     mod_ganaderia: Optional[int] = None
     mod_tambo: Optional[int] = None
+    mod_porcino: Optional[int] = None
+    mod_aviar: Optional[int] = None
     mod_sicore: Optional[int] = None
     mod_arba: Optional[int] = None
     mod_contabilidad: Optional[int] = None

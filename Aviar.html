@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Aviar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-6xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Aviar <span class="text-sm font-normal text-amber-700">Parrilleros · Ponedoras · Reproductoras</span></h1>
+            <p class="text-xs text-slate-500 mt-1">Gestión por lote/galpón: postura, mortalidad, alimento, faena.</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
+        </div>
+    </div>
+
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"></div>
+
+    <div class="flex gap-2 mb-4 flex-wrap">
+        <button type="button" onclick="showTab('lotes')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-amber-700 text-white" data-tab="lotes">Lotes</button>
+        <button type="button" onclick="showTab('prod')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="prod">Producción diaria</button>
+        <button type="button" onclick="showTab('evento')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="evento">Eventos</button>
+        <button type="button" onclick="showTab('alta')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="alta">Ingreso lote</button>
+    </div>
+
+    <section id="tab-lotes" class="tabPanel">
+        <div class="flex flex-wrap gap-2 mb-3">
+            <input id="filtroQ" class="border rounded px-2 py-1.5 text-sm flex-1 min-w-[140px]" placeholder="Código / línea" onkeydown="if(event.key==='Enter')cargarLotes()">
+            <select id="filtroTipo" class="border rounded px-2 py-1.5 text-sm" onchange="cargarLotes()">
+                <option value="">Todos los tipos</option>
+            </select>
+            <button onclick="cargarLotes()" class="bg-slate-800 text-white px-3 py-1.5 rounded text-sm font-bold">Buscar</button>
+        </div>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Código</th>
+                        <th class="p-2 text-left">Tipo</th>
+                        <th class="p-2 text-left">Línea</th>
+                        <th class="p-2 text-left">Galpón</th>
+                        <th class="p-2 text-right">Aves</th>
+                        <th class="p-2 text-right">Edad d</th>
+                        <th class="p-2 text-right">Peso</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyLotes" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="tab-prod" class="tabPanel hidden">
+        <div class="grid md:grid-cols-2 gap-6">
+            <form class="border rounded-xl p-4 bg-amber-50/40" onsubmit="return guardarProd(event)">
+                <h2 class="font-bold text-slate-800 mb-3">Carga diaria del lote</h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-600">Lote</label>
+                        <select id="pr_lote" class="mt-1 w-full border rounded p-2 text-sm" required></select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Fecha</label>
+                        <input id="pr_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Huevos</label>
+                        <input id="pr_huevos" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Huevos rotos</label>
+                        <input id="pr_rotos" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Mortalidad</label>
+                        <input id="pr_mort" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Descartes</label>
+                        <input id="pr_desc" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Alimento kg</label>
+                        <input id="pr_ali" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Peso prom. kg</label>
+                        <input id="pr_peso" type="number" step="0.001" class="mt-1 w-full border rounded p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Temp. °C</label>
+                        <input id="pr_temp" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-600">Observaciones</label>
+                        <input id="pr_obs" class="mt-1 w-full border rounded p-2 text-sm">
+                    </div>
+                    <div class="col-span-2">
+                        <button class="bg-amber-700 text-white px-4 py-2 rounded-md text-sm font-bold">Guardar día</button>
+                    </div>
+                </div>
+            </form>
+            <div>
+                <h2 class="font-bold text-slate-800 mb-3">Últimos registros</h2>
+                <div class="overflow-x-auto border rounded-lg max-h-96 overflow-y-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-100 text-xs uppercase sticky top-0">
+                            <tr>
+                                <th class="p-2 text-left">Fecha</th>
+                                <th class="p-2 text-left">Lote</th>
+                                <th class="p-2 text-right">Huevos</th>
+                                <th class="p-2 text-right">Mort.</th>
+                                <th class="p-2 text-right">Alim.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyProd" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="tab-evento" class="tabPanel hidden">
+        <form class="border rounded-xl p-4 max-w-xl" onsubmit="return guardarEvento(event)">
+            <h2 class="font-bold text-slate-800 mb-3">Evento del lote</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Lote</label>
+                    <select id="ev_lote" class="mt-1 w-full border rounded p-2 text-sm"></select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Fecha</label>
+                    <input id="ev_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Tipo</label>
+                    <select id="ev_tipo" class="mt-1 w-full border rounded p-2 text-sm"></select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Cantidad</label>
+                    <input id="ev_cant" type="number" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Peso kg</label>
+                    <input id="ev_peso" type="number" step="0.001" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Detalle / vacuna</label>
+                    <input id="ev_det" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div class="col-span-2">
+                    <button class="bg-slate-800 text-white px-4 py-2 rounded-md text-sm font-bold">Registrar</button>
+                </div>
+            </div>
+        </form>
+    </section>
+
+    <section id="tab-alta" class="tabPanel hidden">
+        <form class="border rounded-xl p-4 grid md:grid-cols-3 gap-3" onsubmit="return guardarLote(event)">
+            <div>
+                <label class="text-xs font-bold text-slate-600">Código lote</label>
+                <input id="a_codigo" class="mt-1 w-full border rounded p-2 text-sm" required placeholder="Ej. G1-2026-01">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Tipo</label>
+                <select id="a_tipo" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Línea genética</label>
+                <select id="a_linea" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Galpón</label>
+                <select id="a_galpon" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Fecha ingreso</label>
+                <input id="a_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Aves iniciales</label>
+                <input id="a_n" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Edad al ingreso (días)</label>
+                <input id="a_edad" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Peso ingreso prom. kg</label>
+                <input id="a_peso" type="number" step="0.001" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Sexo</label>
+                <select id="a_sexo" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option>Mixto</option><option>Hembras</option><option>Machos</option>
+                </select>
+            </div>
+            <div class="md:col-span-3">
+                <button class="bg-amber-700 text-white px-5 py-2.5 rounded-md text-sm font-bold">Ingresar lote</button>
+            </div>
+        </form>
+    </section>
+</div>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let META = { tipos_lote: [], lineas: [], tipos_evento: [] };
+let LOTES = [];
+
+function showTab(id) {
+    document.querySelectorAll('.tabPanel').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-' + id).classList.remove('hidden');
+    document.querySelectorAll('.tabBtn').forEach(b => {
+        const on = b.dataset.tab === id;
+        b.className = 'tabBtn px-3 py-1.5 rounded-md text-sm font-bold ' + (on ? 'bg-amber-700 text-white' : 'bg-slate-100');
+    });
+}
+
+function fillLoteSelects() {
+    const opts = LOTES.map(l => `<option value="${l.id}">${esc(l.codigo)} · ${esc(l.tipo)} (${esc(l.n_actual)} aves)</option>`).join('');
+    document.getElementById('pr_lote').innerHTML = opts;
+    document.getElementById('ev_lote').innerHTML = opts;
+}
+
+async function init() {
+    const hoy = new Date().toISOString().slice(0,10);
+    document.getElementById('pr_fecha').value = hoy;
+    document.getElementById('ev_fecha').value = hoy;
+    document.getElementById('a_fecha').value = hoy;
+    META = await fetch('/api/aviar/meta').then(r => r.json());
+    const galpones = await fetch('/api/aviar/galpones').then(r => r.json());
+    document.getElementById('filtroTipo').innerHTML = '<option value="">Todos los tipos</option>' +
+        META.tipos_lote.map(t => `<option value="${esc(t.codigo)}">${esc(t.nombre)}</option>`).join('');
+    document.getElementById('a_tipo').innerHTML = META.tipos_lote.map(t => `<option value="${esc(t.codigo)}">${esc(t.nombre)}</option>`).join('');
+    document.getElementById('a_linea').innerHTML = META.lineas.map(l => `<option>${esc(l)}</option>`).join('');
+    document.getElementById('ev_tipo').innerHTML = META.tipos_evento.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    document.getElementById('a_galpon').innerHTML = '<option value="">—</option>' +
+        galpones.map(g => `<option value="${g.id}">${esc(g.nombre)}</option>`).join('');
+    await Promise.all([cargarResumen(), cargarLotes(), cargarProd()]);
+}
+
+async function cargarResumen() {
+    const r = await fetch('/api/aviar/resumen').then(x => x.json());
+    document.getElementById('kpis').innerHTML = [
+        ['Lotes activos', r.lotes_activos],
+        ['Aves actuales', r.aves_actuales],
+        ['Huevos hoy', r.huevos_hoy],
+        ['Huevos 7d', r.huevos_7d],
+        ['Mortalidad 7d', r.mortalidad_7d],
+        ['Alimento 7d (kg)', Number(r.alimento_kg_7d || 0).toFixed(0)],
+    ].map(([lab,v]) => `
+        <div class="border rounded-xl p-3 bg-amber-50/50">
+            <div class="text-[10px] font-bold uppercase text-amber-800">${esc(lab)}</div>
+            <div class="text-xl font-extrabold text-slate-800">${esc(v)}</div>
+        </div>`).join('');
+}
+
+async function cargarLotes() {
+    const params = new URLSearchParams({ estado: 'activo' });
+    const q = document.getElementById('filtroQ').value.trim();
+    const tipo = document.getElementById('filtroTipo').value;
+    if (q) params.set('q', q);
+    if (tipo) params.set('tipo', tipo);
+    LOTES = await fetch('/api/aviar/lotes?' + params).then(r => r.json());
+    fillLoteSelects();
+    const nomTipo = Object.fromEntries(META.tipos_lote.map(t => [t.codigo, t.nombre]));
+    document.getElementById('tbodyLotes').innerHTML = LOTES.map(l => `
+        <tr class="hover:bg-slate-50">
+            <td class="p-2 font-semibold">${esc(l.codigo)}</td>
+            <td class="p-2 text-xs">${esc(nomTipo[l.tipo] || l.tipo)}</td>
+            <td class="p-2 text-xs">${esc(l.linea_genetica || '')}</td>
+            <td class="p-2">${esc(l.galpon_nombre || '')}</td>
+            <td class="p-2 text-right font-mono">${esc(l.n_actual)}</td>
+            <td class="p-2 text-right">${esc(l.edad_dias ?? '—')}</td>
+            <td class="p-2 text-right font-mono">${l.peso_actual_prom != null ? Number(l.peso_actual_prom).toFixed(3) : '—'}</td>
+            <td class="p-2"><a href="LoteAviarFicha.html?id=${l.id}" class="text-amber-700 text-xs font-bold hover:underline">Ficha</a></td>
+        </tr>`).join('') || '<tr><td colspan="8" class="p-6 text-center text-slate-400">Sin lotes activos</td></tr>';
+}
+
+async function cargarProd() {
+    const rows = await fetch('/api/aviar/produccion?limit=40').then(r => r.json());
+    document.getElementById('tbodyProd').innerHTML = rows.map(p => `
+        <tr>
+            <td class="p-2 text-xs">${esc(p.fecha)}</td>
+            <td class="p-2 font-semibold">${esc(p.lote_codigo || p.lote_id)}</td>
+            <td class="p-2 text-right">${esc(p.huevos)}</td>
+            <td class="p-2 text-right">${esc(p.mortalidad)}</td>
+            <td class="p-2 text-right font-mono">${p.consumo_alimento_kg != null ? Number(p.consumo_alimento_kg).toFixed(0) : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin registros</td></tr>';
+}
+
+async function guardarProd(ev) {
+    ev.preventDefault();
+    const body = {
+        lote_id: Number(document.getElementById('pr_lote').value),
+        fecha: document.getElementById('pr_fecha').value,
+        huevos: Number(document.getElementById('pr_huevos').value) || 0,
+        huevos_rotos: Number(document.getElementById('pr_rotos').value) || 0,
+        mortalidad: Number(document.getElementById('pr_mort').value) || 0,
+        descartes: Number(document.getElementById('pr_desc').value) || 0,
+        consumo_alimento_kg: document.getElementById('pr_ali').value ? Number(document.getElementById('pr_ali').value) : null,
+        peso_promedio: document.getElementById('pr_peso').value ? Number(document.getElementById('pr_peso').value) : null,
+        temperatura_c: document.getElementById('pr_temp').value ? Number(document.getElementById('pr_temp').value) : null,
+        observaciones: document.getElementById('pr_obs').value.trim(),
+    };
+    const res = await fetch('/api/aviar/produccion', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Producción guardada');
+    await Promise.all([cargarProd(), cargarLotes(), cargarResumen()]);
+    return false;
+}
+
+async function guardarEvento(ev) {
+    ev.preventDefault();
+    const body = {
+        lote_id: Number(document.getElementById('ev_lote').value) || null,
+        fecha: document.getElementById('ev_fecha').value,
+        tipo: document.getElementById('ev_tipo').value,
+        cantidad: document.getElementById('ev_cant').value ? Number(document.getElementById('ev_cant').value) : null,
+        peso_kg: document.getElementById('ev_peso').value ? Number(document.getElementById('ev_peso').value) : null,
+        detalle: document.getElementById('ev_det').value.trim(),
+    };
+    const res = await fetch('/api/aviar/eventos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Evento registrado');
+    await Promise.all([cargarLotes(), cargarResumen()]);
+    return false;
+}
+
+async function guardarLote(ev) {
+    ev.preventDefault();
+    const body = {
+        codigo: document.getElementById('a_codigo').value.trim(),
+        tipo: document.getElementById('a_tipo').value,
+        linea_genetica: document.getElementById('a_linea').value,
+        galpon_id: Number(document.getElementById('a_galpon').value) || null,
+        fecha_ingreso: document.getElementById('a_fecha').value,
+        n_inicial: Number(document.getElementById('a_n').value) || 0,
+        edad_dias_ingreso: Number(document.getElementById('a_edad').value) || 0,
+        peso_ingreso_prom: document.getElementById('a_peso').value ? Number(document.getElementById('a_peso').value) : null,
+        sexo: document.getElementById('a_sexo').value,
+    };
+    const res = await fetch('/api/aviar/lotes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    const out = await res.json();
+    alert('Lote #' + out.id + ' ingresado');
+    showTab('lotes');
+    await Promise.all([cargarLotes(), cargarResumen()]);
+    return false;
+}
+
+init().catch(e => console.error(e));
+</script>
+</body>
+</html>

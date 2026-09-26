@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Ficha porcina</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-5xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800" id="titulo">Ficha porcina</h1>
+            <p class="text-xs text-slate-500" id="subtitulo">Trazabilidad individual del plantel</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="Porcino.html" class="bg-orange-700 text-white px-3 py-2 rounded-md text-sm font-bold">← Porcino</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm">Dashboard</a>
+        </div>
+    </div>
+
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
+    <dl id="idBox" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-6"></dl>
+
+    <div class="flex gap-2 mb-4 flex-wrap">
+        <button type="button" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-orange-700 text-white" data-tab="repro" onclick="showTab('repro')">Reproducción</button>
+        <button type="button" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="genetica" onclick="showTab('genetica')">Genética</button>
+        <button type="button" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="eventos" onclick="showTab('eventos')">Eventos</button>
+    </div>
+
+    <section id="tab-repro" class="tabPanel">
+        <h3 class="font-bold text-sm text-slate-700 mb-2">Historial de partos</h3>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-right">NV</th>
+                        <th class="p-2 text-right">NM</th>
+                        <th class="p-2 text-right">Mom</th>
+                        <th class="p-2 text-right">Destetados</th>
+                        <th class="p-2 text-left">Destete</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyPartos" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="tab-genetica" class="tabPanel hidden">
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="border rounded-xl p-4"><h3 class="font-bold mb-2">Madre</h3><div id="madreBox" class="text-sm"></div></div>
+            <div class="border rounded-xl p-4"><h3 class="font-bold mb-2">Padre</h3><div id="padreBox" class="text-sm"></div></div>
+        </div>
+        <h3 class="font-bold text-sm text-slate-700 mb-2">Crías</h3>
+        <div id="criasBox" class="text-sm text-slate-600"></div>
+    </section>
+
+    <section id="tab-eventos" class="tabPanel hidden">
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-left">Tipo</th>
+                        <th class="p-2 text-right">Peso</th>
+                        <th class="p-2 text-left">Detalle</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyEventos" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const params = new URLSearchParams(location.search);
+const animalId = Number(params.get('id'));
+
+function showTab(id) {
+    document.querySelectorAll('.tabPanel').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-' + id).classList.remove('hidden');
+    document.querySelectorAll('.tabBtn').forEach(b => {
+        const on = b.dataset.tab === id;
+        b.className = 'tabBtn px-3 py-1.5 rounded-md text-sm font-bold ' + (on ? 'bg-orange-700 text-white' : 'bg-slate-100');
+    });
+}
+function kv(k, v) {
+    return `<div><dt class="text-[10px] uppercase font-bold text-slate-500">${k}</dt><dd class="font-semibold text-slate-800">${v || '—'}</dd></div>`;
+}
+function linkA(a) {
+    if (!a) return '<span class="text-slate-400">Sin dato</span>';
+    return `<a class="text-orange-700 font-bold hover:underline" href="CerdoFicha.html?id=${a.id}">${esc(a.caravana || a.nombre || ('#'+a.id))}</a>
+        <div class="text-xs text-slate-500">${esc(a.categoria || '')} · ${esc(a.raza || '')}</div>`;
+}
+
+async function load() {
+    if (!animalId) { alert('Falta id'); return; }
+    const f = await fetch('/api/porcino/animales/' + animalId + '/ficha').then(r => {
+        if (!r.ok) throw new Error('No encontrado');
+        return r.json();
+    });
+    const a = f.animal;
+    const r = f.resumen_repro || {};
+    document.getElementById('titulo').textContent = a.caravana || a.nombre || ('Animal #' + a.id);
+    document.getElementById('subtitulo').textContent = (f.categoria_nombre || a.categoria) + (a.linea_genetica ? ' · ' + a.linea_genetica : '');
+    document.getElementById('kpis').innerHTML = [
+        ['Partos', r.n_partos],
+        ['Prom. NV/parto', r.prom_nv_parto ?? '—'],
+        ['Prom. destete', r.prom_dest_parto ?? '—'],
+        ['Último parto', r.fecha_ultimo_parto || '—'],
+    ].map(([lab,v]) => `<div class="border rounded-xl p-3 bg-orange-50/50"><div class="text-[10px] font-bold uppercase text-orange-800">${lab}</div><div class="text-lg font-extrabold">${esc(v)}</div></div>`).join('');
+    document.getElementById('idBox').innerHTML = [
+        kv('ID', a.id), kv('Caravana', esc(a.caravana)), kv('Sexo', esc(a.sexo)),
+        kv('Raza', esc(a.raza)), kv('Línea', esc(a.linea_genetica)), kv('Sala', esc(a.sala_nombre)),
+        kv('Peso', a.peso_ultimo != null ? Number(a.peso_ultimo).toFixed(1) + ' kg' : '—'),
+        kv('Estado', esc(a.estado)),
+    ].join('');
+    document.getElementById('tbodyPartos').innerHTML = (f.partos || []).map(p => `
+        <tr>
+            <td class="p-2">${esc(p.fecha)}</td>
+            <td class="p-2 text-right">${esc(p.nacidos_vivos)}</td>
+            <td class="p-2 text-right">${esc(p.nacidos_muertos)}</td>
+            <td class="p-2 text-right">${esc(p.momificados)}</td>
+            <td class="p-2 text-right">${p.destetados != null ? esc(p.destetados) : '—'}</td>
+            <td class="p-2 text-xs">${esc(p.fecha_destete || '')}</td>
+        </tr>`).join('') || '<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin partos</td></tr>';
+    document.getElementById('madreBox').innerHTML = linkA(f.genetica?.madre);
+    document.getElementById('padreBox').innerHTML = linkA(f.genetica?.padre);
+    document.getElementById('criasBox').innerHTML = (f.genetica?.crias || []).map(c =>
+        `<a class="inline-block mr-3 mb-1 text-orange-700 font-semibold hover:underline" href="CerdoFicha.html?id=${c.id}">${esc(c.caravana || ('#'+c.id))}</a>`
+    ).join('') || '<span class="text-slate-400">Sin crías cargadas</span>';
+    document.getElementById('tbodyEventos').innerHTML = (f.eventos || []).map(e => `
+        <tr>
+            <td class="p-2 text-xs">${esc(e.fecha)}</td>
+            <td class="p-2 font-semibold">${esc(e.tipo)}</td>
+            <td class="p-2 text-right font-mono">${e.peso_kg != null ? Number(e.peso_kg).toFixed(1) : '—'}</td>
+            <td class="p-2 text-xs text-slate-600">${esc(e.detalle)}</td>
+        </tr>`).join('') || '<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin eventos</td></tr>';
+}
+load().catch(e => { console.error(e); alert('No se pudo cargar la ficha'); });
+</script>
+</body>
+</html>

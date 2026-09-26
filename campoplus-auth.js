@@ -209,9 +209,9 @@
     "administracion / carga": ["mod_bancos", "mod_contabilidad", "mod_sicore", "mod_arba", "mod_liquidaciones", "es_agente_retencion"],
     "gestión agropecuaria": ["mod_agro", "mod_almacen"],
     "gestion agropecuaria": ["mod_agro", "mod_almacen"],
-    "ganadería": ["mod_ganaderia", "mod_tambo"],
-    "ganaderia": ["mod_ganaderia", "mod_tambo"],
-    "operativo / campo": ["mod_agro", "mod_ganaderia", "mod_tambo", "mod_almacen"]
+    "ganadería": ["mod_ganaderia", "mod_tambo", "mod_porcino", "mod_aviar"],
+    "ganaderia": ["mod_ganaderia", "mod_tambo", "mod_porcino", "mod_aviar"],
+    "operativo / campo": ["mod_agro", "mod_ganaderia", "mod_tambo", "mod_porcino", "mod_aviar", "mod_almacen"]
   };
 
   function moduloPagado(emp, key) {

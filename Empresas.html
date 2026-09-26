@@ -146,6 +146,8 @@
             mod_almacen: 'Almacén',
             mod_ganaderia: 'Ganadería',
             mod_tambo: 'Tambo',
+            mod_porcino: 'Porcino',
+            mod_aviar: 'Aviar',
             mod_sicore: 'SICORE',
             mod_arba: 'ARBA',
             mod_contabilidad: 'Contabilidad',
@@ -194,9 +196,9 @@
                 // presets vienen del backend en PLANES - usamos defaults locales si no hay detalle
                 planPresets = {
                     full: Object.fromEntries(Object.keys(MOD_LABELS).map(k => [k, 1])),
-                    agro: { mod_bancos:1, mod_agro:1, mod_almacen:1, mod_ganaderia:0, mod_tambo:0, mod_sicore:1, mod_arba:1, mod_contabilidad:1, mod_liquidaciones:1, es_agente_retencion:1 },
-                    ganadero: { mod_bancos:1, mod_agro:0, mod_almacen:0, mod_ganaderia:1, mod_tambo:1, mod_sicore:0, mod_arba:0, mod_contabilidad:1, mod_liquidaciones:1, es_agente_retencion:0 },
-                    admin: { mod_bancos:1, mod_agro:0, mod_almacen:0, mod_ganaderia:0, mod_tambo:0, mod_sicore:1, mod_arba:1, mod_contabilidad:1, mod_liquidaciones:0, es_agente_retencion:1 },
+                    agro: { mod_bancos:1, mod_agro:1, mod_almacen:1, mod_ganaderia:0, mod_tambo:0, mod_porcino:0, mod_aviar:0, mod_sicore:1, mod_arba:1, mod_contabilidad:1, mod_liquidaciones:1, es_agente_retencion:1 },
+                    ganadero: { mod_bancos:1, mod_agro:0, mod_almacen:0, mod_ganaderia:1, mod_tambo:1, mod_porcino:1, mod_aviar:1, mod_sicore:0, mod_arba:0, mod_contabilidad:1, mod_liquidaciones:1, es_agente_retencion:0 },
+                    admin: { mod_bancos:1, mod_agro:0, mod_almacen:0, mod_ganaderia:0, mod_tambo:0, mod_porcino:0, mod_aviar:0, mod_sicore:1, mod_arba:1, mod_contabilidad:1, mod_liquidaciones:0, es_agente_retencion:0 },
                     trial: Object.fromEntries(Object.keys(MOD_LABELS).map(k => [k, 1])),
                 };
             } catch (_) {}

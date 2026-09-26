@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Ficha lote aviar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-5xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800" id="titulo">Ficha de lote</h1>
+            <p class="text-xs text-slate-500" id="subtitulo">Seguimiento productivo del galpón</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="Aviar.html" class="bg-amber-700 text-white px-3 py-2 rounded-md text-sm font-bold">← Aviar</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm">Dashboard</a>
+        </div>
+    </div>
+
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
+    <dl id="idBox" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-6"></dl>
+
+    <div class="flex gap-2 mb-4 flex-wrap">
+        <button type="button" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-amber-700 text-white" data-tab="prod" onclick="showTab('prod')">Producción</button>
+        <button type="button" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="eventos" onclick="showTab('eventos')">Eventos</button>
+    </div>
+
+    <section id="tab-prod" class="tabPanel">
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-right">Huevos</th>
+                        <th class="p-2 text-right">Rotos</th>
+                        <th class="p-2 text-right">Mort.</th>
+                        <th class="p-2 text-right">Alimento</th>
+                        <th class="p-2 text-right">Peso</th>
+                        <th class="p-2 text-right">Temp.</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyProd" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="tab-eventos" class="tabPanel hidden">
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-left">Tipo</th>
+                        <th class="p-2 text-right">Cant.</th>
+                        <th class="p-2 text-left">Detalle</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyEventos" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const loteId = Number(new URLSearchParams(location.search).get('id'));
+
+function showTab(id) {
+    document.querySelectorAll('.tabPanel').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-' + id).classList.remove('hidden');
+    document.querySelectorAll('.tabBtn').forEach(b => {
+        const on = b.dataset.tab === id;
+        b.className = 'tabBtn px-3 py-1.5 rounded-md text-sm font-bold ' + (on ? 'bg-amber-700 text-white' : 'bg-slate-100');
+    });
+}
+function kv(k, v) {
+    return `<div><dt class="text-[10px] uppercase font-bold text-slate-500">${k}</dt><dd class="font-semibold text-slate-800">${v || '—'}</dd></div>`;
+}
+
+async function load() {
+    if (!loteId) { alert('Falta id'); return; }
+    const f = await fetch('/api/aviar/lotes/' + loteId + '/ficha').then(r => {
+        if (!r.ok) throw new Error('No encontrado');
+        return r.json();
+    });
+    const l = f.lote;
+    const k = f.kpis || {};
+    document.getElementById('titulo').textContent = l.codigo;
+    document.getElementById('subtitulo').textContent =
+        (l.tipo || '') + (l.linea_genetica ? ' · ' + l.linea_genetica : '') +
+        (l.galpon_nombre ? ' · ' + l.galpon_nombre : '');
+    document.getElementById('kpis').innerHTML = [
+        ['Aves actuales', k.n_actual],
+        ['Edad (días)', k.edad_dias ?? '—'],
+        ['% mortalidad', k.pct_mortalidad != null ? k.pct_mortalidad + '%' : '—'],
+        ['% postura (último día)', k.pct_postura_ultimo_dia != null ? k.pct_postura_ultimo_dia + '%' : '—'],
+        ['Huevos acum.', k.huevos_acum],
+        ['Alimento kg', k.alimento_kg_acum],
+        ['Ganancia peso', k.ganancia_peso_kg != null ? k.ganancia_peso_kg + ' kg' : '—'],
+        ['Estado', l.estado],
+    ].map(([lab,v]) => `<div class="border rounded-xl p-3 bg-amber-50/50"><div class="text-[10px] font-bold uppercase text-amber-800">${lab}</div><div class="text-lg font-extrabold">${esc(v)}</div></div>`).join('');
+    document.getElementById('idBox').innerHTML = [
+        kv('ID', l.id), kv('Ingreso', esc(l.fecha_ingreso)), kv('Iniciales', esc(l.n_inicial)),
+        kv('Sexo', esc(l.sexo)), kv('Peso ingreso', l.peso_ingreso_prom != null ? Number(l.peso_ingreso_prom).toFixed(3) + ' kg' : '—'),
+        kv('Peso actual', l.peso_actual_prom != null ? Number(l.peso_actual_prom).toFixed(3) + ' kg' : '—'),
+        kv('Granja', esc(l.granja_nombre)), kv('Galpón', esc(l.galpon_nombre)),
+    ].join('');
+    document.getElementById('tbodyProd').innerHTML = (f.produccion || []).map(p => `
+        <tr>
+            <td class="p-2 text-xs">${esc(p.fecha)}</td>
+            <td class="p-2 text-right">${esc(p.huevos)}</td>
+            <td class="p-2 text-right">${esc(p.huevos_rotos)}</td>
+            <td class="p-2 text-right">${esc(p.mortalidad)}</td>
+            <td class="p-2 text-right font-mono">${p.consumo_alimento_kg != null ? Number(p.consumo_alimento_kg).toFixed(1) : '—'}</td>
+            <td class="p-2 text-right font-mono">${p.peso_promedio != null ? Number(p.peso_promedio).toFixed(3) : '—'}</td>
+            <td class="p-2 text-right">${p.temperatura_c != null ? Number(p.temperatura_c).toFixed(1) : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="7" class="p-4 text-center text-slate-400">Sin producción cargada</td></tr>';
+    document.getElementById('tbodyEventos').innerHTML = (f.eventos || []).map(e => `
+        <tr>
+            <td class="p-2 text-xs">${esc(e.fecha)}</td>
+            <td class="p-2 font-semibold">${esc(e.tipo)}</td>
+            <td class="p-2 text-right">${e.cantidad != null ? esc(e.cantidad) : '—'}</td>
+            <td class="p-2 text-xs text-slate-600">${esc(e.detalle)}</td>
+        </tr>`).join('') || '<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin eventos</td></tr>';
+}
+load().catch(e => { console.error(e); alert('No se pudo cargar la ficha'); });
+</script>
+</body>
+</html>

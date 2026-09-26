@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Porcino</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-6xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Porcino <span class="text-sm font-normal text-orange-700">Plantel · Partos · Engorde</span></h1>
+            <p class="text-xs text-slate-500 mt-1">Cerdas, padrillos, partos/destete, salas y lotes de terminación.</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
+        </div>
+    </div>
+
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"></div>
+
+    <div class="flex gap-2 mb-4 flex-wrap">
+        <button type="button" onclick="showTab('plantel')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-orange-700 text-white" data-tab="plantel">Plantel</button>
+        <button type="button" onclick="showTab('parto')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="parto">Parto / Destete</button>
+        <button type="button" onclick="showTab('evento')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="evento">Eventos</button>
+        <button type="button" onclick="showTab('lotes')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="lotes">Lotes engorde</button>
+        <button type="button" onclick="showTab('alta')" class="tabBtn px-3 py-1.5 rounded-md text-sm font-bold bg-slate-100" data-tab="alta">Alta animal</button>
+    </div>
+
+    <section id="tab-plantel" class="tabPanel">
+        <div class="flex flex-wrap gap-2 mb-3">
+            <input id="filtroQ" class="border rounded px-2 py-1.5 text-sm flex-1 min-w-[160px]" placeholder="Caravana / nombre / ID" onkeydown="if(event.key==='Enter')cargarAnimales()">
+            <select id="filtroCat" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
+                <option value="">Todas las categorías</option>
+            </select>
+            <button onclick="cargarAnimales()" class="bg-slate-800 text-white px-3 py-1.5 rounded text-sm font-bold">Buscar</button>
+        </div>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Caravana</th>
+                        <th class="p-2 text-left">Categoría</th>
+                        <th class="p-2 text-left">Sexo</th>
+                        <th class="p-2 text-left">Sala</th>
+                        <th class="p-2 text-right">Peso</th>
+                        <th class="p-2 text-right">Partos</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyAnimales" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="tab-parto" class="tabPanel hidden">
+        <div class="grid md:grid-cols-2 gap-6">
+            <form class="border rounded-xl p-4 bg-orange-50/40" onsubmit="return guardarParto(event)">
+                <h2 class="font-bold text-slate-800 mb-3">Registrar parto</h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-600">Cerda (ID)</label>
+                        <input id="p_cerda" type="number" class="mt-1 w-full border rounded p-2 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Fecha</label>
+                        <input id="p_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Sala</label>
+                        <select id="p_sala" class="mt-1 w-full border rounded p-2 text-sm"></select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Nacidos vivos</label>
+                        <input id="p_nv" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Nacidos muertos</label>
+                        <input id="p_nm" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Momificados</label>
+                        <input id="p_mom" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-600">Observaciones</label>
+                        <input id="p_obs" class="mt-1 w-full border rounded p-2 text-sm">
+                    </div>
+                    <div class="col-span-2">
+                        <button class="bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-bold">Guardar parto</button>
+                    </div>
+                </div>
+            </form>
+            <div>
+                <h2 class="font-bold text-slate-800 mb-3">Últimos partos</h2>
+                <div class="overflow-x-auto border rounded-lg max-h-96 overflow-y-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-100 text-xs uppercase sticky top-0">
+                            <tr>
+                                <th class="p-2 text-left">Fecha</th>
+                                <th class="p-2 text-left">Cerda</th>
+                                <th class="p-2 text-right">NV</th>
+                                <th class="p-2 text-right">Dest.</th>
+                                <th class="p-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyPartos" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="tab-evento" class="tabPanel hidden">
+        <form class="border rounded-xl p-4 max-w-xl" onsubmit="return guardarEvento(event)">
+            <h2 class="font-bold text-slate-800 mb-3">Evento sanitario / productivo</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Animal (ID)</label>
+                    <input id="e_animal" type="number" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Fecha</label>
+                    <input id="e_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm" required>
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Tipo</label>
+                    <select id="e_tipo" class="mt-1 w-full border rounded p-2 text-sm"></select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Peso kg</label>
+                    <input id="e_peso" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Cantidad</label>
+                    <input id="e_cant" type="number" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Detalle</label>
+                    <input id="e_det" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Vacuna, tratamiento, categoría...">
+                </div>
+                <div class="col-span-2">
+                    <button class="bg-slate-800 text-white px-4 py-2 rounded-md text-sm font-bold">Registrar</button>
+                </div>
+            </div>
+        </form>
+    </section>
+
+    <section id="tab-lotes" class="tabPanel hidden">
+        <div class="grid md:grid-cols-2 gap-6">
+            <form class="border rounded-xl p-4" onsubmit="return guardarLote(event)">
+                <h2 class="font-bold text-slate-800 mb-3">Nuevo lote de engorde</h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Código</label>
+                        <input id="l_codigo" class="mt-1 w-full border rounded p-2 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Fecha ingreso</label>
+                        <input id="l_fecha" type="date" class="mt-1 w-full border rounded p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Cabezas</label>
+                        <input id="l_n" type="number" class="mt-1 w-full border rounded p-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-600">Peso ingreso prom.</label>
+                        <input id="l_peso" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-600">Sala</label>
+                        <select id="l_sala" class="mt-1 w-full border rounded p-2 text-sm"></select>
+                    </div>
+                    <div class="col-span-2">
+                        <button class="bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-bold">Crear lote</button>
+                    </div>
+                </div>
+            </form>
+            <div class="overflow-x-auto border rounded-lg">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-100 text-xs uppercase">
+                        <tr>
+                            <th class="p-2 text-left">Código</th>
+                            <th class="p-2 text-left">Sala</th>
+                            <th class="p-2 text-right">Cabezas</th>
+                            <th class="p-2 text-right">Peso</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyLotes" class="divide-y"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="tab-alta" class="tabPanel hidden">
+        <form class="border rounded-xl p-4 grid md:grid-cols-3 gap-3" onsubmit="return guardarAnimal(event)">
+            <div>
+                <label class="text-xs font-bold text-slate-600">Caravana</label>
+                <input id="a_caravana" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Categoría</label>
+                <select id="a_cat" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Sexo</label>
+                <select id="a_sexo" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option>Hembra</option><option>Macho</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Raza / línea</label>
+                <input id="a_raza" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Landrace, Yorkshire, Duroc...">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Línea genética</label>
+                <input id="a_linea" class="mt-1 w-full border rounded p-2 text-sm" placeholder="PIC, DanBred, Hypor...">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Nacimiento</label>
+                <input id="a_nac" type="date" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Sala</label>
+                <select id="a_sala" class="mt-1 w-full border rounded p-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Peso kg</label>
+                <input id="a_peso" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600">Origen</label>
+                <input id="a_origen" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Nacimiento / Compra">
+            </div>
+            <div class="md:col-span-3">
+                <button class="bg-orange-700 text-white px-5 py-2.5 rounded-md text-sm font-bold">Guardar animal</button>
+            </div>
+        </form>
+    </section>
+</div>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let META = { categorias: [], tipos_evento: [] };
+let SALAS = [];
+
+function showTab(id) {
+    document.querySelectorAll('.tabPanel').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-' + id).classList.remove('hidden');
+    document.querySelectorAll('.tabBtn').forEach(b => {
+        const on = b.dataset.tab === id;
+        b.className = 'tabBtn px-3 py-1.5 rounded-md text-sm font-bold ' + (on ? 'bg-orange-700 text-white' : 'bg-slate-100');
+    });
+}
+
+async function init() {
+    document.getElementById('p_fecha').value = new Date().toISOString().slice(0,10);
+    document.getElementById('e_fecha').value = new Date().toISOString().slice(0,10);
+    document.getElementById('l_fecha').value = new Date().toISOString().slice(0,10);
+    META = await fetch('/api/porcino/meta').then(r => r.json());
+    SALAS = await fetch('/api/porcino/salas').then(r => r.json());
+    const catOpts = META.categorias.map(c => `<option value="${esc(c.codigo)}">${esc(c.nombre)}</option>`).join('');
+    document.getElementById('filtroCat').innerHTML = '<option value="">Todas las categorías</option>' + catOpts;
+    document.getElementById('a_cat').innerHTML = catOpts;
+    document.getElementById('e_tipo').innerHTML = META.tipos_evento.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    const salaOpts = '<option value="">—</option>' + SALAS.map(s => `<option value="${s.id}">${esc(s.nombre)} (${esc(s.tipo)})</option>`).join('');
+    ['p_sala','l_sala','a_sala'].forEach(id => document.getElementById(id).innerHTML = salaOpts);
+    await Promise.all([cargarResumen(), cargarAnimales(), cargarPartos(), cargarLotes()]);
+}
+
+async function cargarResumen() {
+    const r = await fetch('/api/porcino/resumen').then(x => x.json());
+    document.getElementById('kpis').innerHTML = [
+        ['Plantel activo', r.total_activos],
+        ['Cerdas plantel', r.cerdas_plantel],
+        ['Partos 90d', r.partos_90d],
+        ['NV / Dest. 90d', `${r.nacidos_vivos_90d} / ${r.destetados_90d}`],
+        ['Lotes engorde', r.lotes_activos],
+        ['Cabezas en lotes', r.cabezas_en_lotes],
+        ['Mortandad 30d', r.eventos_mortandad_30d],
+    ].map(([lab,v]) => `
+        <div class="border rounded-xl p-3 bg-orange-50/50">
+            <div class="text-[10px] font-bold uppercase text-orange-800">${esc(lab)}</div>
+            <div class="text-xl font-extrabold text-slate-800">${esc(v)}</div>
+        </div>`).join('');
+}
+
+async function cargarAnimales() {
+    const params = new URLSearchParams({ estado: 'activo', limit: '500' });
+    const q = document.getElementById('filtroQ').value.trim();
+    const cat = document.getElementById('filtroCat').value;
+    if (q) params.set('q', q);
+    if (cat) params.set('categoria', cat);
+    const rows = await fetch('/api/porcino/animales?' + params).then(r => r.json());
+    const nomCat = Object.fromEntries(META.categorias.map(c => [c.codigo, c.nombre]));
+    document.getElementById('tbodyAnimales').innerHTML = rows.map(a => `
+        <tr class="hover:bg-slate-50">
+            <td class="p-2 font-semibold">${esc(a.caravana || ('#'+a.id))}</td>
+            <td class="p-2 text-xs">${esc(nomCat[a.categoria] || a.categoria)}</td>
+            <td class="p-2">${esc(a.sexo)}</td>
+            <td class="p-2 text-slate-600">${esc(a.sala_nombre || '')}</td>
+            <td class="p-2 text-right font-mono">${a.peso_ultimo != null ? Number(a.peso_ultimo).toFixed(1) : '—'}</td>
+            <td class="p-2 text-right">${esc(a.n_partos || 0)}</td>
+            <td class="p-2"><a href="CerdoFicha.html?id=${a.id}" class="text-orange-700 text-xs font-bold hover:underline">Ficha</a></td>
+        </tr>`).join('') || '<tr><td colspan="7" class="p-6 text-center text-slate-400">Sin animales en plantel</td></tr>';
+}
+
+async function cargarPartos() {
+    const rows = await fetch('/api/porcino/partos?limit=40').then(r => r.json());
+    document.getElementById('tbodyPartos').innerHTML = rows.map(p => `
+        <tr>
+            <td class="p-2 text-xs">${esc(p.fecha)}</td>
+            <td class="p-2 font-semibold">${esc(p.cerda_caravana || ('#'+p.cerda_id))}</td>
+            <td class="p-2 text-right">${esc(p.nacidos_vivos)}</td>
+            <td class="p-2 text-right">${p.destetados != null ? esc(p.destetados) : '—'}</td>
+            <td class="p-2">${p.destetados == null ? `<button onclick="destetar(${p.id},${p.nacidos_vivos})" class="text-xs text-orange-700 font-bold">Destetar</button>` : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin partos</td></tr>';
+}
+
+async function destetar(id, nv) {
+    const dest = prompt('Cantidad destetados', String(nv || 0));
+    if (dest == null) return;
+    const res = await fetch('/api/porcino/partos/' + id + '/destete', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ destetados: Number(dest), fecha_destete: new Date().toISOString().slice(0,10) })
+    });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return; }
+    await Promise.all([cargarPartos(), cargarResumen(), cargarAnimales()]);
+}
+
+async function cargarLotes() {
+    const rows = await fetch('/api/porcino/lotes').then(r => r.json());
+    document.getElementById('tbodyLotes').innerHTML = rows.map(l => `
+        <tr>
+            <td class="p-2 font-semibold">${esc(l.codigo)}</td>
+            <td class="p-2">${esc(l.sala_nombre || '')}</td>
+            <td class="p-2 text-right">${esc(l.n_actual)}</td>
+            <td class="p-2 text-right font-mono">${l.peso_actual_prom != null ? Number(l.peso_actual_prom).toFixed(1) : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin lotes</td></tr>';
+}
+
+async function guardarParto(ev) {
+    ev.preventDefault();
+    const body = {
+        cerda_id: Number(document.getElementById('p_cerda').value),
+        fecha: document.getElementById('p_fecha').value,
+        sala_id: Number(document.getElementById('p_sala').value) || null,
+        nacidos_vivos: Number(document.getElementById('p_nv').value) || 0,
+        nacidos_muertos: Number(document.getElementById('p_nm').value) || 0,
+        momificados: Number(document.getElementById('p_mom').value) || 0,
+        observaciones: document.getElementById('p_obs').value.trim(),
+    };
+    const res = await fetch('/api/porcino/partos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Parto #' + (await res.json()).id + ' guardado');
+    await Promise.all([cargarPartos(), cargarResumen(), cargarAnimales()]);
+    return false;
+}
+
+async function guardarEvento(ev) {
+    ev.preventDefault();
+    const body = {
+        animal_id: Number(document.getElementById('e_animal').value) || null,
+        fecha: document.getElementById('e_fecha').value,
+        tipo: document.getElementById('e_tipo').value,
+        peso_kg: document.getElementById('e_peso').value ? Number(document.getElementById('e_peso').value) : null,
+        cantidad: document.getElementById('e_cant').value ? Number(document.getElementById('e_cant').value) : null,
+        detalle: document.getElementById('e_det').value.trim(),
+    };
+    const res = await fetch('/api/porcino/eventos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Evento registrado');
+    await Promise.all([cargarResumen(), cargarAnimales()]);
+    return false;
+}
+
+async function guardarLote(ev) {
+    ev.preventDefault();
+    const body = {
+        codigo: document.getElementById('l_codigo').value.trim(),
+        fecha_ingreso: document.getElementById('l_fecha').value,
+        n_inicial: Number(document.getElementById('l_n').value) || 0,
+        peso_ingreso_prom: document.getElementById('l_peso').value ? Number(document.getElementById('l_peso').value) : null,
+        sala_id: Number(document.getElementById('l_sala').value) || null,
+        etapa: 'engorde',
+    };
+    const res = await fetch('/api/porcino/lotes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    alert('Lote creado');
+    document.getElementById('l_codigo').value = '';
+    await Promise.all([cargarLotes(), cargarResumen()]);
+    return false;
+}
+
+async function guardarAnimal(ev) {
+    ev.preventDefault();
+    const body = {
+        caravana: document.getElementById('a_caravana').value.trim(),
+        categoria: document.getElementById('a_cat').value,
+        sexo: document.getElementById('a_sexo').value,
+        raza: document.getElementById('a_raza').value.trim(),
+        linea_genetica: document.getElementById('a_linea').value.trim(),
+        fecha_nacimiento: document.getElementById('a_nac').value,
+        sala_id: Number(document.getElementById('a_sala').value) || null,
+        peso_ultimo: document.getElementById('a_peso').value ? Number(document.getElementById('a_peso').value) : null,
+        origen: document.getElementById('a_origen').value.trim(),
+    };
+    const res = await fetch('/api/porcino/animales', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
+    const out = await res.json();
+    alert('Animal #' + out.id + ' guardado');
+    showTab('plantel');
+    await Promise.all([cargarAnimales(), cargarResumen()]);
+    return false;
+}
+
+init().catch(e => console.error(e));
+</script>
+</body>
+</html>
