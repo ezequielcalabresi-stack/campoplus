@@ -276,6 +276,11 @@ _SEED_INGRESOS = {
         ("ingreso por vtas de poroto", "INGRESO"),
         ("Ingreso Por Vtas de Girasol", "INGRESO"),
     ],
+    "Tambo": [
+        ("Ingreso por Vtas de Leche", "INGRESO"),
+        ("Ingreso por Bonificación Calidad Leche", "INGRESO"),
+        ("Ingreso por Vtas Descarte Tambo", "INGRESO"),
+    ],
 }
 
 

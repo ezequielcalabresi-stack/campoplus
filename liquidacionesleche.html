@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Liquidaciones de Leche</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-auth.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
+</head>
+<body class="bg-slate-100 font-sans">
+
+<div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg">
+    <div class="flex justify-between items-center mb-6 border-b pb-4 gap-3 flex-wrap">
+        <div>
+            <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Liquidación de Leche (Tambo)</span></h2>
+            <p class="text-xs text-slate-500 mt-1">Litros, calidad, bonos/castigos e imputación de ingresos a Gestión</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="Tambo.html" class="bg-sky-50 text-sky-800 border border-sky-200 px-3 py-2 rounded-md text-sm font-medium">Tambo operativo</a>
+            <a href="Gestion.html" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 rounded-md text-sm font-medium">Gestión</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">Dashboard</a>
+        </div>
+    </div>
+
+    <form id="formLeche" class="space-y-6" onsubmit="return guardar(event)">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-sky-50/50 p-4 rounded-lg border border-sky-100">
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700">Comprador (láctea / industria)</label>
+                <select id="entidad" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+                    <option value=""> - Seleccionar - </option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-sky-900 font-bold">Nro. liquidación</label>
+                <input id="nroLiq" type="text" class="mt-1 block w-full rounded-md border-sky-300 p-2 border bg-white font-bold font-mono" placeholder="Ej. 0001-00004521">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-emerald-700 font-bold">Fecha liquidación</label>
+                <input id="fecha" type="date" class="mt-1 block w-full rounded-md border-emerald-300 p-2 border bg-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Período desde</label>
+                <input id="desde" type="date" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Período hasta</label>
+                <input id="hasta" type="date" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Plazo (días)</label>
+                <input id="plazo" type="number" min="0" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white text-right" placeholder="30">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Fecha de pago</label>
+                <input id="fechaPago" type="date" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white">
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700">Tambo / tambo ref.</label>
+                <input id="tamboRef" type="text" class="mt-1 block w-full rounded-md border-slate-300 p-2 border bg-white" placeholder="Tambo principal">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="border rounded-lg p-4 bg-white space-y-3">
+                <h3 class="text-md font-semibold text-slate-700">Volumen y precio</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-slate-600">Litros</label>
+                        <input id="litros" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-right" value="0" oninput="recalc()">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">Precio base $/L</label>
+                        <input id="precio" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                    </div>
+                </div>
+                <div class="text-sm text-slate-600">Bruto litros × precio: <strong id="brutoCalc">$ 0</strong></div>
+            </div>
+            <div class="border rounded-lg p-4 bg-white space-y-3">
+                <h3 class="text-md font-semibold text-slate-700">Calidad (promedio período)</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-slate-600">Grasa %</label>
+                        <input id="grasa" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-right" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">Proteína %</label>
+                        <input id="proteina" type="number" step="0.01" class="mt-1 w-full border rounded p-2 text-right" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">RCS</label>
+                        <input id="rcs" type="number" class="mt-1 w-full border rounded p-2 text-right" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">Urea</label>
+                        <input id="urea" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-right" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600">Temp. °C</label>
+                        <input id="temp" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-right" value="0">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="border rounded-lg p-4 bg-white space-y-3">
+                <h3 class="text-md font-semibold text-slate-700">Ajustes de calidad y gastos</h3>
+                <div>
+                    <label class="block text-xs text-slate-600">Bonificación calidad ($)</label>
+                    <input id="bono" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-600">Castigo / descuento calidad ($)</label>
+                    <input id="castigo" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-600">Flete ($)</label>
+                    <input id="flete" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-600">Otros gastos ($)</label>
+                    <input id="otros" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                </div>
+            </div>
+            <div class="border rounded-lg p-4 bg-white space-y-3">
+                <h3 class="text-md font-semibold text-slate-700">Impuestos y retenciones</h3>
+                <div>
+                    <label class="block text-xs text-slate-600">IVA ($)</label>
+                    <input id="iva" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-600">Retención IIBB ($)</label>
+                    <input id="retIibb" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-600">Retención Ganancias ($)</label>
+                    <input id="retGan" type="text" data-money inputmode="decimal" class="mt-1 w-full border rounded p-2 text-right money-input" value="0,00" oninput="recalc()">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-600">Observaciones</label>
+                    <input id="obs" type="text" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+            </div>
+        </div>
+
+        <div class="border-2 border-emerald-200 rounded-lg p-4 bg-emerald-50/40">
+            <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                <div>
+                    <h3 class="text-md font-bold text-emerald-900">Imputación de cuentas - Ingresos (Gestión)</h3>
+                    <p class="text-xs text-emerald-800/80">Actividad Tambo + cuenta de venta de leche. Alimenta Gestión por actividad.</p>
+                </div>
+                <div class="flex gap-2">
+                    <a href="Actividades.html" class="text-xs text-emerald-800 underline">ABM actividades</a>
+                    <button type="button" onclick="addImp()" class="bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-bold">+ Renglón</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto border rounded-lg bg-white">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-emerald-100 text-xs uppercase text-emerald-900">
+                            <th class="p-2 text-left">Actividad</th>
+                            <th class="p-2 text-left">Cta a imputar (ingreso)</th>
+                            <th class="p-2 text-right w-40">Neto $</th>
+                            <th class="p-2 w-16"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbImp"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-sky-50 border border-sky-200 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-3">
+            <div class="text-xs text-sky-900">
+                Litros: <strong id="sumLitros">0</strong> · Bruto: <strong id="sumBruto">$ 0</strong>
+            </div>
+            <div class="text-right">
+                <span class="text-xs font-bold text-emerald-800 uppercase block">Neto a cobrar</span>
+                <span id="netoEst" class="text-2xl font-extrabold text-emerald-900">$ 0</span>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2">
+            <button type="button" onclick="limpiarForm()" class="px-4 py-2 text-sm text-slate-600 border rounded-lg">Limpiar</button>
+            <button type="submit" class="bg-sky-700 text-white px-8 py-3 rounded-lg font-bold hover:bg-sky-800">Guardar liquidación</button>
+        </div>
+    </form>
+
+    <div class="mt-8 border-t pt-4">
+        <h3 class="font-bold text-slate-800 mb-2">Últimas liquidaciones de leche</h3>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-left">Nro</th>
+                        <th class="p-2 text-left">Comprador</th>
+                        <th class="p-2 text-right">Litros</th>
+                        <th class="p-2 text-right">Neto</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyHist" class="divide-y"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let actividades = [];
+let entidades = [];
+
+function num(v) { return CampoMoney.parse(v); }
+function fmt(n) { return '$ ' + num(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function impRow() {
+    const optsAct = '<option value=""> - Actividad - </option>' +
+        actividades.map(a => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('');
+    return `<tr class="imp">
+        <td class="p-1"><select class="i-act border rounded p-1.5 w-full text-sm" onchange="onActChange(this)">${optsAct}</select></td>
+        <td class="p-1"><select class="i-cta border rounded p-1.5 w-full text-sm"><option value=""> - Cuenta ingreso - </option></select></td>
+        <td class="p-1"><input type="text" class="i-neto border rounded p-1.5 w-full text-right money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()" /></td>
+        <td class="p-1 text-center"><button type="button" class="text-red-600 text-xs font-bold" onclick="this.closest('tr').remove()">×</button></td>
+    </tr>`;
+}
+
+function addImp() {
+    document.getElementById('tbImp').insertAdjacentHTML('beforeend', impRow());
+    CampoMoney.bind(document.getElementById('tbImp'));
+}
+
+async function onActChange(sel) {
+    const tr = sel.closest('tr');
+    const ctaSel = tr.querySelector('.i-cta');
+    const actId = sel.value;
+    ctaSel.innerHTML = '<option value=""> - Cuenta ingreso - </option>';
+    if (!actId) return;
+    let ctas = await fetch('/api/actividades/' + actId + '/cuentas?tipo=INGRESO').then(r => r.json());
+    if (!ctas.length) {
+        const act = actividades.find(a => String(a.id) === String(actId));
+        ctas = (act && act.cuentas || []).filter(c => String(c.tipo_cta || '').toUpperCase() === 'INGRESO');
+    }
+    ctas.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+    ctas.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = c.nombre;
+        ctaSel.appendChild(o);
+    });
+}
+
+function recalc() {
+    const litros = num(document.getElementById('litros').value);
+    const precio = num(document.getElementById('precio').value);
+    const bruto = litros * precio;
+    const neto = bruto
+        + num(document.getElementById('bono').value)
+        - num(document.getElementById('castigo').value)
+        - num(document.getElementById('flete').value)
+        - num(document.getElementById('otros').value)
+        + num(document.getElementById('iva').value)
+        - num(document.getElementById('retIibb').value)
+        - num(document.getElementById('retGan').value);
+    document.getElementById('brutoCalc').textContent = fmt(bruto);
+    document.getElementById('sumLitros').textContent = litros.toLocaleString('es-AR');
+    document.getElementById('sumBruto').textContent = fmt(bruto);
+    document.getElementById('netoEst').textContent = fmt(neto);
+    return { litros, precio, bruto, neto };
+}
+
+async function cargarEntidades() {
+    const rows = await fetch('/api/entidades').then(r => r.ok ? r.json() : []);
+    entidades = rows || [];
+    const sel = document.getElementById('entidad');
+    entidades
+        .slice()
+        .sort((a,b) => String(a.razon_social||a.nombre_fantasia||'').localeCompare(String(b.razon_social||b.nombre_fantasia||''), 'es'))
+        .forEach(e => {
+            const o = document.createElement('option');
+            o.value = (e.cuit || '').replace(/\D/g, '');
+            o.textContent = e.nombre_fantasia || e.razon_social || e.cuit;
+            o.dataset.nombre = e.razon_social || e.nombre_fantasia || '';
+            sel.appendChild(o);
+        });
+}
+
+async function cargarActividades() {
+    actividades = await fetch('/api/actividades?con_cuentas=1').then(r => r.ok ? r.json() : []);
+    actividades.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+}
+
+async function cargarHistorial() {
+    const rows = await fetch('/api/liquidaciones/leche?limit=30').then(r => r.ok ? r.json() : []);
+    document.getElementById('tbodyHist').innerHTML = (rows || []).map(r => `
+        <tr>
+            <td class="p-2 text-xs">${esc(r.fecha)}</td>
+            <td class="p-2 font-mono text-xs">${esc(r.nro_liquidacion)}</td>
+            <td class="p-2">${esc(r.entidad_nombre)}</td>
+            <td class="p-2 text-right font-mono">${Number(r.litros||0).toLocaleString('es-AR')}</td>
+            <td class="p-2 text-right font-bold">${fmt(r.neto_final)}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin liquidaciones aún</td></tr>';
+}
+
+function preferTambo() {
+    const prefer = actividades.find(a => /tambo/i.test(a.nombre));
+    if (!prefer) return;
+    const sel = document.querySelector('#tbImp .i-act');
+    if (sel) { sel.value = prefer.id; onActChange(sel); }
+}
+
+function limpiarForm() {
+    document.getElementById('formLeche').reset();
+    document.getElementById('fecha').value = new Date().toISOString().slice(0,10);
+    document.getElementById('tbImp').innerHTML = '';
+    addImp();
+    preferTambo();
+    recalc();
+}
+
+async function guardar(ev) {
+    ev.preventDefault();
+    const tot = recalc();
+    const entSel = document.getElementById('entidad');
+    const opt = entSel.options[entSel.selectedIndex];
+    const imputaciones = [...document.querySelectorAll('#tbImp tr.imp')].map(tr => {
+        const act = tr.querySelector('.i-act');
+        const cta = tr.querySelector('.i-cta');
+        return {
+            actividad_id: act.value ? Number(act.value) : null,
+            cuenta_imputacion_id: cta.value ? Number(cta.value) : null,
+            actividad_nombre: act.options[act.selectedIndex]?.text || '',
+            cuenta_nombre: cta.options[cta.selectedIndex]?.text || '',
+            neto: num(tr.querySelector('.i-neto').value),
+        };
+    }).filter(r => r.actividad_id || r.cuenta_imputacion_id || r.neto);
+
+    if (!imputaciones.length) {
+        if (!confirm('No hay imputación de ingreso a Gestión. ¿Guardar igual?')) return false;
+    }
+
+    const body = {
+        entidad_cuit: entSel.value,
+        entidad_nombre: opt?.dataset?.nombre || opt?.textContent || '',
+        nro_liquidacion: document.getElementById('nroLiq').value.trim(),
+        fecha: document.getElementById('fecha').value,
+        fecha_desde: document.getElementById('desde').value,
+        fecha_hasta: document.getElementById('hasta').value,
+        plazo_dias: parseInt(document.getElementById('plazo').value || '0', 10),
+        fecha_pago: document.getElementById('fechaPago').value,
+        litros: tot.litros,
+        precio_base_litro: tot.precio,
+        grasa_pct: num(document.getElementById('grasa').value),
+        proteina_pct: num(document.getElementById('proteina').value),
+        rcs: num(document.getElementById('rcs').value),
+        urea: num(document.getElementById('urea').value),
+        temperatura_c: num(document.getElementById('temp').value),
+        bono_calidad: num(document.getElementById('bono').value),
+        castigo_calidad: num(document.getElementById('castigo').value),
+        flete: num(document.getElementById('flete').value),
+        otros_gastos: num(document.getElementById('otros').value),
+        iva: num(document.getElementById('iva').value),
+        ret_iibb: num(document.getElementById('retIibb').value),
+        ret_ganancias: num(document.getElementById('retGan').value),
+        bruto: tot.bruto,
+        neto_final: tot.neto,
+        tambo_ref: document.getElementById('tamboRef').value.trim(),
+        observaciones: document.getElementById('obs').value.trim(),
+        imputaciones,
+    };
+
+    const res = await fetch('/api/liquidaciones/leche', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        alert((await res.json().catch(() => ({}))).detail || 'No se pudo guardar');
+        return false;
+    }
+    const out = await res.json();
+    alert('Liquidación de leche #' + out.id + ' guardada. Neto: ' + fmt(out.neto_final));
+    limpiarForm();
+    await cargarHistorial();
+    return false;
+}
+
+(async function boot() {
+    document.getElementById('fecha').value = new Date().toISOString().slice(0,10);
+    await Promise.all([cargarEntidades(), cargarActividades()]);
+    addImp();
+    preferTambo();
+    CampoMoney.bind(document);
+    await cargarHistorial();
+    recalc();
+})();
+</script>
+</body>
+</html>

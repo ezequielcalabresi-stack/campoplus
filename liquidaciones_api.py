@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Liquidaciones (hacienda / LPG) + imputaciones de ingresos para Gestión.
+Liquidaciones (hacienda / LPG / leche) + imputaciones de ingresos para Gestión.
 """
 from __future__ import annotations
 
@@ -141,6 +141,42 @@ def init_liquidaciones_schema(cursor) -> None:
         );
         """
     )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS liquidaciones_leche (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            entidad_cuit TEXT,
+            entidad_nombre TEXT,
+            nro_liquidacion TEXT,
+            fecha TEXT,
+            fecha_desde TEXT,
+            fecha_hasta TEXT,
+            plazo_dias INTEGER DEFAULT 0,
+            fecha_pago TEXT,
+            litros REAL DEFAULT 0,
+            precio_base_litro REAL DEFAULT 0,
+            grasa_pct REAL DEFAULT 0,
+            proteina_pct REAL DEFAULT 0,
+            rcs REAL DEFAULT 0,
+            urea REAL DEFAULT 0,
+            temperatura_c REAL DEFAULT 0,
+            bono_calidad REAL DEFAULT 0,
+            castigo_calidad REAL DEFAULT 0,
+            flete REAL DEFAULT 0,
+            otros_gastos REAL DEFAULT 0,
+            iva REAL DEFAULT 0,
+            ret_iibb REAL DEFAULT 0,
+            ret_ganancias REAL DEFAULT 0,
+            bruto REAL DEFAULT 0,
+            neto_final REAL DEFAULT 0,
+            tambo_ref TEXT,
+            observaciones TEXT,
+            usuario_registro TEXT,
+            created_at TEXT
+        );
+        """
+    )
 
 
 class TropaIn(BaseModel):
@@ -230,6 +266,37 @@ class GranoIn(BaseModel):
     pago_condiciones: float = 0
     nota: Optional[str] = ""
     certificados: List[CertIn] = Field(default_factory=list)
+    imputaciones: List[ImputacionIn] = Field(default_factory=list)
+    usuario_registro: Optional[str] = ""
+
+
+class LecheIn(BaseModel):
+    entidad_cuit: Optional[str] = ""
+    entidad_nombre: Optional[str] = ""
+    nro_liquidacion: Optional[str] = ""
+    fecha: Optional[str] = ""
+    fecha_desde: Optional[str] = ""
+    fecha_hasta: Optional[str] = ""
+    plazo_dias: int = 0
+    fecha_pago: Optional[str] = ""
+    litros: float = 0
+    precio_base_litro: float = 0
+    grasa_pct: float = 0
+    proteina_pct: float = 0
+    rcs: float = 0
+    urea: float = 0
+    temperatura_c: float = 0
+    bono_calidad: float = 0
+    castigo_calidad: float = 0
+    flete: float = 0
+    otros_gastos: float = 0
+    iva: float = 0
+    ret_iibb: float = 0
+    ret_ganancias: float = 0
+    bruto: float = 0
+    neto_final: float = 0
+    tambo_ref: Optional[str] = ""
+    observaciones: Optional[str] = ""
     imputaciones: List[ImputacionIn] = Field(default_factory=list)
     usuario_registro: Optional[str] = ""
 
@@ -484,6 +551,108 @@ def register_liquidaciones_routes(
         conn.commit()
         conn.close()
         return {"status": "ok", "id": lid, "neto_a_pagar": neto}
+
+    @app.get("/api/liquidaciones/leche")
+    def list_leche(limit: int = 50):
+        conn = get_db()
+        try:
+            init_liquidaciones_schema(conn.cursor())
+            conn.commit()
+            cur = conn.cursor()
+            eid = get_empresa_activa_id()
+            cur.execute(
+                """
+                SELECT * FROM liquidaciones_leche
+                WHERE empresa_id = ?
+                ORDER BY COALESCE(fecha,'') DESC, id DESC
+                LIMIT ?;
+                """,
+                (eid, limit),
+            )
+            return [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    @app.post("/api/liquidaciones/leche")
+    def save_leche(data: LecheIn):
+        if (
+            not (data.nro_liquidacion or "").strip()
+            and not float(data.litros or 0)
+            and not data.imputaciones
+        ):
+            raise HTTPException(400, "Completá nro de liquidación, litros o imputaciones")
+        conn = get_db()
+        try:
+            init_liquidaciones_schema(conn.cursor())
+            cur = conn.cursor()
+            eid = get_empresa_activa_id()
+            ahora = datetime.now().isoformat(timespec="seconds")
+            litros = float(data.litros or 0)
+            precio = float(data.precio_base_litro or 0)
+            bruto = float(data.bruto or 0)
+            if bruto == 0 and litros and precio:
+                bruto = litros * precio
+            neto = float(data.neto_final or 0)
+            if neto == 0:
+                neto = (
+                    bruto
+                    + float(data.bono_calidad or 0)
+                    - float(data.castigo_calidad or 0)
+                    - float(data.flete or 0)
+                    - float(data.otros_gastos or 0)
+                    + float(data.iva or 0)
+                    - float(data.ret_iibb or 0)
+                    - float(data.ret_ganancias or 0)
+                )
+            cur.execute(
+                """
+                INSERT INTO liquidaciones_leche (
+                    empresa_id, entidad_cuit, entidad_nombre, nro_liquidacion, fecha,
+                    fecha_desde, fecha_hasta, plazo_dias, fecha_pago,
+                    litros, precio_base_litro, grasa_pct, proteina_pct, rcs, urea, temperatura_c,
+                    bono_calidad, castigo_calidad, flete, otros_gastos,
+                    iva, ret_iibb, ret_ganancias, bruto, neto_final,
+                    tambo_ref, observaciones, usuario_registro, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+                """,
+                (
+                    eid,
+                    (data.entidad_cuit or "").strip(),
+                    (data.entidad_nombre or "").strip(),
+                    (data.nro_liquidacion or "").strip(),
+                    data.fecha or "",
+                    data.fecha_desde or "",
+                    data.fecha_hasta or "",
+                    int(data.plazo_dias or 0),
+                    data.fecha_pago or "",
+                    litros,
+                    precio,
+                    float(data.grasa_pct or 0),
+                    float(data.proteina_pct or 0),
+                    float(data.rcs or 0),
+                    float(data.urea or 0),
+                    float(data.temperatura_c or 0),
+                    float(data.bono_calidad or 0),
+                    float(data.castigo_calidad or 0),
+                    float(data.flete or 0),
+                    float(data.otros_gastos or 0),
+                    float(data.iva or 0),
+                    float(data.ret_iibb or 0),
+                    float(data.ret_ganancias or 0),
+                    bruto,
+                    neto,
+                    (data.tambo_ref or "").strip(),
+                    (data.observaciones or "").strip(),
+                    (data.usuario_registro or "").strip(),
+                    ahora,
+                ),
+            )
+            lid = int(cur.lastrowid)
+            _guardar_imputaciones(cur, eid, "LECHE", lid, data.fecha or "", data.imputaciones)
+            conn.commit()
+            return {"status": "ok", "id": lid, "neto_final": neto}
+        finally:
+            conn.close()
 
     @app.get("/api/gestion/resumen")
     def gestion_resumen(
