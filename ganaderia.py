@@ -82,6 +82,25 @@ CATEGORIAS_AAA = (
 
 COLORES_ANGUS = ("Negro", "Colorado")
 
+# Razas típicas de tambo (no deben figurar en stock de carne)
+RAZAS_LECHERAS = (
+    "holando",
+    "holstein",
+    "jersey",
+    "guernsey",
+    "ayrshire",
+    "pardo suizo",
+    "brown swiss",
+    "swedish red",
+)
+
+
+def es_raza_lechera(raza: Optional[str]) -> bool:
+    r = (raza or "").strip().lower()
+    if not r:
+        return False
+    return any(tok in r for tok in RAZAS_LECHERAS)
+
 TIPOS_EVENTO = (
     "alta",
     "compra",
@@ -480,36 +499,101 @@ def listar_rodeos(conn, empresa_id: int, sistema: Optional[str] = None) -> List[
     return [dict(r) for r in cur.fetchall()]
 
 
-def resumen_stock(conn, empresa_id: int) -> dict:
+def reclasificar_animales_lecheros(conn, empresa_id: int) -> int:
+    """Marca Holando/Jersey/etc. como tambo y los saca del stock de carne."""
+    _asegurar_rodeos_tambo(conn, empresa_id)
     cur = conn.cursor()
+    likes = " OR ".join(["LOWER(COALESCE(raza,'')) LIKE ?" for _ in RAZAS_LECHERAS])
+    params = [f"%{t}%" for t in RAZAS_LECHERAS]
+    cur.execute(
+        f"""
+        SELECT id, sistema_actual, rodeo_id, peso_ultimo
+        FROM gan_animales
+        WHERE empresa_id = ? AND estado = 'activo'
+          AND COALESCE(es_tambo, 0) = 0
+          AND ({likes});
+        """,
+        [empresa_id, *params],
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    if not rows:
+        return 0
     cur.execute(
         """
+        SELECT id, nombre FROM gan_rodeos
+        WHERE empresa_id = ? AND sistema = 'tambo' AND activo = 1;
+        """,
+        (empresa_id,),
+    )
+    rodeos = {}
+    for r in cur.fetchall():
+        key = str(r["nombre"] or "").lower().replace("í", "i").replace("ñ", "n")
+        rodeos[key] = int(r["id"])
+    id_recria = rodeos.get("recria lechera")
+    id_vaq = rodeos.get("vaquillonas")
+    id_ordene = rodeos.get("vacas en ordene") or rodeos.get("vacas en ordeñe")
+    n = 0
+    for a in rows:
+        peso = float(a.get("peso_ultimo") or 0)
+        rodeo = a.get("rodeo_id")
+        if not rodeo:
+            if peso and peso < 180 and id_recria:
+                rodeo = id_recria
+            elif peso and peso < 400 and id_vaq:
+                rodeo = id_vaq
+            else:
+                rodeo = id_ordene or id_vaq or id_recria
+        cur.execute(
+            """
+            UPDATE gan_animales
+            SET es_tambo = 1, sistema_actual = 'tambo', rodeo_id = COALESCE(?, rodeo_id)
+            WHERE id = ?;
+            """,
+            (rodeo, a["id"]),
+        )
+        n += 1
+    if n:
+        conn.commit()
+    return n
+
+
+def resumen_stock(conn, empresa_id: int) -> dict:
+    reclasificar_animales_lecheros(conn, empresa_id)
+    cur = conn.cursor()
+    filtro_carne = """
+        empresa_id = ? AND estado = 'activo'
+          AND COALESCE(es_tambo, 0) = 0
+          AND COALESCE(sistema_actual, '') != 'tambo'
+    """
+    cur.execute(
+        f"""
         SELECT sistema_actual AS sistema, COUNT(*) AS n,
                AVG(peso_ultimo) AS peso_promedio
         FROM gan_animales
-        WHERE empresa_id = ? AND estado = 'activo'
+        WHERE {filtro_carne}
         GROUP BY sistema_actual;
         """,
         (empresa_id,),
     )
     por_sistema = [dict(r) for r in cur.fetchall()]
     cur.execute(
-        """
+        f"""
         SELECT sexo, COUNT(*) AS n FROM gan_animales
-        WHERE empresa_id = ? AND estado = 'activo' GROUP BY sexo;
+        WHERE {filtro_carne}
+        GROUP BY sexo;
         """,
         (empresa_id,),
     )
     por_sexo = [dict(r) for r in cur.fetchall()]
     cur.execute(
-        "SELECT COUNT(*) AS n FROM gan_animales WHERE empresa_id = ? AND estado = 'activo';",
+        f"SELECT COUNT(*) AS n FROM gan_animales WHERE {filtro_carne};",
         (empresa_id,),
     )
     total = int(cur.fetchone()["n"] or 0)
     cur.execute(
-        """
+        f"""
         SELECT COUNT(*) AS n FROM gan_animales
-        WHERE empresa_id = ? AND estado = 'activo'
+        WHERE {filtro_carne}
           AND caravana_electronica IS NOT NULL AND TRIM(caravana_electronica) != '';
         """,
         (empresa_id,),
@@ -536,6 +620,8 @@ def buscar_animales(
     raza: Optional[str] = None,
     limit: int = 500,
 ) -> List[dict]:
+    if es_tambo == 0:
+        reclasificar_animales_lecheros(conn, empresa_id)
     cur = conn.cursor()
     where = ["a.empresa_id = ?"]
     params: list = [empresa_id]
@@ -549,8 +635,12 @@ def buscar_animales(
         where.append("a.rodeo_id = ?")
         params.append(rodeo_id)
     if es_tambo is not None:
-        where.append("a.es_tambo = ?")
-        params.append(int(es_tambo))
+        if int(es_tambo) == 0:
+            # Stock de carne: sin tambo ni razas lecheras
+            where.append("COALESCE(a.es_tambo, 0) = 0")
+            where.append("COALESCE(a.sistema_actual, '') != 'tambo'")
+        else:
+            where.append("(COALESCE(a.es_tambo, 0) = 1 OR COALESCE(a.sistema_actual, '') = 'tambo')")
     if categoria_aaa:
         where.append("UPPER(TRIM(COALESCE(a.categoria_aaa,''))) = ?")
         params.append(categoria_aaa.strip().upper())
@@ -646,6 +736,13 @@ def _aplicar_campos_geneticos(cur, animal_id: int, data: dict) -> None:
 def crear_animal(conn, empresa_id: int, data: dict, usuario: str = "") -> int:
     cur = conn.cursor()
     ahora = _now()
+    raza = (data.get("raza") or "").strip() or None
+    es_tambo = 1 if data.get("es_tambo") else 0
+    sistema = data.get("sistema_actual") or "cria"
+    if es_raza_lechera(raza) or sistema == "tambo":
+        es_tambo = 1
+        sistema = "tambo"
+        _asegurar_rodeos_tambo(conn, empresa_id)
     cur.execute(
         """
         INSERT INTO gan_animales (
@@ -661,14 +758,14 @@ def crear_animal(conn, empresa_id: int, data: dict, usuario: str = "") -> int:
             (data.get("caravana_electronica") or "").strip() or None,
             (data.get("senasa_id") or "").strip() or None,
             (data.get("nombre") or "").strip() or None,
-            (data.get("raza") or "").strip() or None,
+            raza,
             data.get("sexo") or "Indefinido",
             data.get("fecha_nacimiento") or None,
             data.get("madre_id"),
             data.get("padre_id"),
             data.get("categoria_id"),
             data.get("rodeo_id"),
-            data.get("sistema_actual") or "cria",
+            sistema,
             data.get("estado") or "activo",
             data.get("peso_ultimo"),
             data.get("fecha_peso_ultimo") or (ahora[:10] if data.get("peso_ultimo") else None),
@@ -676,7 +773,7 @@ def crear_animal(conn, empresa_id: int, data: dict, usuario: str = "") -> int:
             (data.get("origen") or "").strip() or None,
             (data.get("color") or "").strip() or None,
             (data.get("observaciones") or "").strip() or None,
-            1 if data.get("es_tambo") else 0,
+            es_tambo,
         ),
     )
     aid = int(cur.lastrowid)
@@ -1554,6 +1651,7 @@ def registrar_control_lechero(conn, empresa_id: int, data: dict) -> int:
 
 
 def resumen_tambo(conn, empresa_id: int) -> dict:
+    reclasificar_animales_lecheros(conn, empresa_id)
     cur = conn.cursor()
     cur.execute(
         """

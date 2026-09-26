@@ -518,7 +518,7 @@ async function cargarAnimales() {
     const rodeo_id = document.getElementById('filtroRodeo').value;
     const categoria_aaa = document.getElementById('filtroAaa').value;
     const raza = document.getElementById('filtroRaza').value;
-    const params = new URLSearchParams({ estado: 'activo', limit: '500' });
+    const params = new URLSearchParams({ estado: 'activo', limit: '500', es_tambo: '0' });
     if (q) params.set('q', q);
     if (sistema) params.set('sistema', sistema);
     if (rodeo_id) params.set('rodeo_id', rodeo_id);

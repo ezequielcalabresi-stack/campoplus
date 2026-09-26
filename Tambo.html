@@ -18,7 +18,6 @@
         </div>
         <div class="flex gap-2">
             <a href="liquidacionesleche.html" class="bg-sky-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-sky-800">Liquidaciones leche</a>
-            <a href="Ganaderia.html?tab=import" class="bg-violet-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-violet-800">Carga masiva</a>
             <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
         </div>
     </div>
@@ -129,10 +128,30 @@
                 </div>
                 <div class="col-span-2 flex flex-wrap gap-2">
                     <button class="bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-bold">Guardar control</button>
-                    <button type="button" onclick="location.href='AnimalFicha.html?id='+document.getElementById('c_animal').value" class="text-sm text-sky-800 font-semibold border border-sky-300 px-3 py-2 rounded-md hover:bg-sky-50">Ver ficha</button>
-                    <a href="Ganaderia.html" class="text-sm text-sky-700 font-semibold self-center hover:underline">Celo / IATF / parto / secado</a>
+                    <button type="button" onclick="location.href='AnimalFicha.html?id='+document.getElementById('c_animal').value" class="text-sm text-sky-800 font-semibold border border-sky-300 px-3 py-2 rounded-md hover:bg-sky-50">Ver ficha / eventos</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div class="mt-6 border rounded-xl overflow-hidden">
+        <div class="bg-sky-100 px-4 py-2 font-bold text-sky-900 text-sm flex justify-between items-center">
+            <span>Plantel de tambo (Holando / lecheras)</span>
+            <button type="button" onclick="cargarPlantel()" class="text-xs font-bold text-sky-800 hover:underline">Actualizar</button>
+        </div>
+        <div class="overflow-x-auto max-h-[40vh]">
+            <table class="w-full text-sm">
+                <thead class="text-xs uppercase text-slate-500 border-b">
+                    <tr>
+                        <th class="p-2 text-left">Caravana</th>
+                        <th class="p-2 text-left">Raza</th>
+                        <th class="p-2 text-left">Rodeo</th>
+                        <th class="p-2 text-right">Peso</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyPlantel" class="divide-y"></tbody>
+            </table>
         </div>
     </div>
 
@@ -172,7 +191,19 @@ async function boot() {
         ? CampoPlusFirma.sortByLabel(tambos || [], 'nombre')
         : (tambos || []).slice().sort((a,b) => String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', {sensitivity:'base'}));
     sel.innerHTML = sorted.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('');
-    await Promise.all([cargarResumen(), cargarProd(), cargarVacas()]);
+    await Promise.all([cargarResumen(), cargarProd(), cargarVacas(), cargarPlantel()]);
+}
+
+async function cargarPlantel() {
+    const rows = await fetch('/api/ganaderia/animales?es_tambo=1&estado=activo&limit=500').then(r => r.json());
+    document.getElementById('tbodyPlantel').innerHTML = (rows || []).map(a => `
+        <tr class="hover:bg-slate-50">
+            <td class="p-2 font-semibold">${esc(a.caravana_visual || ('#'+a.id))}</td>
+            <td class="p-2 text-xs">${esc(a.raza || '')}</td>
+            <td class="p-2 text-slate-600">${esc(a.rodeo_nombre || 'Sin rodeo')}</td>
+            <td class="p-2 text-right font-mono">${a.peso_ultimo != null ? Number(a.peso_ultimo).toFixed(0) : '—'}</td>
+            <td class="p-2"><a class="text-sky-700 text-xs font-bold hover:underline" href="AnimalFicha.html?id=${a.id}">Ficha</a></td>
+        </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin animales de tambo. Las Holando se reclasifican solas desde ganadería.</td></tr>';
 }
 
 async function cargarResumen() {
@@ -200,7 +231,7 @@ async function abrirFicha() {
         location.href = 'AnimalFicha.html?id=' + q;
         return;
     }
-    const rows = await fetch('/api/ganaderia/animales?q=' + encodeURIComponent(q) + '&estado=activo&limit=20').then(r => r.json());
+    const rows = await fetch('/api/ganaderia/animales?es_tambo=1&q=' + encodeURIComponent(q) + '&estado=activo&limit=20').then(r => r.json());
     if (!rows.length) { alert('No se encontró animal'); return; }
     location.href = 'AnimalFicha.html?id=' + rows[0].id;
 }

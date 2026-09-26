@@ -21,9 +21,9 @@
             <h1 id="titulo" class="text-2xl font-bold text-slate-800">Cargando…</h1>
             <p id="subtitulo" class="text-xs text-slate-500 mt-1"></p>
         </div>
-        <div class="flex flex-wrap gap-2">
-            <a href="Ganaderia.html" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold">← Ganadería</a>
-            <a href="Tambo.html" class="bg-sky-600 text-white px-3 py-2 rounded-md text-sm font-bold">Tambo</a>
+        <div class="flex flex-wrap gap-2" id="navFicha">
+            <a href="Tambo.html" id="btnTambo" class="bg-sky-600 text-white px-3 py-2 rounded-md text-sm font-bold">← Tambo</a>
+            <a href="Ganaderia.html" id="btnGan" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold">← Ganadería</a>
             <button onclick="irEvento()" class="bg-emerald-700 text-white px-3 py-2 rounded-md text-sm font-bold">+ Evento</button>
         </div>
     </div>
@@ -250,6 +250,9 @@ function render() {
     const rr = FICHA.resumen_repro || {};
     const pr = FICHA.productivo || {};
     const g = FICHA.genetica || {};
+    const esTambo = Number(a.es_tambo) === 1 || a.sistema_actual === 'tambo';
+    document.getElementById('btnTambo').classList.toggle('hidden', !esTambo);
+    document.getElementById('btnGan').classList.toggle('hidden', esTambo);
 
     document.getElementById('titulo').textContent =
         (a.caravana_visual || a.nombre || ('Animal #' + a.id)) + (a.rp ? ' · RP ' + a.rp : '');
