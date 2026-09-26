@@ -21,7 +21,6 @@
             <p class="text-xs text-slate-500 mt-1">Inventario individual, EID, celos, IATF, pesadas y movimientos de ciclo.</p>
         </div>
         <div class="flex flex-wrap gap-2 items-start">
-            <a href="Tambo.html" class="bg-sky-600 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-sky-700">Tambo -></a>
             <a href="liquidacioneshacienda.html" class="bg-rose-50 text-rose-800 border border-rose-200 px-3 py-2 rounded-md text-sm font-medium">Liquidaciones</a>
             <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium"><- Dashboard</a>
         </div>
@@ -52,7 +51,6 @@
                 <option value="encierre">Encierre</option>
                 <option value="feedlot">Feedlot</option>
                 <option value="ciclo_completo">Ciclo completo</option>
-                <option value="tambo">Tambo</option>
             </select>
             <select id="filtroAaa" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
                 <option value="">Registro AAA</option>
@@ -126,7 +124,6 @@
                     <option value="encierre">Encierre</option>
                     <option value="feedlot">Feedlot</option>
                     <option value="ciclo_completo">Ciclo completo</option>
-                    <option value="tambo">Tambo</option>
                 </select>
             </div>
             <div>
@@ -144,9 +141,6 @@
             <div>
                 <label class="text-xs font-bold text-slate-600">Origen</label>
                 <input id="a_origen" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Nacimiento / Compra...">
-            </div>
-            <div class="flex items-end gap-2">
-                <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="a_tambo"> Es animal de tambo</label>
             </div>
 
             <div class="md:col-span-3 border-t pt-3 mt-1">
@@ -374,7 +368,6 @@
                 <option value="recria">Recría</option>
                 <option value="encierre">Encierre</option>
                 <option value="feedlot">Feedlot</option>
-                <option value="tambo">Tambo</option>
             </select>
             <button onclick="importarEID()" class="bg-indigo-700 text-white px-4 py-2 rounded text-sm font-bold hover:bg-indigo-800">Importar lecturas</button>
         </div>
@@ -391,7 +384,6 @@
                 <option value="encierre">Encierre</option>
                 <option value="feedlot">Feedlot</option>
                 <option value="ciclo_completo">Ciclo completo</option>
-                <option value="tambo">Tambo</option>
             </select>
             <input id="r_campo" class="border rounded p-2 text-sm" placeholder="Campo / potrero">
             <button class="bg-slate-800 text-white rounded text-sm font-bold">+ Rodeo</button>
@@ -458,13 +450,18 @@ function showTab(name) {
     document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
 }
 
+function rodeosGanaderia(rows) {
+    return (rows || []).filter(r => String(r.sistema || '').toLowerCase() !== 'tambo');
+}
+
 async function boot() {
     document.getElementById('e_fecha').value = new Date().toISOString().slice(0,10);
-    const [cats, rodeos, meta] = await Promise.all([
+    const [cats, rodeosAll, meta] = await Promise.all([
         fetch('/api/ganaderia/categorias').then(r => r.json()),
         fetch('/api/ganaderia/rodeos').then(r => r.json()),
         fetch('/api/ganaderia/meta').then(r => r.json()),
     ]);
+    const rodeos = rodeosGanaderia(rodeosAll);
     window._cats = cats; window._rodeos = rodeos;
     fillSelect('a_categoria', cats, 'id', 'nombre', true);
     fillSelect('e_categoria', cats, 'id', 'nombre', true);
@@ -582,7 +579,7 @@ async function guardarAnimal(ev) {
         peso_ultimo: document.getElementById('a_peso').value ? Number(document.getElementById('a_peso').value) : null,
         origen: document.getElementById('a_origen').value.trim(),
         observaciones: document.getElementById('a_obs').value.trim(),
-        es_tambo: document.getElementById('a_tambo').checked ? 1 : 0,
+        es_tambo: 0,
         madre_id: numOrNull('a_madre'),
         padre_id: numOrNull('a_padre'),
         categoria_aaa: document.getElementById('a_cat_aaa').value || null,
@@ -714,7 +711,7 @@ async function importarEID() {
 }
 
 async function cargarRodeosTabla() {
-    const rows = await fetch('/api/ganaderia/rodeos').then(r => r.json());
+    const rows = rodeosGanaderia(await fetch('/api/ganaderia/rodeos').then(r => r.json()));
     window._rodeos = rows;
     fillSelect('filtroRodeo', rows, 'id', 'nombre', true);
     fillSelect('a_rodeo', rows, 'id', x => `${x.nombre} (${x.sistema})`, true);
@@ -723,7 +720,8 @@ async function cargarRodeosTabla() {
         <tr class="border-t"><td class="p-2 font-medium">${esc(r.nombre)}</td>
         <td class="p-2 text-center text-xs font-semibold">${esc(r.sistema)}</td>
         <td class="p-2 text-slate-600">${esc(r.campo_ref||'')}</td>
-        <td class="p-2 text-right font-mono">${r.cabezas||0}</td></tr>`).join('');
+        <td class="p-2 text-right font-mono">${r.cabezas||0}</td></tr>`).join('')
+        || '<tr><td colspan="4" class="p-6 text-center text-slate-400">Sin rodeos de carne. Creá uno arriba.</td></tr>';
 }
 
 async function guardarRodeo(ev) {
