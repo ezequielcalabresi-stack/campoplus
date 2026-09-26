@@ -38,6 +38,7 @@
         <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="eid" onclick="showTab('eid')">Lecturas EID</button>
         <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="rodeos" onclick="showTab('rodeos')">Rodeos</button>
         <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="historial" onclick="showTab('historial')">Historial</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="import" onclick="showTab('import')">Carga masiva</button>
     </div>
 
     <!-- STOCK -->
@@ -168,6 +169,7 @@
                     <option value="diagnostico_prenez">Diagnóstico de preñez</option>
                     <option value="parto">Parto</option>
                     <option value="aborto">Aborto</option>
+                    <option value="secado">Secado</option>
                     <option value="destete">Destete -> Recría</option>
                     <option value="ingreso_feedlot">Ingreso feedlot</option>
                     <option value="salida_feedlot">Salida feedlot</option>
@@ -222,6 +224,60 @@
                 <div class="flex gap-2 mt-1">
                     <input id="e_med" class="flex-1 border rounded p-2 text-sm" placeholder="Producto">
                     <input id="e_dosis" class="w-28 border rounded p-2 text-sm" placeholder="Dosis">
+                </div>
+            </div>
+            <div id="fld_celo" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Score / detección celo</label>
+                <input id="e_score_celo" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Ej. fuerte / pedómetro / visual">
+            </div>
+            <div id="fld_toro" class="hidden">
+                <label class="text-xs font-bold text-slate-600">Toro / pajuela</label>
+                <div class="flex gap-2 mt-1">
+                    <input id="e_toro_nombre" class="flex-1 border rounded p-2 text-sm" placeholder="Nombre toro">
+                    <input id="e_pajuela" class="w-36 border rounded p-2 text-sm" placeholder="Pajuela">
+                </div>
+            </div>
+            <div id="fld_parto" class="hidden md:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Facilidad parto</label>
+                    <select id="e_facilidad" class="mt-1 w-full border rounded p-2 text-sm">
+                        <option value=""> - </option>
+                        <option>Sin ayuda</option>
+                        <option>Asistido leve</option>
+                        <option>Asistido fuerte</option>
+                        <option>Cesárea</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Cría sexo</label>
+                    <select id="e_cria_sexo" class="mt-1 w-full border rounded p-2 text-sm">
+                        <option value=""> - </option>
+                        <option>Hembra</option>
+                        <option>Macho</option>
+                        <option>Mellizos</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Cría peso kg</label>
+                    <input id="e_cria_peso" type="number" step="0.1" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Cría caravana</label>
+                    <input id="e_cria_caravana" class="mt-1 w-full border rounded p-2 text-sm">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-xs font-bold text-slate-600">Destino cría</label>
+                    <input id="e_cria_destino" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Queda / venta / mortinato">
+                </div>
+            </div>
+            <div id="fld_baja" class="hidden md:col-span-2 grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Motivo baja</label>
+                    <input id="e_motivo_baja" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Muerte / rechazo / descarte">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">Comprador (venta)</label>
+                    <input id="e_comprador" class="mt-1 w-full border rounded p-2 text-sm">
                 </div>
             </div>
             <div class="md:col-span-3">
@@ -302,6 +358,21 @@
             </table>
         </div>
     </section>
+
+    <!-- CARGA MASIVA EVENTOS -->
+    <section id="tab-import" class="tab-panel hidden">
+        <p class="text-sm text-slate-600 mb-2">
+            Importá eventos reproductivos/productivos (una línea por evento). Compatible con planillas de control lechero.
+            Formato: <code class="bg-slate-100 px-1 rounded text-xs">caravana;tipo;fecha;resultado;toro_o_semen;tecnico;detalle</code>
+        </p>
+        <p class="text-xs text-slate-500 mb-3">Tipos: celo, iatf, inseminacion, servicio_natural, diagnostico_prenez, parto, secado, venta, mortandad, pesada…</p>
+        <textarea id="imp_texto" rows="10" class="w-full border rounded p-3 font-mono text-sm"
+            placeholder="A-101;celo;2026-09-01;Celo observado;;;Detectado visual&#10;A-101;inseminacion;2026-09-02;;Holstein Elite / PJ-445;Juan;1er servicio&#10;A-101;parto;2026-09-20;Parto normal;;;Hembra 38kg"></textarea>
+        <div class="flex gap-2 mt-3">
+            <button onclick="importarEventos()" class="bg-violet-700 text-white px-4 py-2 rounded text-sm font-bold hover:bg-violet-800">Importar eventos</button>
+        </div>
+        <pre id="imp_result" class="mt-3 text-xs bg-slate-50 border rounded p-3 hidden"></pre>
+    </section>
 </div>
 
 <script>
@@ -335,6 +406,12 @@ async function boot() {
     });
     await Promise.all([cargarResumen(), cargarAnimales(), cargarRodeosTabla(), cargarHistorial()]);
     toggleEventoFields();
+    const qs = new URLSearchParams(location.search);
+    const eid = Number(qs.get('evento') || 0);
+    if (eid) {
+        document.getElementById('e_animal').value = eid;
+        showTab('evento');
+    }
 }
 
 function fillSelect(id, rows, valKey, label, withEmpty) {
@@ -397,12 +474,7 @@ function usarAnimal(id) {
 }
 
 async function verFicha(id) {
-    const data = await fetch('/api/ganaderia/animales/' + id).then(r => r.json());
-    const a = data.animal;
-    const ev = (data.eventos || []).slice(0, 15).map(e =>
-        `${e.fecha} - ${e.tipo}${e.peso_kg!=null?' - '+e.peso_kg+'kg':''}${e.resultado?' - '+e.resultado:''}`
-    ).join('\n');
-    alert(`#${a.id} ${a.caravana_visual||''}\nEID: ${a.caravana_electronica||' - '}\n${a.sexo} - ${a.sistema_actual}\nPeso: ${a.peso_ultimo??' - '} kg\n\nÚltimos eventos:\n${ev||'(sin eventos)'}`);
+    location.href = 'AnimalFicha.html?id=' + id;
 }
 
 async function guardarAnimal(ev) {
@@ -439,10 +511,14 @@ function toggleEventoFields() {
     show('fld_protocolo', t === 'iatf');
     show('fld_resultado', ['celo','diagnostico_prenez','parto','aborto'].includes(t));
     show('fld_semen', ['iatf','inseminacion','servicio_natural'].includes(t));
-    show('fld_tecnico', ['iatf','inseminacion','diagnostico_prenez','tratamiento','vacunacion'].includes(t));
-    show('fld_rodeo', ['cambio_rodeo','ingreso_feedlot','salida_feedlot','destete'].includes(t));
+    show('fld_tecnico', ['iatf','inseminacion','diagnostico_prenez','tratamiento','vacunacion','parto'].includes(t));
+    show('fld_rodeo', ['cambio_rodeo','ingreso_feedlot','salida_feedlot','destete','secado'].includes(t));
     show('fld_categoria', ['cambio_categoria','destete'].includes(t));
     show('fld_med', ['tratamiento','vacunacion','sanidad'].includes(t));
+    show('fld_celo', t === 'celo');
+    show('fld_toro', ['iatf','inseminacion','servicio_natural','parto'].includes(t));
+    show('fld_parto', t === 'parto');
+    show('fld_baja', ['venta','mortandad'].includes(t));
 }
 
 async function guardarEvento(ev) {
@@ -461,14 +537,52 @@ async function guardarEvento(ev) {
         medicamento: document.getElementById('e_med').value || null,
         dosis: document.getElementById('e_dosis').value || null,
         detalle: document.getElementById('e_detalle').value || null,
+        score_celo: document.getElementById('e_score_celo').value || null,
+        toro_nombre: document.getElementById('e_toro_nombre').value || null,
+        pajuela: document.getElementById('e_pajuela').value || null,
+        facilidad_parto: document.getElementById('e_facilidad').value || null,
+        cria_sexo: document.getElementById('e_cria_sexo').value || null,
+        cria_peso: document.getElementById('e_cria_peso').value ? Number(document.getElementById('e_cria_peso').value) : null,
+        cria_caravana: document.getElementById('e_cria_caravana').value || null,
+        cria_destino: document.getElementById('e_cria_destino').value || null,
+        motivo_baja: document.getElementById('e_motivo_baja').value || null,
+        comprador: document.getElementById('e_comprador').value || null,
     };
     const res = await fetch('/api/ganaderia/eventos', {
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     if (!res.ok) { alert((await res.json().catch(()=>({}))).detail || 'Error'); return false; }
-    alert('Evento registrado');
+    const out = await res.json();
+    alert('Evento registrado' + (out.animal_id ? ' · animal #' + out.animal_id : ''));
     await Promise.all([cargarResumen(), cargarAnimales(), cargarHistorial()]);
     return false;
+}
+
+async function importarEventos() {
+    const lines = document.getElementById('imp_texto').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const eventos = lines.map(line => {
+        const p = line.split(/[;,\t]/).map(x => x.trim());
+        return {
+            caravana: p[0],
+            tipo: (p[1] || '').toLowerCase(),
+            fecha: p[2] || new Date().toISOString().slice(0,10),
+            resultado: p[3] || '',
+            toro_nombre: p[4] || '',
+            semen_lote: p[4] || '',
+            tecnico: p[5] || '',
+            detalle: p[6] || '',
+            origen_dato: 'import_masivo',
+        };
+    });
+    const res = await fetch('/api/ganaderia/eventos/importar', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ eventos })
+    });
+    const data = await res.json();
+    const box = document.getElementById('imp_result');
+    box.classList.remove('hidden');
+    box.textContent = JSON.stringify(data, null, 2);
+    await Promise.all([cargarResumen(), cargarAnimales(), cargarHistorial()]);
 }
 
 async function importarEID() {

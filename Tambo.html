@@ -14,15 +14,25 @@
     <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
         <div>
             <h1 class="text-2xl font-bold text-slate-800">Tambo <span class="text-sm font-normal text-sky-700">Producción - Lactancias - Controles</span></h1>
-            <p class="text-xs text-slate-500 mt-1">Litros diarios, calidad (grasa/proteína/RCS), vacas en ordeño y eventos reproductivos vía Ganadería.</p>
+            <p class="text-xs text-slate-500 mt-1">Litros diarios, calidad, rodeos (ordeñe/secas/vaquillonas) y ficha animal completa.</p>
         </div>
         <div class="flex gap-2">
+            <a href="Ganaderia.html?tab=import" class="bg-violet-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-violet-800">Carga masiva</a>
             <a href="Ganaderia.html" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-rose-800"><- Ganadería</a>
             <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
         </div>
     </div>
 
-    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"></div>
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
+    <div id="compRodeos" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6"></div>
+
+    <div class="mb-6 border rounded-xl p-4 bg-slate-50 flex flex-wrap gap-2 items-end">
+        <div class="flex-1 min-w-[200px]">
+            <label class="text-xs font-bold text-slate-600">Abrir ficha animal (caravana / ID)</label>
+            <input id="fichaQ" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Ej. A-101 o ID numérico" onkeydown="if(event.key==='Enter')abrirFicha()">
+        </div>
+        <button type="button" onclick="abrirFicha()" class="bg-sky-800 text-white px-4 py-2 rounded-md text-sm font-bold">Abrir ficha</button>
+    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Producción diaria -->
@@ -119,7 +129,8 @@
                 </div>
                 <div class="col-span-2 flex flex-wrap gap-2">
                     <button class="bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-bold">Guardar control</button>
-                    <a href="Ganaderia.html" class="text-sm text-sky-700 font-semibold self-center hover:underline">Registrar celo / IATF / secado en Ganadería</a>
+                    <button type="button" onclick="location.href='AnimalFicha.html?id='+document.getElementById('c_animal').value" class="text-sm text-sky-800 font-semibold border border-sky-300 px-3 py-2 rounded-md hover:bg-sky-50">Ver ficha</button>
+                    <a href="Ganaderia.html" class="text-sm text-sky-700 font-semibold self-center hover:underline">Celo / IATF / parto / secado</a>
                 </div>
             </form>
         </div>
@@ -172,6 +183,26 @@ async function cargarResumen() {
         <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3"><div class="text-xs font-bold text-emerald-800 uppercase">En ordeño</div><div class="text-2xl font-extrabold">${r.en_ordeno||0}</div></div>
         <div class="bg-white border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Último día</div><div class="text-2xl font-extrabold">${u.litros!=null?Number(u.litros).toFixed(0):' - '} <span class="text-sm font-normal">L</span></div><div class="text-xs text-slate-500">${esc(u.fecha||'')}</div></div>
         <div class="bg-slate-50 border rounded-lg p-3"><div class="text-xs font-bold text-slate-600 uppercase">Prom. 30d</div><div class="text-2xl font-extrabold">${Number(r.promedio_litros_30d||0).toFixed(0)} <span class="text-sm font-normal">L</span></div></div>`;
+    const comp = r.composicion_rodeos || [];
+    document.getElementById('compRodeos').innerHTML = comp.length
+        ? comp.map(c => `
+            <div class="border rounded-lg px-3 py-2 bg-white">
+                <div class="text-[11px] font-bold uppercase text-slate-500 truncate">${esc(c.rodeo)}</div>
+                <div class="text-xl font-extrabold text-slate-800">${c.cabezas||0}</div>
+            </div>`).join('')
+        : '<div class="col-span-full text-xs text-slate-400">Sin composición de rodeos aún. Asigná vacas a En ordeñe / Secas / Vaquillonas…</div>';
+}
+
+async function abrirFicha() {
+    const q = (document.getElementById('fichaQ').value || '').trim();
+    if (!q) return;
+    if (/^\d+$/.test(q)) {
+        location.href = 'AnimalFicha.html?id=' + q;
+        return;
+    }
+    const rows = await fetch('/api/ganaderia/animales?q=' + encodeURIComponent(q) + '&estado=activo&limit=20').then(r => r.json());
+    if (!rows.length) { alert('No se encontró animal'); return; }
+    location.href = 'AnimalFicha.html?id=' + rows[0].id;
 }
 
 async function cargarProd() {

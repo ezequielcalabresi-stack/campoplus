@@ -31,6 +31,37 @@ ESTADOS_ANIMAL = (
     "baja",
 )
 
+RODEOS_TAMBO_SEED = (
+    ("Vacas en ordeñe", "tambo"),
+    ("Vacas secas", "tambo"),
+    ("Vaquillonas", "tambo"),
+    ("Recría lechera", "tambo"),
+    ("Terneros/as", "tambo"),
+)
+
+# Campos extra de eventos (repro / bajas) — se agregan con ALTER si faltan
+EVENTO_EXTRA_COLS = (
+    ("score_celo", "TEXT"),
+    ("toro_nombre", "TEXT"),
+    ("pajuela", "TEXT"),
+    ("facilidad_parto", "TEXT"),
+    ("cria_sexo", "TEXT"),
+    ("cria_peso", "REAL"),
+    ("cria_destino", "TEXT"),
+    ("cria_caravana", "TEXT"),
+    ("motivo_baja", "TEXT"),
+    ("comprador", "TEXT"),
+    ("origen_dato", "TEXT"),
+    ("ref_externa", "TEXT"),
+)
+
+ANIMAL_EXTRA_COLS = (
+    ("rp", "TEXT"),
+    ("pedigree", "TEXT"),
+    ("condicion_corporal", "REAL"),
+    ("estado_repro", "TEXT"),
+)
+
 TIPOS_EVENTO = (
     "alta",
     "compra",
@@ -76,6 +107,15 @@ CATEGORIAS_SEED = [
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _ensure_col(cursor, table: str, col: str, decl: str) -> None:
+    cols = {r[1] for r in cursor.execute(f"PRAGMA table_info({table})")}
+    if col not in cols:
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl};")
+        except Exception:
+            pass
 
 
 def init_ganaderia_schema(cursor) -> None:
@@ -191,6 +231,11 @@ def init_ganaderia_schema(cursor) -> None:
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_gan_eventos_tipo ON gan_eventos(empresa_id, tipo, fecha);"
     )
+
+    for col, decl in ANIMAL_EXTRA_COLS:
+        _ensure_col(cursor, "gan_animales", col, decl)
+    for col, decl in EVENTO_EXTRA_COLS:
+        _ensure_col(cursor, "gan_eventos", col, decl)
 
     cursor.execute(
         """
@@ -310,6 +355,25 @@ def init_ganaderia_schema(cursor) -> None:
                 (nombre, sistema),
             )
 
+    # Rodeos operativos de tambo (idempotente por nombre)
+    for nombre, sistema in RODEOS_TAMBO_SEED:
+        cursor.execute(
+            """
+            SELECT id FROM gan_rodeos
+            WHERE empresa_id = 1 AND LOWER(TRIM(nombre)) = LOWER(?) AND activo = 1
+            LIMIT 1;
+            """,
+            (nombre,),
+        )
+        if not cursor.fetchone():
+            cursor.execute(
+                """
+                INSERT INTO gan_rodeos (empresa_id, nombre, sistema, activo)
+                VALUES (1, ?, ?, 1);
+                """,
+                (nombre, sistema),
+            )
+
     # Protocolos IATF comunes
     cursor.execute("SELECT COUNT(*) AS n FROM gan_protocolos_iatf;")
     if int(cursor.fetchone()[0] or 0) == 0:
@@ -331,6 +395,28 @@ def _row(r) -> dict:
     return dict(r) if r is not None else {}
 
 
+def _asegurar_rodeos_tambo(conn, empresa_id: int) -> None:
+    cur = conn.cursor()
+    for nombre, sistema in RODEOS_TAMBO_SEED:
+        cur.execute(
+            """
+            SELECT id FROM gan_rodeos
+            WHERE empresa_id = ? AND LOWER(TRIM(nombre)) = LOWER(?) AND activo = 1
+            LIMIT 1;
+            """,
+            (empresa_id, nombre),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO gan_rodeos (empresa_id, nombre, sistema, activo)
+                VALUES (?, ?, ?, 1);
+                """,
+                (empresa_id, nombre, sistema),
+            )
+    conn.commit()
+
+
 def listar_categorias(conn, empresa_id: int) -> List[dict]:
     cur = conn.cursor()
     cur.execute(
@@ -345,6 +431,7 @@ def listar_categorias(conn, empresa_id: int) -> List[dict]:
 
 
 def listar_rodeos(conn, empresa_id: int, sistema: Optional[str] = None) -> List[dict]:
+    _asegurar_rodeos_tambo(conn, empresa_id)
     cur = conn.cursor()
     if sistema:
         cur.execute(
@@ -606,8 +693,11 @@ def _insert_evento(cur, empresa_id: int, data: dict) -> int:
         INSERT INTO gan_eventos (
             empresa_id, animal_id, fecha, tipo, rodeo_id, categoria_id, peso_kg,
             eid_leido, resultado, protocolo, toro_id, semen_lote, tecnico,
-            medicamento, dosis, litros, costo, detalle, usuario_registro
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+            medicamento, dosis, litros, costo, detalle, usuario_registro,
+            score_celo, toro_nombre, pajuela, facilidad_parto, cria_sexo,
+            cria_peso, cria_destino, cria_caravana, motivo_baja, comprador,
+            origen_dato, ref_externa
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
         """,
         (
             empresa_id,
@@ -629,6 +719,18 @@ def _insert_evento(cur, empresa_id: int, data: dict) -> int:
             float(data.get("costo") or 0),
             data.get("detalle"),
             data.get("usuario_registro") or "",
+            data.get("score_celo"),
+            data.get("toro_nombre"),
+            data.get("pajuela"),
+            data.get("facilidad_parto"),
+            data.get("cria_sexo"),
+            data.get("cria_peso"),
+            data.get("cria_destino"),
+            data.get("cria_caravana"),
+            data.get("motivo_baja"),
+            data.get("comprador"),
+            data.get("origen_dato") or "manual",
+            data.get("ref_externa"),
         ),
     )
     return int(cur.lastrowid)
@@ -746,6 +848,55 @@ def registrar_evento(conn, empresa_id: int, data: dict, usuario: str = "") -> di
                 """,
                 (empresa_id, animal_id, nro, data.get("fecha") or _now()[:10]),
             )
+            # Mover a rodeo en ordeñe si existe
+            cur.execute(
+                """
+                SELECT id FROM gan_rodeos
+                WHERE empresa_id = ? AND activo = 1
+                  AND LOWER(nombre) LIKE '%orde%'
+                ORDER BY id LIMIT 1;
+                """,
+                (empresa_id,),
+            )
+            rodeo_ord = cur.fetchone()
+            if rodeo_ord:
+                cur.execute(
+                    "UPDATE gan_animales SET rodeo_id = ?, estado_repro = 'en_ordeño' WHERE id = ?;",
+                    (int(rodeo_ord["id"]), animal_id),
+                )
+        # Alta de cría si vino caravana / datos
+        cria_vis = (data.get("cria_caravana") or "").strip()
+        if cria_vis or data.get("cria_sexo"):
+            cria_id = crear_animal(
+                conn,
+                empresa_id,
+                {
+                    "caravana_visual": cria_vis or None,
+                    "sexo": data.get("cria_sexo") or "Indefinido",
+                    "fecha_nacimiento": data.get("fecha") or _now()[:10],
+                    "madre_id": animal_id,
+                    "padre_id": data.get("toro_id"),
+                    "sistema_actual": "tambo" if animal and animal.get("es_tambo") else (
+                        animal.get("sistema_actual") if animal else "cria"
+                    ),
+                    "peso_ultimo": data.get("cria_peso"),
+                    "fecha_peso_ultimo": data.get("fecha") if data.get("cria_peso") else None,
+                    "origen": "Nacimiento",
+                    "es_tambo": 1 if animal and animal.get("es_tambo") else 0,
+                    "observaciones": data.get("cria_destino") or "",
+                },
+                usuario=usuario,
+            )
+            extra = f"Cría #{cria_id}" + (f" {cria_vis}" if cria_vis else "")
+            cur.execute(
+                """
+                UPDATE gan_eventos
+                SET detalle = TRIM(COALESCE(detalle,'') || ' | ' || ?)
+                WHERE id = ?;
+                """,
+                (extra, eid_id),
+            )
+
     if animal_id and tipo == "secado":
         cur.execute(
             """
@@ -754,6 +905,36 @@ def registrar_evento(conn, empresa_id: int, data: dict, usuario: str = "") -> di
             """,
             (data.get("fecha") or _now()[:10], animal_id),
         )
+        cur.execute(
+            """
+            SELECT id FROM gan_rodeos
+            WHERE empresa_id = ? AND activo = 1 AND LOWER(nombre) LIKE '%seca%'
+            ORDER BY id LIMIT 1;
+            """,
+            (empresa_id,),
+        )
+        rodeo_seca = cur.fetchone()
+        if rodeo_seca:
+            cur.execute(
+                "UPDATE gan_animales SET rodeo_id = ?, estado_repro = 'seca' WHERE id = ?;",
+                (int(rodeo_seca["id"]), animal_id),
+            )
+
+    if animal_id and tipo in ("celo", "inseminacion", "iatf", "servicio_natural", "diagnostico_prenez"):
+        mapa_repro = {
+            "celo": "en_celo",
+            "inseminacion": "servida",
+            "iatf": "servida",
+            "servicio_natural": "servida",
+            "diagnostico_prenez": (data.get("resultado") or "diagnostico").strip().lower()[:40] or "diagnosticada",
+        }
+        cur.execute(
+            "UPDATE gan_animales SET estado_repro = ? WHERE id = ?;",
+            (mapa_repro.get(tipo, tipo), animal_id),
+        )
+
+    if animal_id and tipo in ("venta", "mortandad") and data.get("motivo_baja"):
+        pass  # ya guardado en el evento
 
     conn.commit()
     return {"evento_id": eid_id, "animal_id": animal_id}
@@ -892,6 +1073,190 @@ def listar_protocolos_iatf(conn, empresa_id: int) -> List[dict]:
         """
         SELECT * FROM gan_protocolos_iatf
         WHERE empresa_id = ? AND activo = 1 ORDER BY nombre COLLATE NOCASE;
+        """,
+        (empresa_id,),
+    )
+    return [dict(r) for r in cur.fetchall()]
+
+
+def ficha_animal(conn, empresa_id: int, animal_id: int) -> Optional[dict]:
+    """Ficha unificada: identificación, genética, timeline, lactancias y producción."""
+    animal = obtener_animal(conn, empresa_id, animal_id)
+    if not animal:
+        return None
+    cur = conn.cursor()
+
+    def _ref(aid):
+        if not aid:
+            return None
+        cur.execute(
+            """
+            SELECT id, caravana_visual, caravana_electronica, nombre, rp, raza, sexo
+            FROM gan_animales WHERE empresa_id = ? AND id = ?;
+            """,
+            (empresa_id, aid),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    madre = _ref(animal.get("madre_id"))
+    padre = _ref(animal.get("padre_id"))
+
+    cur.execute(
+        """
+        SELECT id, caravana_visual, caravana_electronica, nombre, sexo,
+               fecha_nacimiento, peso_ultimo, estado, sistema_actual
+        FROM gan_animales
+        WHERE empresa_id = ? AND madre_id = ?
+        ORDER BY fecha_nacimiento DESC, id DESC;
+        """,
+        (empresa_id, animal_id),
+    )
+    crias = [dict(r) for r in cur.fetchall()]
+
+    eventos = listar_eventos(conn, empresa_id, animal_id=animal_id, limit=500)
+    tipos_repro = {
+        "celo", "iatf", "inseminacion", "servicio_natural",
+        "diagnostico_prenez", "parto", "aborto", "secado",
+    }
+    eventos_repro = [e for e in eventos if e.get("tipo") in tipos_repro]
+    eventos_baja = [e for e in eventos if e.get("tipo") in ("venta", "mortandad")]
+
+    def _ultimo(tipos):
+        for e in eventos:
+            if e.get("tipo") in tipos:
+                return e
+        return None
+
+    cur.execute(
+        """
+        SELECT * FROM tambo_lactancias
+        WHERE empresa_id = ? AND animal_id = ?
+        ORDER BY nro_lactancia DESC;
+        """,
+        (empresa_id, animal_id),
+    )
+    lactancias = [dict(r) for r in cur.fetchall()]
+
+    cur.execute(
+        """
+        SELECT * FROM tambo_controles_lecheros
+        WHERE empresa_id = ? AND animal_id = ?
+        ORDER BY fecha DESC, id DESC
+        LIMIT 60;
+        """,
+        (empresa_id, animal_id),
+    )
+    controles = [dict(r) for r in cur.fetchall()]
+
+    prod_prom = None
+    if controles:
+        litros = [float(c["litros"] or 0) for c in controles if c.get("litros") is not None]
+        if litros:
+            prod_prom = round(sum(litros) / len(litros), 1)
+
+    return {
+        "animal": animal,
+        "genetica": {"madre": madre, "padre": padre, "crias": crias},
+        "resumen_repro": {
+            "estado_repro": animal.get("estado_repro"),
+            "ultimo_celo": _ultimo({"celo"}),
+            "ultimo_servicio": _ultimo({"iatf", "inseminacion", "servicio_natural"}),
+            "ultimo_diagnostico": _ultimo({"diagnostico_prenez"}),
+            "ultimo_parto": _ultimo({"parto"}),
+            "ultimo_secado": _ultimo({"secado"}),
+            "n_servicios": sum(
+                1 for e in eventos_repro
+                if e.get("tipo") in ("iatf", "inseminacion", "servicio_natural")
+            ),
+            "n_partos": sum(1 for e in eventos_repro if e.get("tipo") == "parto"),
+        },
+        "eventos": eventos,
+        "eventos_repro": eventos_repro,
+        "eventos_baja": eventos_baja,
+        "lactancias": lactancias,
+        "controles_lecheros": controles,
+        "productivo": {
+            "promedio_litros_control": prod_prom,
+            "n_controles": len(controles),
+            "lactancia_activa": next(
+                (l for l in lactancias if l.get("estado") == "en_ordeño"), None
+            ),
+        },
+    }
+
+
+def importar_eventos_masivo(
+    conn, empresa_id: int, filas: List[dict], usuario: str = ""
+) -> dict:
+    """
+    Carga masiva de eventos reproductivos/productivos.
+    Cada fila: caravana o eid o animal_id + tipo + fecha + campos opcionales.
+    """
+    ok = 0
+    errores = []
+    for i, raw in enumerate(filas, start=1):
+        try:
+            data = dict(raw)
+            animal_id = data.get("animal_id")
+            if not animal_id:
+                car = (data.get("caravana") or data.get("caravana_visual") or "").strip()
+                eid = (data.get("eid") or data.get("caravana_electronica") or "").strip()
+                rp = (data.get("rp") or "").strip()
+                cur = conn.cursor()
+                row = None
+                if eid:
+                    cur.execute(
+                        """
+                        SELECT id FROM gan_animales
+                        WHERE empresa_id = ? AND caravana_electronica = ?;
+                        """,
+                        (empresa_id, eid),
+                    )
+                    row = cur.fetchone()
+                if not row and car:
+                    cur.execute(
+                        """
+                        SELECT id FROM gan_animales
+                        WHERE empresa_id = ? AND LOWER(TRIM(caravana_visual)) = LOWER(?);
+                        """,
+                        (empresa_id, car),
+                    )
+                    row = cur.fetchone()
+                if not row and rp:
+                    cur.execute(
+                        """
+                        SELECT id FROM gan_animales
+                        WHERE empresa_id = ? AND LOWER(TRIM(COALESCE(rp,''))) = LOWER(?);
+                        """,
+                        (empresa_id, rp),
+                    )
+                    row = cur.fetchone()
+                if not row:
+                    raise ValueError("Animal no encontrado (caravana/EID/RP)")
+                data["animal_id"] = int(row["id"])
+            data["origen_dato"] = data.get("origen_dato") or "import_masivo"
+            registrar_evento(conn, empresa_id, data, usuario=usuario)
+            ok += 1
+        except Exception as exc:
+            errores.append({"fila": i, "error": str(exc), "dato": raw})
+    return {"ok": ok, "errores": errores, "total": len(filas)}
+
+
+def composicion_rodeos_tambo(conn, empresa_id: int) -> List[dict]:
+    """Cabezas activas por rodeo de sistema tambo (+ sin rodeo)."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COALESCE(r.id, 0) AS rodeo_id,
+               COALESCE(r.nombre, 'Sin rodeo') AS rodeo,
+               COUNT(*) AS cabezas
+        FROM gan_animales a
+        LEFT JOIN gan_rodeos r ON r.id = a.rodeo_id
+        WHERE a.empresa_id = ? AND a.estado = 'activo'
+          AND (a.es_tambo = 1 OR a.sistema_actual = 'tambo' OR COALESCE(r.sistema,'') = 'tambo')
+        GROUP BY COALESCE(r.id, 0), COALESCE(r.nombre, 'Sin rodeo')
+        ORDER BY cabezas DESC, rodeo COLLATE NOCASE;
         """,
         (empresa_id,),
     )

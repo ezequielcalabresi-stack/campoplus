@@ -12,8 +12,11 @@ from ganaderia import (
     TIPOS_EVENTO,
     actualizar_animal,
     buscar_animales,
+    composicion_rodeos_tambo,
     crear_animal,
     crear_rodeo,
+    ficha_animal,
+    importar_eventos_masivo,
     importar_lecturas_eid,
     init_ganaderia_schema,
     listar_categorias,
@@ -103,6 +106,27 @@ class EventoModel(BaseModel):
     costo: float = 0
     detalle: Optional[str] = ""
     sistema_destino: Optional[str] = ""
+    score_celo: Optional[str] = ""
+    toro_nombre: Optional[str] = ""
+    pajuela: Optional[str] = ""
+    facilidad_parto: Optional[str] = ""
+    cria_sexo: Optional[str] = ""
+    cria_peso: Optional[float] = None
+    cria_destino: Optional[str] = ""
+    cria_caravana: Optional[str] = ""
+    motivo_baja: Optional[str] = ""
+    comprador: Optional[str] = ""
+    origen_dato: Optional[str] = ""
+    ref_externa: Optional[str] = ""
+    # aliases para import
+    caravana: Optional[str] = None
+    caravana_visual: Optional[str] = None
+    eid: Optional[str] = None
+    rp: Optional[str] = None
+
+
+class ImportEventosModel(BaseModel):
+    eventos: List[EventoModel] = Field(default_factory=list)
 
 
 class LecturaEIDItem(BaseModel):
@@ -243,6 +267,17 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
         finally:
             conn.close()
 
+    @app.get("/api/ganaderia/animales/{animal_id}/ficha")
+    def api_ficha_animal(animal_id: int):
+        conn = get_db()
+        try:
+            ficha = ficha_animal(conn, get_empresa_activa_id(), animal_id)
+            if not ficha:
+                raise HTTPException(404, "Animal no encontrado")
+            return ficha
+        finally:
+            conn.close()
+
     @app.post("/api/ganaderia/animales")
     def api_crear_animal(data: AnimalModel, request: Request):
         if data.sistema_actual not in SISTEMAS:
@@ -310,6 +345,22 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
         finally:
             conn.close()
 
+    @app.post("/api/ganaderia/eventos/importar")
+    def api_import_eventos(data: ImportEventosModel, request: Request):
+        if not data.eventos:
+            raise HTTPException(400, "Sin eventos para importar")
+        conn = get_db()
+        try:
+            result = importar_eventos_masivo(
+                conn,
+                get_empresa_activa_id(),
+                [x.model_dump() for x in data.eventos],
+                usuario=_firma(request),
+            )
+            return {"status": "ok", **result}
+        finally:
+            conn.close()
+
     @app.get("/api/ganaderia/protocolos-iatf")
     def api_protocolos():
         conn = get_db()
@@ -339,7 +390,11 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
     def api_tambo_resumen():
         conn = get_db()
         try:
-            return resumen_tambo(conn, get_empresa_activa_id())
+            out = resumen_tambo(conn, get_empresa_activa_id())
+            out["composicion_rodeos"] = composicion_rodeos_tambo(
+                conn, get_empresa_activa_id()
+            )
+            return out
         finally:
             conn.close()
 

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Ficha animal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
+    <style>
+        .tab-btn.active { background:#0f172a; color:#fff; }
+        .tl-dot { width:10px; height:10px; border-radius:999px; background:#0ea5e9; margin-top:6px; flex-shrink:0; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-6xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <p class="text-xs font-bold uppercase tracking-wide text-sky-700">Ficha individual</p>
+            <h1 id="titulo" class="text-2xl font-bold text-slate-800">Cargando…</h1>
+            <p id="subtitulo" class="text-xs text-slate-500 mt-1"></p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="Ganaderia.html" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold">← Ganadería</a>
+            <a href="Tambo.html" class="bg-sky-600 text-white px-3 py-2 rounded-md text-sm font-bold">Tambo</a>
+            <button onclick="irEvento()" class="bg-emerald-700 text-white px-3 py-2 rounded-md text-sm font-bold">+ Evento</button>
+        </div>
+    </div>
+
+    <div id="err" class="hidden mb-4 text-sm bg-amber-50 text-amber-900 border border-amber-200 rounded-lg px-3 py-2"></div>
+
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5"></div>
+
+    <div class="flex flex-wrap gap-1 mb-4 border-b pb-2">
+        <button class="tab-btn active px-3 py-1.5 rounded text-sm font-semibold" data-tab="resumen" onclick="showTab('resumen')">Resumen</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="repro" onclick="showTab('repro')">Reproductivo</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="prod" onclick="showTab('prod')">Productivo</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="timeline" onclick="showTab('timeline')">Historial</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="genetica" onclick="showTab('genetica')">Genética</button>
+    </div>
+
+    <section id="tab-resumen" class="tab-panel">
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="border rounded-xl p-4 bg-slate-50">
+                <h2 class="font-bold text-slate-800 mb-3">Identificación</h2>
+                <dl id="idBox" class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm"></dl>
+            </div>
+            <div class="border rounded-xl p-4">
+                <h2 class="font-bold text-slate-800 mb-3">Estado actual</h2>
+                <dl id="estadoBox" class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm"></dl>
+            </div>
+        </div>
+    </section>
+
+    <section id="tab-repro" class="tab-panel hidden">
+        <div id="reproResumen" class="grid md:grid-cols-3 gap-3 mb-4"></div>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-left">Evento</th>
+                        <th class="p-2 text-left">Resultado / detalle</th>
+                        <th class="p-2 text-left">Toro / semen</th>
+                        <th class="p-2 text-left">Técnico</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyRepro" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="tab-prod" class="tab-panel hidden">
+        <div id="prodResumen" class="grid md:grid-cols-3 gap-3 mb-4"></div>
+        <h3 class="font-bold text-sm text-slate-700 mb-2">Lactancias</h3>
+        <div class="overflow-x-auto border rounded-lg mb-4">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Nº</th>
+                        <th class="p-2 text-left">Parto</th>
+                        <th class="p-2 text-left">Secado</th>
+                        <th class="p-2 text-left">Estado</th>
+                        <th class="p-2 text-right">Acum. L</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyLact" class="divide-y"></tbody>
+            </table>
+        </div>
+        <h3 class="font-bold text-sm text-slate-700 mb-2">Controles lecheros</h3>
+        <div class="overflow-x-auto border rounded-lg max-h-72">
+            <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-right">Litros</th>
+                        <th class="p-2 text-right">Grasa %</th>
+                        <th class="p-2 text-right">Prot. %</th>
+                        <th class="p-2 text-right">RCS</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyCtrl" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="tab-timeline" class="tab-panel hidden">
+        <div id="timeline" class="space-y-3"></div>
+    </section>
+
+    <section id="tab-genetica" class="tab-panel hidden">
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="border rounded-xl p-4">
+                <h3 class="font-bold text-slate-800 mb-2">Madre</h3>
+                <div id="madreBox" class="text-sm text-slate-600"></div>
+            </div>
+            <div class="border rounded-xl p-4">
+                <h3 class="font-bold text-slate-800 mb-2">Padre</h3>
+                <div id="padreBox" class="text-sm text-slate-600"></div>
+            </div>
+        </div>
+        <h3 class="font-bold text-sm text-slate-700 mb-2">Crías registradas</h3>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                        <th class="p-2 text-left">Caravana</th>
+                        <th class="p-2 text-left">Sexo</th>
+                        <th class="p-2 text-left">Nacimiento</th>
+                        <th class="p-2 text-left">Estado</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyCrias" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<script>
+let FICHA = null;
+const params = new URLSearchParams(location.search);
+const animalId = Number(params.get('id') || 0);
+
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function showTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === name);
+        b.classList.toggle('text-slate-600', b.dataset.tab !== name);
+    });
+    document.getElementById('tab-' + name).classList.remove('hidden');
+}
+function kv(label, value) {
+    return `<div><dt class="text-[11px] uppercase font-bold text-slate-500">${esc(label)}</dt><dd class="font-medium text-slate-800">${value ?? '—'}</dd></div>`;
+}
+function linkAnimal(a) {
+    if (!a) return '<span class="text-slate-400">Sin dato</span>';
+    const nom = a.caravana_visual || a.nombre || ('#' + a.id);
+    return `<a class="text-sky-700 font-bold hover:underline" href="AnimalFicha.html?id=${a.id}">${esc(nom)}</a>
+        <div class="text-xs text-slate-500">${esc(a.caravana_electronica || '')} ${esc(a.raza || '')}</div>`;
+}
+function irEvento() {
+    location.href = 'Ganaderia.html?evento=' + animalId;
+}
+
+async function boot() {
+    await CampoAuth.requireAuth();
+    if (!animalId) {
+        document.getElementById('err').textContent = 'Falta id de animal (?id=)';
+        document.getElementById('err').classList.remove('hidden');
+        return;
+    }
+    const res = await fetch('/api/ganaderia/animales/' + animalId + '/ficha');
+    if (!res.ok) {
+        document.getElementById('err').textContent = 'No se pudo cargar la ficha';
+        document.getElementById('err').classList.remove('hidden');
+        return;
+    }
+    FICHA = await res.json();
+    render();
+}
+
+function render() {
+    const a = FICHA.animal || {};
+    const rr = FICHA.resumen_repro || {};
+    const pr = FICHA.productivo || {};
+    const g = FICHA.genetica || {};
+
+    document.getElementById('titulo').textContent =
+        (a.caravana_visual || a.nombre || ('Animal #' + a.id)) + (a.rp ? ' · RP ' + a.rp : '');
+    document.getElementById('subtitulo').textContent =
+        [a.sexo, a.raza, a.categoria_nombre, a.sistema_actual, a.rodeo_nombre].filter(Boolean).join(' · ');
+
+    document.getElementById('kpis').innerHTML = `
+        <div class="bg-sky-50 border border-sky-200 rounded-lg p-3">
+            <div class="text-[11px] font-bold uppercase text-sky-800">Estado repro</div>
+            <div class="text-lg font-extrabold text-sky-950">${esc(rr.estado_repro || a.estado || '—')}</div>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+            <div class="text-[11px] font-bold uppercase text-emerald-800">Partos</div>
+            <div class="text-lg font-extrabold">${rr.n_partos || 0}</div>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <div class="text-[11px] font-bold uppercase text-amber-800">Servicios</div>
+            <div class="text-lg font-extrabold">${rr.n_servicios || 0}</div>
+        </div>
+        <div class="bg-slate-50 border rounded-lg p-3">
+            <div class="text-[11px] font-bold uppercase text-slate-600">Prom. control</div>
+            <div class="text-lg font-extrabold">${pr.promedio_litros_control != null ? pr.promedio_litros_control + ' L' : '—'}</div>
+        </div>`;
+
+    document.getElementById('idBox').innerHTML = [
+        kv('ID', a.id),
+        kv('Caravana', esc(a.caravana_visual)),
+        kv('EID', esc(a.caravana_electronica)),
+        kv('RP', esc(a.rp)),
+        kv('SENASA', esc(a.senasa_id)),
+        kv('Nombre', esc(a.nombre)),
+        kv('Raza', esc(a.raza)),
+        kv('Nacimiento', esc(a.fecha_nacimiento)),
+    ].join('');
+
+    document.getElementById('estadoBox').innerHTML = [
+        kv('Estado', esc(a.estado)),
+        kv('Sistema', esc(a.sistema_actual)),
+        kv('Rodeo', esc(a.rodeo_nombre)),
+        kv('Categoría', esc(a.categoria_nombre)),
+        kv('Peso', a.peso_ultimo != null ? a.peso_ultimo + ' kg' : '—'),
+        kv('CC', a.condicion_corporal != null ? a.condicion_corporal : '—'),
+        kv('Tambo', Number(a.es_tambo) ? 'Sí' : 'No'),
+        kv('Origen', esc(a.origen)),
+    ].join('');
+
+    const chip = (label, ev) => `
+        <div class="border rounded-lg p-3 bg-white">
+            <div class="text-[11px] font-bold uppercase text-slate-500">${label}</div>
+            <div class="text-sm font-semibold mt-1">${ev ? esc(ev.fecha) + ' · ' + esc(ev.tipo) : 'Sin registro'}</div>
+            <div class="text-xs text-slate-500 mt-0.5">${ev ? esc(ev.resultado || ev.detalle || '') : ''}</div>
+        </div>`;
+    document.getElementById('reproResumen').innerHTML =
+        chip('Último celo', rr.ultimo_celo) +
+        chip('Último servicio', rr.ultimo_servicio) +
+        chip('Último parto', rr.ultimo_parto);
+
+    document.getElementById('tbodyRepro').innerHTML = (FICHA.eventos_repro || []).map(e => `
+        <tr class="hover:bg-slate-50">
+            <td class="p-2 font-mono text-xs whitespace-nowrap">${esc(e.fecha)}</td>
+            <td class="p-2"><span class="text-xs bg-sky-50 text-sky-900 px-1.5 py-0.5 rounded font-bold">${esc(e.tipo)}</span></td>
+            <td class="p-2 text-xs">${esc(e.resultado || '')} ${esc(e.detalle || '')}
+                ${e.facilidad_parto ? '<div>Facilidad: ' + esc(e.facilidad_parto) + '</div>' : ''}
+                ${e.cria_caravana || e.cria_sexo ? '<div>Cría: ' + esc(e.cria_caravana || '') + ' ' + esc(e.cria_sexo || '') + (e.cria_peso != null ? ' · ' + e.cria_peso + ' kg' : '') + '</div>' : ''}
+                ${e.motivo_baja ? '<div>Baja: ' + esc(e.motivo_baja) + '</div>' : ''}
+            </td>
+            <td class="p-2 text-xs">${esc(e.toro_nombre || e.semen_lote || e.pajuela || '')}</td>
+            <td class="p-2 text-xs">${esc(e.tecnico || '')}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="p-6 text-center text-slate-400">Sin eventos reproductivos</td></tr>';
+
+    const lac = pr.lactancia_activa;
+    document.getElementById('prodResumen').innerHTML = `
+        <div class="border rounded-lg p-3"><div class="text-[11px] font-bold uppercase text-slate-500">Lactancia activa</div>
+            <div class="font-bold">${lac ? 'Nº ' + lac.nro_lactancia + ' · parto ' + esc(lac.fecha_parto) : 'Ninguna'}</div></div>
+        <div class="border rounded-lg p-3"><div class="text-[11px] font-bold uppercase text-slate-500">Controles</div>
+            <div class="font-bold">${pr.n_controles || 0}</div></div>
+        <div class="border rounded-lg p-3"><div class="text-[11px] font-bold uppercase text-slate-500">Promedio</div>
+            <div class="font-bold">${pr.promedio_litros_control != null ? pr.promedio_litros_control + ' L' : '—'}</div></div>`;
+
+    document.getElementById('tbodyLact').innerHTML = (FICHA.lactancias || []).map(l => `
+        <tr><td class="p-2">${l.nro_lactancia}</td><td class="p-2">${esc(l.fecha_parto)}</td>
+        <td class="p-2">${esc(l.fecha_secado || '—')}</td><td class="p-2">${esc(l.estado)}</td>
+        <td class="p-2 text-right font-mono">${l.produccion_acum_litros != null ? Number(l.produccion_acum_litros).toFixed(0) : '—'}</td></tr>`
+    ).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin lactancias</td></tr>';
+
+    document.getElementById('tbodyCtrl').innerHTML = (FICHA.controles_lecheros || []).map(c => `
+        <tr><td class="p-2 font-mono text-xs">${esc(c.fecha)}</td>
+        <td class="p-2 text-right font-mono">${c.litros != null ? Number(c.litros).toFixed(1) : '—'}</td>
+        <td class="p-2 text-right">${c.grasa_pct ?? '—'}</td>
+        <td class="p-2 text-right">${c.proteina_pct ?? '—'}</td>
+        <td class="p-2 text-right">${c.rcs ?? '—'}</td></tr>`
+    ).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin controles</td></tr>';
+
+    document.getElementById('timeline').innerHTML = (FICHA.eventos || []).map(e => `
+        <div class="flex gap-3">
+            <div class="tl-dot"></div>
+            <div class="pb-3 border-b border-slate-100 flex-1">
+                <div class="text-xs font-mono text-slate-500">${esc(e.fecha)}</div>
+                <div class="font-bold text-sm text-slate-800">${esc(e.tipo)}
+                    ${e.origen_dato && e.origen_dato !== 'manual' ? '<span class="ml-2 text-[10px] bg-violet-50 text-violet-800 px-1.5 py-0.5 rounded">' + esc(e.origen_dato) + '</span>' : ''}
+                </div>
+                <div class="text-xs text-slate-600">${esc([e.resultado, e.detalle, e.peso_kg != null ? e.peso_kg + ' kg' : '', e.tecnico].filter(Boolean).join(' · '))}</div>
+            </div>
+        </div>`).join('') || '<p class="text-slate-400 text-sm">Sin historial</p>';
+
+    document.getElementById('madreBox').innerHTML = linkAnimal(g.madre);
+    document.getElementById('padreBox').innerHTML = linkAnimal(g.padre);
+    document.getElementById('tbodyCrias').innerHTML = (g.crias || []).map(c => `
+        <tr class="hover:bg-slate-50">
+            <td class="p-2 font-semibold">${esc(c.caravana_visual || c.nombre || ('#' + c.id))}</td>
+            <td class="p-2">${esc(c.sexo)}</td>
+            <td class="p-2 text-xs">${esc(c.fecha_nacimiento)}</td>
+            <td class="p-2 text-xs">${esc(c.estado)}</td>
+            <td class="p-2"><a class="text-sky-700 text-xs font-bold" href="AnimalFicha.html?id=${c.id}">Ver</a></td>
+        </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin crías cargadas</td></tr>';
+}
+
+window.onload = boot;
+</script>
+</body>
+</html>
