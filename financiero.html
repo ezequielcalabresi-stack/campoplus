@@ -77,6 +77,18 @@
         <div class="text-right text-xs text-slate-600" id="lblAhora"></div>
     </div>
 
+    <div class="flex gap-1 mb-4 no-print border-b border-slate-200">
+        <button type="button" id="tabProy" onclick="mostrarSolapa('proy')"
+                class="px-4 py-2 text-sm font-bold rounded-t-md border border-b-0 border-slate-300 bg-white text-blue-800">
+            Proyección de caja
+        </button>
+        <button type="button" id="tabGastos" onclick="mostrarSolapa('gastos')"
+                class="px-4 py-2 text-sm font-semibold rounded-t-md border border-transparent text-slate-500 hover:text-slate-800">
+            Gastos fijos / recurrentes
+        </button>
+    </div>
+
+    <div id="panelProy">
     <div class="flex flex-wrap gap-2 items-end mb-4 no-print text-xs">
         <div>
             <label class="block text-[10px] font-bold uppercase text-slate-500">Rango</label>
@@ -174,9 +186,113 @@
             </tbody>
         </table>
     </div>
+    </div><!-- /panelProy -->
+
+    <div id="panelGastos" class="hidden no-print">
+        <p class="text-sm text-slate-600 mb-4">
+            Cargá una sola vez gastos que se repiten (vialidad, inmobiliario rural, complementario,
+            aportes, tarjetas, adelantos a socios, etc.). Con el <strong>bucle</strong> mensual,
+            bimestral o trimestral figuran solos en la proyección. Si cambia el importe, editá y listo.
+        </p>
+        <form id="formGasto" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+              onsubmit="return guardarGasto(event)">
+            <input type="hidden" id="gastoId" value="">
+            <div class="lg:col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Detalle</label>
+                <input id="gastoDetalle" required maxlength="200"
+                       class="w-full rounded-md border border-slate-300 p-2 font-semibold"
+                       placeholder="Ej. Vialidad campo La Esperanza">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Categoría</label>
+                <select id="gastoCategoria" class="w-full rounded-md border border-slate-300 p-2 font-semibold bg-white"></select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Importe $</label>
+                <input id="gastoMonto" required inputmode="decimal"
+                       class="w-full rounded-md border border-slate-300 p-2 font-bold text-right font-mono"
+                       onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this)" value="0,00">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Día de pago</label>
+                <input id="gastoDia" type="number" min="1" max="28" value="10"
+                       class="w-full rounded-md border border-slate-300 p-2 font-semibold">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Bucle</label>
+                <select id="gastoFreq" class="w-full rounded-md border border-slate-300 p-2 font-semibold bg-white">
+                    <option value="mensual">Mensual</option>
+                    <option value="bimestral">Bimestral</option>
+                    <option value="trimestral">Trimestral</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Desde</label>
+                <input id="gastoInicio" type="date" class="w-full rounded-md border border-slate-300 p-2 font-semibold">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Hasta (opcional)</label>
+                <input id="gastoFin" type="date" class="w-full rounded-md border border-slate-300 p-2 font-semibold">
+            </div>
+            <div class="lg:col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Observaciones</label>
+                <input id="gastoObs" maxlength="200"
+                       class="w-full rounded-md border border-slate-300 p-2"
+                       placeholder="Socio, campo, referencia…">
+            </div>
+            <div class="flex items-end gap-2 lg:col-span-2">
+                <label class="flex items-center gap-2 px-2 py-2 border rounded-md bg-white cursor-pointer">
+                    <input type="checkbox" id="gastoActivo" checked class="rounded border-slate-400">
+                    <span class="font-semibold">Activo</span>
+                </label>
+                <button type="submit" class="bg-blue-700 text-white px-4 py-2 rounded-md font-bold hover:bg-blue-800">
+                    Guardar
+                </button>
+                <button type="button" onclick="limpiarFormGasto()"
+                        class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md font-bold hover:bg-slate-300">
+                    Limpiar
+                </button>
+            </div>
+        </form>
+        <div class="overflow-x-auto border border-slate-300 rounded">
+            <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                    <tr class="bg-slate-700 text-white uppercase font-semibold">
+                        <th class="p-2">Detalle</th>
+                        <th class="p-2">Categoría</th>
+                        <th class="p-2 text-right">Importe</th>
+                        <th class="p-2 text-center">Día</th>
+                        <th class="p-2">Bucle</th>
+                        <th class="p-2">Vigencia</th>
+                        <th class="p-2 text-center">Activo</th>
+                        <th class="p-2 no-print">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaGastos">
+                    <tr><td colspan="8" class="p-4 text-center text-slate-400">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <script>
+function mostrarSolapa(cual) {
+    const proy = cual === 'proy';
+    document.getElementById('panelProy').classList.toggle('hidden', !proy);
+    document.getElementById('panelGastos').classList.toggle('hidden', proy);
+    const tabP = document.getElementById('tabProy');
+    const tabG = document.getElementById('tabGastos');
+    if (proy) {
+        tabP.className = 'px-4 py-2 text-sm font-bold rounded-t-md border border-b-0 border-slate-300 bg-white text-blue-800';
+        tabG.className = 'px-4 py-2 text-sm font-semibold rounded-t-md border border-transparent text-slate-500 hover:text-slate-800';
+    } else {
+        tabG.className = 'px-4 py-2 text-sm font-bold rounded-t-md border border-b-0 border-slate-300 bg-white text-blue-800';
+        tabP.className = 'px-4 py-2 text-sm font-semibold rounded-t-md border border-transparent text-slate-500 hover:text-slate-800';
+        cargarGastos();
+    }
+}
+
 function parseMoney(val) {
     if (val == null || val === '') return 0;
     let s = String(val).trim().replace(/\$/g, '').replace(/\s/g, '');
@@ -338,6 +454,10 @@ async function cargarProyeccion() {
             alquiler: 'Alquileres',
             imp_deb_cred: 'Imp. Déb/Créd 1,2%',
             cierre_mes: 'Cierres mensuales',
+            retenciones_sicore: 'Ret. Ganancias (SICORE)',
+            retenciones_iibb: 'Ret. IIBB',
+            percepciones_iibb: 'Perc. IIBB',
+            gasto_recurrente: 'Gastos fijos',
             otro: 'Otros',
         };
         const fuentes = data.por_fuente || {};
@@ -386,7 +506,140 @@ async function cargarProyeccion() {
     }
 }
 
+let _gastosCache = [];
+
+function limpiarFormGasto() {
+    document.getElementById('gastoId').value = '';
+    document.getElementById('gastoDetalle').value = '';
+    document.getElementById('gastoMonto').value = formatMoney(0, 2);
+    document.getElementById('gastoDia').value = '10';
+    document.getElementById('gastoFreq').value = 'mensual';
+    document.getElementById('gastoInicio').value = isoHoy();
+    document.getElementById('gastoFin').value = '';
+    document.getElementById('gastoObs').value = '';
+    document.getElementById('gastoActivo').checked = true;
+}
+
+function fillCategorias(cats) {
+    const sel = document.getElementById('gastoCategoria');
+    const cur = sel.value;
+    sel.innerHTML = (cats || []).map(c => `<option value="${c}">${c}</option>`).join('');
+    if (cur) sel.value = cur;
+}
+
+async function cargarGastos() {
+    const tb = document.getElementById('tablaGastos');
+    try {
+        const res = await fetch('/api/financiero/gastos_recurrentes');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            tb.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-rose-500">${data.detail || 'Error'}</td></tr>`;
+            return;
+        }
+        fillCategorias(data.categorias || []);
+        _gastosCache = data.items || [];
+        if (!document.getElementById('gastoInicio').value) {
+            document.getElementById('gastoInicio').value = isoHoy();
+        }
+        if (!_gastosCache.length) {
+            tb.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Sin gastos cargados. Agregá el primero arriba.</td></tr>`;
+            return;
+        }
+        tb.innerHTML = _gastosCache.map(g => {
+            const vig = fmtFecha(g.fecha_inicio) + (g.fecha_fin ? ' → ' + fmtFecha(g.fecha_fin) : ' → ∞');
+            const act = Number(g.activo) ? 'Sí' : 'No';
+            return `<tr class="border-b border-slate-100 ${Number(g.activo) ? '' : 'opacity-50'}">
+                <td class="p-2 font-semibold">${(g.detalle || '').replace(/</g, '&lt;')}</td>
+                <td class="p-2 text-slate-600">${g.categoria || ''}</td>
+                <td class="p-2 text-right font-mono font-bold">${fmtMoneySign(g.monto)}</td>
+                <td class="p-2 text-center font-mono">${g.dia_pago || ''}</td>
+                <td class="p-2 capitalize">${g.frecuencia || ''}</td>
+                <td class="p-2 whitespace-nowrap text-slate-500">${vig}</td>
+                <td class="p-2 text-center">${act}</td>
+                <td class="p-2 whitespace-nowrap">
+                    <button type="button" class="text-blue-700 font-bold hover:underline mr-2" onclick="editarGasto(${g.id})">Editar</button>
+                    <button type="button" class="text-rose-600 font-bold hover:underline" onclick="eliminarGasto(${g.id})">Borrar</button>
+                </td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        console.error(e);
+        tb.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-rose-500">No se pudo cargar.</td></tr>`;
+    }
+}
+
+function editarGasto(id) {
+    const g = _gastosCache.find(x => Number(x.id) === Number(id));
+    if (!g) return;
+    document.getElementById('gastoId').value = String(g.id);
+    document.getElementById('gastoDetalle').value = g.detalle || '';
+    document.getElementById('gastoCategoria').value = g.categoria || 'Otros';
+    document.getElementById('gastoMonto').value = formatMoney(g.monto, 2);
+    document.getElementById('gastoDia').value = String(g.dia_pago || 10);
+    document.getElementById('gastoFreq').value = g.frecuencia || 'mensual';
+    document.getElementById('gastoInicio').value = (g.fecha_inicio || '').slice(0, 10);
+    document.getElementById('gastoFin').value = (g.fecha_fin || '').slice(0, 10);
+    document.getElementById('gastoObs').value = g.observaciones || '';
+    document.getElementById('gastoActivo').checked = !!Number(g.activo);
+    document.getElementById('gastoDetalle').focus();
+}
+
+async function guardarGasto(ev) {
+    ev.preventDefault();
+    const id = document.getElementById('gastoId').value;
+    const body = {
+        detalle: document.getElementById('gastoDetalle').value.trim(),
+        categoria: document.getElementById('gastoCategoria').value,
+        monto: parseMoney(document.getElementById('gastoMonto').value),
+        dia_pago: parseInt(document.getElementById('gastoDia').value, 10) || 10,
+        frecuencia: document.getElementById('gastoFreq').value,
+        fecha_inicio: document.getElementById('gastoInicio').value || isoHoy(),
+        fecha_fin: document.getElementById('gastoFin').value || null,
+        activo: document.getElementById('gastoActivo').checked ? 1 : 0,
+        observaciones: document.getElementById('gastoObs').value.trim(),
+        moneda: 'ARS',
+    };
+    try {
+        const res = await fetch(
+            id ? `/api/financiero/gastos_recurrentes/${id}` : '/api/financiero/gastos_recurrentes',
+            {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(data.detail || 'No se pudo guardar');
+            return false;
+        }
+        limpiarFormGasto();
+        await cargarGastos();
+    } catch (e) {
+        console.error(e);
+        alert('Error de conexión');
+    }
+    return false;
+}
+
+async function eliminarGasto(id) {
+    if (!confirm('¿Eliminar este gasto recurrente?')) return;
+    try {
+        const res = await fetch(`/api/financiero/gastos_recurrentes/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            alert(data.detail || 'No se pudo eliminar');
+            return;
+        }
+        if (document.getElementById('gastoId').value === String(id)) limpiarFormGasto();
+        await cargarGastos();
+    } catch (e) {
+        alert('Error de conexión');
+    }
+}
+
 initFechas();
+limpiarFormGasto();
 cargarProyeccion();
 </script>
 </body>

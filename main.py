@@ -938,6 +938,8 @@ def init_db():
     init_actividades_schema(cursor)
     from flujo_proyeccion_import import init_flujo_proyeccion_schema
     init_flujo_proyeccion_schema(cursor)
+    from financiero_gastos_recurrentes import init_gastos_recurrentes_schema
+    init_gastos_recurrentes_schema(cursor)
 
     conn.commit()
     conn.close()
@@ -7286,6 +7288,20 @@ def api_flujo_proyectado(
     chq_ff = _lineas_cheques_emitidos_financiero(cur, empresa_id, desde, hasta, tc)
     lineas = _merge_cheques_ff(lineas, chq_ff)
 
+    # Retenciones IIBB/SICORE (quincenal → 20 y 5) + percepciones IIBB (mensual → 5)
+    try:
+        from financiero_impuestos import lineas_impuestos_financiero
+        lineas.extend(lineas_impuestos_financiero(cur, desde, hasta))
+    except Exception as _exc_imp:
+        print(f"AVISO financiero impuestos: {_exc_imp}")
+
+    # Gastos fijos / recurrentes (vialidad, inmobiliario, socios, aportes, etc.)
+    try:
+        from financiero_gastos_recurrentes import lineas_gastos_recurrentes
+        lineas.extend(lineas_gastos_recurrentes(cur, empresa_id, desde, hasta))
+    except Exception as _exc_gr:
+        print(f"AVISO financiero gastos recurrentes: {_exc_gr}")
+
     conn.close()
 
     for L in lineas:
@@ -8088,6 +8104,8 @@ from aviar_api import register_aviar_routes
 register_aviar_routes(app, get_db, get_empresa_activa_id)
 from cm05_api import register_cm05_routes
 register_cm05_routes(app, get_db, get_empresa_activa_id)
+from financiero_gastos_api import register_financiero_gastos_routes
+register_financiero_gastos_routes(app, get_db, get_empresa_activa_id)
 from actividades_api import register_actividades_routes
 register_actividades_routes(app, get_db, get_empresa_activa_id)
 from liquidaciones_api import register_liquidaciones_routes
