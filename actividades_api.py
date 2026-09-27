@@ -7,6 +7,12 @@ from typing import List, Optional
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from actividad_modulos import (
+    estado_liquidaciones,
+    modulo_de_actividad,
+    modulo_habilitado,
+    modulos_empresa,
+)
 from actividades_imputacion import (
     arbol_actividades,
     actualizar_actividad,
@@ -59,15 +65,35 @@ def register_actividades_routes(app, get_db, get_empresa_activa_id) -> None:
         print(f"AVISO init actividades: {exc}")
 
     @app.get("/api/actividades")
-    def api_list_act(con_cuentas: int = 0, todas: int = 0):
+    def api_list_act(con_cuentas: int = 0, todas: int = 0, incluir_ocultas: int = 0):
+        """Las actividades de packs no contratados (Ganadería, Tambo, Agrícola…) se ocultan."""
         conn = get_db()
         try:
             eid = get_empresa_activa_id()
             if con_cuentas:
-                return arbol_actividades(conn, eid)
-            return listar_actividades(conn, eid, solo_activas=not todas)
+                rows = arbol_actividades(conn, eid)
+            else:
+                rows = listar_actividades(conn, eid, solo_activas=not todas)
         finally:
             conn.close()
+        flags = modulos_empresa(get_db, eid)
+        out = []
+        for a in rows:
+            mod = modulo_de_actividad(a.get("nombre") or "")
+            visible = modulo_habilitado(flags, mod)
+            if not visible and not incluir_ocultas:
+                continue
+            out.append({**a, "modulo": mod, "oculta_por_modulo": 0 if visible else 1})
+        return out
+
+    @app.get("/api/actividades/modulos")
+    def api_modulos_actividad():
+        """Qué liquidaciones corresponden a la empresa según sus actividades contratadas."""
+        eid = get_empresa_activa_id()
+        return {
+            "modulos": modulos_empresa(get_db, eid),
+            "liquidaciones": estado_liquidaciones(get_db, eid),
+        }
 
     @app.post("/api/actividades")
     def api_crear_act(data: ActividadIn):

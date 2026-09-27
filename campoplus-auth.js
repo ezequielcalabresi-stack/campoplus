@@ -232,9 +232,70 @@
     return permitidos.indexOf(key) >= 0;
   }
 
+  /**
+   * Liquidaciones ligadas a la actividad: requieren mod_liquidaciones (rol/pack)
+   * y el pack de la actividad contratado por la empresa (no depende del rol).
+   */
+  function liquidacionOn(emp, modActividad) {
+    return moduloOn(emp, "mod_liquidaciones") && moduloPagado(emp, modActividad);
+  }
+
+  var PAGINA_LIQUIDACION = {
+    "liquidacioneshacienda.html": "mod_ganaderia",
+    "liquidacionesleche.html": "mod_tambo",
+    "liquidacionesgranos.html": "mod_agro"
+  };
+  var LIQ_TIPO_POR_MODULO = { mod_ganaderia: "HACIENDA", mod_tambo: "LECHE", mod_agro: "GRANO" };
+
+  /** Estado real (pack + actividad cargada) desde el servidor. */
+  async function estadoLiquidaciones() {
+    try {
+      var res = await fetch("/api/actividades/modulos");
+      if (!res.ok) return null;
+      var data = await res.json();
+      return data.liquidaciones || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function guardPaginaLiquidacion() {
+    var page = (location.pathname.split("/").pop() || "").toLowerCase();
+    var mod = PAGINA_LIQUIDACION[page];
+    if (!mod) return;
+    var emp = sessionEmpresa();
+    var motivo = "";
+    if (emp && !liquidacionOn(emp, mod)) {
+      motivo = "la empresa no tiene la actividad contratada";
+    } else {
+      var est = await estadoLiquidaciones();
+      var e = est && est[LIQ_TIPO_POR_MODULO[mod]];
+      if (e && !e.habilitada) motivo = e.motivo || "actividad no disponible";
+    }
+    if (!motivo) return;
+    alert("Esta liquidación no está disponible: " + motivo + ".");
+    location.href = "Index.html";
+  }
+
+  async function ocultarLiquidacionesSinActividad() {
+    var nodos = document.querySelectorAll("[data-liq-actividad]");
+    if (!nodos.length) return;
+    var est = await estadoLiquidaciones();
+    if (!est) return;
+    nodos.forEach(function (el) {
+      var e = est[LIQ_TIPO_POR_MODULO[el.getAttribute("data-liq-actividad")]];
+      if (e && !e.habilitada) el.style.display = "none";
+    });
+  }
+
   /** Oculta nodos con data-mod="mod_xxx" según empresa. */
   function applyModuleVisibility(emp) {
     if (!emp) return;
+    document.querySelectorAll("[data-liq-actividad]").forEach(function (el) {
+      var key = el.getAttribute("data-liq-actividad");
+      el.style.display = liquidacionOn(emp, key) ? "" : "none";
+    });
+    ocultarLiquidacionesSinActividad();
     document.querySelectorAll("[data-mod]").forEach(function (el) {
       var key = el.getAttribute("data-mod");
       if (!key) return;
@@ -299,6 +360,7 @@
   if (esPaginaAreaEmpresa()) {
     requireAuth();
   }
+  guardPaginaLiquidacion();
 
   window.CampoAuth = {
     getToken: getToken,
@@ -312,6 +374,7 @@
     me: me,
     requireAuth: requireAuth,
     moduloOn: moduloOn,
+    liquidacionOn: liquidacionOn,
     applyModuleVisibility: applyModuleVisibility,
     paintLogo: paintLogo,
     injectFormBrand: injectFormBrand,

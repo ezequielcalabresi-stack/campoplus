@@ -15,6 +15,7 @@
         <div>
             <h1 class="text-2xl font-bold text-slate-800">Actividades y Cuentas</h1>
             <p class="text-xs text-slate-500 mt-1">ABM de actividades y cuentas a imputar (gastos / ingresos) para facturas.</p>
+            <p class="text-xs text-slate-400 mt-0.5">Las actividades de packs no contratados (Ganadería, Tambo, Agrícola…) quedan ocultas en facturas, liquidaciones y Gestión.</p>
         </div>
             <div class="flex gap-2">
                 <button onclick="resyncMaestro()" class="bg-amber-600 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-amber-700">↻ Sync Excel maestro</button>
@@ -69,11 +70,21 @@
 let actSel = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+const MODULO_LABEL = {
+    mod_ganaderia: 'Ganadería', mod_tambo: 'Tambo', mod_agro: 'Agrícola',
+    mod_porcino: 'Porcino', mod_aviar: 'Aviar',
+};
+
 async function cargarActividades() {
-    const rows = await fetch('/api/actividades').then(r => r.json());
+    const rows = await fetch('/api/actividades?incluir_ocultas=1').then(r => r.json());
+    rows.sort((a, b) => (a.oculta_por_modulo || 0) - (b.oculta_por_modulo || 0));
     document.getElementById('tbodyAct').innerHTML = rows.map(a => `
-        <tr class="border-t hover:bg-slate-50 ${actSel===a.id?'bg-emerald-50':''}">
-            <td class="p-2 font-medium cursor-pointer" onclick="seleccionarAct(${a.id}, '${esc(a.nombre).replace(/'/g,"\\'")}')">${esc(a.nombre)}</td>
+        <tr class="border-t hover:bg-slate-50 ${actSel===a.id?'bg-emerald-50':''} ${a.oculta_por_modulo ? 'opacity-50' : ''}"
+            title="${a.oculta_por_modulo ? 'Oculta: la empresa no tiene contratado el pack ' + (MODULO_LABEL[a.modulo] || a.modulo) : ''}">
+            <td class="p-2 font-medium cursor-pointer" onclick="seleccionarAct(${a.id}, '${esc(a.nombre).replace(/'/g,"\\'")}')">
+                ${esc(a.nombre)}
+                ${a.modulo ? `<span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${a.oculta_por_modulo ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-800'}">${MODULO_LABEL[a.modulo] || a.modulo}${a.oculta_por_modulo ? ' · oculta' : ''}</span>` : ''}
+            </td>
             <td class="p-2 text-center font-mono text-xs">${a.n_cuentas||0}</td>
             <td class="p-2 text-center space-x-2">
                 <button onclick="editarAct(${a.id}, '${esc(a.nombre).replace(/'/g,"\\'")}')" class="text-blue-600 text-xs font-bold">Editar</button>

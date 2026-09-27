@@ -292,7 +292,7 @@ def ensure_ingresos_default(conn, empresa_id: int = 1) -> dict:
     for act_nombre, ctas in _SEED_INGRESOS.items():
         cur.execute(
             """
-            SELECT id FROM actividades
+            SELECT id, activo FROM actividades
             WHERE empresa_id = ? AND UPPER(TRIM(nombre)) = UPPER(TRIM(?))
             LIMIT 1;
             """,
@@ -300,8 +300,10 @@ def ensure_ingresos_default(conn, empresa_id: int = 1) -> dict:
         )
         row = cur.fetchone()
         if row:
+            # Una actividad dada de baja por el usuario no se reactiva sola.
+            if not int(row["activo"] if hasattr(row, "keys") else row[1]):
+                continue
             aid = int(row["id"] if hasattr(row, "keys") else row[0])
-            cur.execute("UPDATE actividades SET activo = 1 WHERE id = ?;", (aid,))
         else:
             cur.execute(
                 """
@@ -321,22 +323,16 @@ def ensure_ingresos_default(conn, empresa_id: int = 1) -> dict:
                 """,
                 (aid, cta_nombre),
             )
-            crow = cur.fetchone()
-            if crow:
-                cid = int(crow["id"] if hasattr(crow, "keys") else crow[0])
-                cur.execute(
-                    "UPDATE actividad_cuentas SET activo=1, tipo_cta=? WHERE id=?;",
-                    (tipo, cid),
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO actividad_cuentas (actividad_id, nombre, tipo_cta, activo)
-                    VALUES (?, ?, ?, 1);
-                    """,
-                    (aid, cta_nombre, tipo),
-                )
-                creadas_cta += 1
+            if cur.fetchone():
+                continue
+            cur.execute(
+                """
+                INSERT INTO actividad_cuentas (actividad_id, nombre, tipo_cta, activo)
+                VALUES (?, ?, ?, 1);
+                """,
+                (aid, cta_nombre, tipo),
+            )
+            creadas_cta += 1
     conn.commit()
     return {"status": "ok", "actividades_nuevas": creadas_act, "cuentas_nuevas": creadas_cta}
 

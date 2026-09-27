@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from actividad_modulos import estado_liquidaciones
 from actividades_imputacion import ensure_ingresos_default, init_actividades_schema
 
 
@@ -353,8 +354,14 @@ def register_liquidaciones_routes(
     except Exception as exc:
         print(f"AVISO init liquidaciones: {exc}")
 
+    def _exigir(tipo: str) -> None:
+        est = estado_liquidaciones(get_db, get_empresa_activa_id())[tipo]
+        if not est["habilitada"]:
+            raise HTTPException(403, f"{est['label']}: no disponible ({est['motivo']}).")
+
     @app.get("/api/liquidaciones/hacienda")
     def list_hacienda(limit: int = 50):
+        _exigir("HACIENDA")
         conn = get_db()
         cur = conn.cursor()
         eid = get_empresa_activa_id()
@@ -373,6 +380,7 @@ def register_liquidaciones_routes(
 
     @app.post("/api/liquidaciones/hacienda")
     def save_hacienda(data: HaciendaIn):
+        _exigir("HACIENDA")
         if not (data.nro_liquidacion or "").strip() and not data.tropas and not data.imputaciones:
             raise HTTPException(400, "Completá al menos nro de liquidación o tropas/imputaciones")
         conn = get_db()
@@ -436,6 +444,7 @@ def register_liquidaciones_routes(
 
     @app.get("/api/liquidaciones/granos")
     def list_granos(limit: int = 50):
+        _exigir("GRANO")
         conn = get_db()
         cur = conn.cursor()
         eid = get_empresa_activa_id()
@@ -454,6 +463,7 @@ def register_liquidaciones_routes(
 
     @app.post("/api/liquidaciones/granos")
     def save_granos(data: GranoIn):
+        _exigir("GRANO")
         if not (data.nro_lpg or "").strip() and not data.certificados and not data.imputaciones:
             raise HTTPException(400, "Completá nro LPG, certificados o imputaciones")
         conn = get_db()
@@ -554,6 +564,7 @@ def register_liquidaciones_routes(
 
     @app.get("/api/liquidaciones/leche")
     def list_leche(limit: int = 50):
+        _exigir("LECHE")
         conn = get_db()
         try:
             init_liquidaciones_schema(conn.cursor())
@@ -575,6 +586,7 @@ def register_liquidaciones_routes(
 
     @app.post("/api/liquidaciones/leche")
     def save_leche(data: LecheIn):
+        _exigir("LECHE")
         if (
             not (data.nro_liquidacion or "").strip()
             and not float(data.litros or 0)
