@@ -24,6 +24,7 @@ class EeccIn(BaseModel):
     gastos: float = 0
     resultado: Optional[float] = None
     existencias: float = 0
+    indice_cierre: Optional[float] = None
     notas: Optional[str] = ""
 
 

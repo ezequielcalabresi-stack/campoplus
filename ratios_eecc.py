@@ -33,6 +33,7 @@ def init_eecc_schema(cursor) -> None:
             gastos REAL DEFAULT 0,
             resultado REAL DEFAULT 0,
             existencias REAL DEFAULT 0,
+            indice_cierre REAL,
             notas TEXT,
             updated_at TEXT
         );
@@ -44,6 +45,9 @@ def init_eecc_schema(cursor) -> None:
         ON eecc_ejercicios(empresa_id, ejercicio);
         """
     )
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(eecc_ejercicios)")}
+    if "indice_cierre" not in cols:
+        cursor.execute("ALTER TABLE eecc_ejercicios ADD COLUMN indice_cierre REAL;")
 
 
 def _num(v: Any) -> float:
@@ -51,6 +55,14 @@ def _num(v: Any) -> float:
         return round(float(v or 0), 2)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _indice(fila: dict) -> Optional[float]:
+    try:
+        v = float(fila.get("indice_cierre") or 0)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
 
 
 def _div(numerador: float, denominador: float) -> Optional[float]:
@@ -160,6 +172,7 @@ def _enriquecer(fila: dict, base_ratios: Optional[Dict[str, Optional[float]]] = 
         "origen": fila.get("origen") or "manual",
         "cerrado": int(fila.get("cerrado") or 0),
         "notas": fila.get("notas") or "",
+        "indice_cierre": _indice(fila),
         "totales": totales,
         "ratios": ratios,
     }
@@ -211,7 +224,7 @@ def guardar_eecc(conn, empresa_id: int, data: dict, eecc_id: Optional[int] = Non
         totales["pasivo_corriente"], totales["pasivo_no_corriente"],
         totales["patrimonio"], totales["ingresos"], totales["gastos"],
         totales["resultado_periodo"], totales["existencias"],
-        (data.get("notas") or "").strip() or None, ahora,
+        (data.get("notas") or "").strip() or None, _indice(data), ahora,
     )
     if eecc_id:
         cur.execute(
@@ -221,7 +234,7 @@ def guardar_eecc(conn, empresa_id: int, data: dict, eecc_id: Optional[int] = Non
                 activo_corriente=?, activo_no_corriente=?,
                 pasivo_corriente=?, pasivo_no_corriente=?,
                 patrimonio=?, ingresos=?, gastos=?, resultado=?, existencias=?,
-                notas=?, updated_at=?
+                notas=?, indice_cierre=?, updated_at=?
             WHERE id=? AND empresa_id=?
             """,
             vals + (eecc_id, empresa_id),
@@ -244,7 +257,7 @@ def guardar_eecc(conn, empresa_id: int, data: dict, eecc_id: Optional[int] = Non
                     activo_corriente=?, activo_no_corriente=?,
                     pasivo_corriente=?, pasivo_no_corriente=?,
                     patrimonio=?, ingresos=?, gastos=?, resultado=?, existencias=?,
-                    notas=?, updated_at=?
+                    notas=?, indice_cierre=?, updated_at=?
                 WHERE id=?
                 """,
                 vals[1:] + (rid,),
@@ -257,8 +270,8 @@ def guardar_eecc(conn, empresa_id: int, data: dict, eecc_id: Optional[int] = Non
                     activo_corriente, activo_no_corriente,
                     pasivo_corriente, pasivo_no_corriente,
                     patrimonio, ingresos, gastos, resultado, existencias,
-                    notas, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    notas, indice_cierre, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (empresa_id,) + vals,
             )
@@ -266,6 +279,32 @@ def guardar_eecc(conn, empresa_id: int, data: dict, eecc_id: Optional[int] = Non
     conn.commit()
     cur.execute("SELECT * FROM eecc_ejercicios WHERE id=?", (rid,))
     return _enriquecer(dict(cur.fetchone()))
+
+
+def _aplicar_moneda_homogenea(serie: List[dict]) -> None:
+    """Lleva activo y resultado a la moneda del último índice cargado.
+
+    Los ratios de un mismo ejercicio no cambian: numerador y denominador
+    se multiplican por el mismo coeficiente. Lo que se compara entre años
+    son los importes.
+    """
+    ref = None
+    for item in reversed(serie):
+        if item.get("indice_cierre"):
+            ref = item["indice_cierre"]
+            break
+    for item in serie:
+        ind = item.get("indice_cierre")
+        factor = round(ref / ind, 6) if ref and ind else None
+        item["factor_homogeneo"] = factor
+        item["indice_referencia"] = ref
+        totales = item.get("totales") or {}
+        if factor is None:
+            item["resultado_homogeneo"] = None
+            item["activo_homogeneo"] = None
+            continue
+        item["resultado_homogeneo"] = round(float(totales.get("resultado_periodo") or 0) * factor, 2)
+        item["activo_homogeneo"] = round(float(totales.get("activo") or 0) * factor, 2)
 
 
 def borrar_eecc(conn, empresa_id: int, eecc_id: int) -> None:
@@ -328,6 +367,7 @@ def panel_ratios(conn, empresa_id: int, hoy: Optional[date] = None) -> dict:
     serie = [_enriquecer(f, base_map if i else None) for i, f in enumerate(serie_filas)]
     if serie:
         serie[0]["vs_momento_0"] = {r["codigo"]: 0 for r in serie[0]["ratios"]}
+    _aplicar_moneda_homogenea(serie)
 
     return {
         "base": _enriquecer(base_fila),

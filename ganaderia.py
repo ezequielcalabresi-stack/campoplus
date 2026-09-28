@@ -62,13 +62,13 @@ ANIMAL_EXTRA_COLS = (
     ("pedigree", "TEXT"),
     ("condicion_corporal", "REAL"),
     ("estado_repro", "TEXT"),
-    # Genética / Asociación Argentina de Angus (AAA)
-    ("registro_aaa", "TEXT"),
-    ("categoria_aaa", "TEXT"),
+    # Genética / registro de la asociación de la raza (antes columnas *_aaa)
+    ("registro_asociacion", "TEXT"),
+    ("categoria_registro", "TEXT"),
     ("color_capa", "TEXT"),
-    ("criador_aaa", "TEXT"),
+    ("criador_asociacion", "TEXT"),
     ("prefijo_cabana", "TEXT"),
-    ("fecha_registro_aaa", "TEXT"),
+    ("fecha_registro_asociacion", "TEXT"),
     ("dep_pn", "REAL"),
     ("dep_pd", "REAL"),
     ("dep_pf", "REAL"),
@@ -221,17 +221,17 @@ def canonizar_raza(raza: Optional[str]) -> Optional[str]:
 def _bloque_registro(animal: dict) -> dict:
     """Datos de pedigree de la asociación que corresponde a la raza del animal."""
     perfil = perfil_raza(animal.get("raza"))
-    cat = (animal.get("categoria_aaa") or "").strip().upper()
+    cat = (animal.get("categoria_registro") or animal.get("categoria_aaa") or "").strip().upper()
     return {
         "categorias": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_REGISTRO],
         "colores": list(perfil["colores"]) if perfil else list(COLORES_ANGUS),
-        "registro": animal.get("registro_aaa"),
+        "registro": animal.get("registro_asociacion") or animal.get("registro_aaa"),
         "categoria": cat or None,
         "categoria_nombre": next((n for c, n in CATEGORIAS_REGISTRO if c == cat), None),
         "color_capa": animal.get("color_capa") or animal.get("color"),
-        "criador": animal.get("criador_aaa"),
+        "criador": animal.get("criador_asociacion") or animal.get("criador_aaa"),
         "prefijo": animal.get("prefijo_cabana"),
-        "fecha_registro": animal.get("fecha_registro_aaa"),
+        "fecha_registro": animal.get("fecha_registro_asociacion") or animal.get("fecha_registro_aaa"),
         "deps": {
             "pn": animal.get("dep_pn"),
             "pd": animal.get("dep_pd"),
@@ -298,6 +298,44 @@ CATEGORIAS_SEED = [
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+_RENOMBRES_REGISTRO = (
+    ("registro_aaa", "registro_asociacion"),
+    ("categoria_aaa", "categoria_registro"),
+    ("criador_aaa", "criador_asociacion"),
+    ("fecha_registro_aaa", "fecha_registro_asociacion"),
+)
+
+
+def _renombrar_columnas_registro(cursor) -> None:
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(gan_animales)")}
+    if "id" not in cols:
+        return
+    for viejo, nuevo in _RENOMBRES_REGISTRO:
+        if viejo in cols and nuevo not in cols:
+            cursor.execute(f"ALTER TABLE gan_animales RENAME COLUMN {viejo} TO {nuevo}")
+            cols.discard(viejo)
+            cols.add(nuevo)
+
+
+def _alias_registro(data: dict) -> dict:
+    """Acepta el nombre viejo (*_aaa) y el nuevo (registro de asociación)."""
+    for viejo, nuevo in _RENOMBRES_REGISTRO:
+        if nuevo not in data and viejo in data:
+            data[nuevo] = data[viejo]
+    return data
+
+
+def _exponer_registro(row: Optional[dict]) -> Optional[dict]:
+    if not row:
+        return row
+    for viejo, nuevo in _RENOMBRES_REGISTRO:
+        if row.get(nuevo) is None and row.get(viejo) is not None:
+            row[nuevo] = row[viejo]
+        if row.get(viejo) is None and row.get(nuevo) is not None:
+            row[viejo] = row[nuevo]
+    return row
 
 
 def _ensure_col(cursor, table: str, col: str, decl: str) -> None:
@@ -423,6 +461,7 @@ def init_ganaderia_schema(cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_gan_eventos_tipo ON gan_eventos(empresa_id, tipo, fecha);"
     )
 
+    _renombrar_columnas_registro(cursor)
     for col, decl in ANIMAL_EXTRA_COLS:
         _ensure_col(cursor, "gan_animales", col, decl)
     for col, decl in EVENTO_EXTRA_COLS:
@@ -768,6 +807,7 @@ def buscar_animales(
     rodeo_id: Optional[int] = None,
     estado: str = "activo",
     es_tambo: Optional[int] = None,
+    categoria_registro: Optional[str] = None,
     categoria_aaa: Optional[str] = None,
     raza: Optional[str] = None,
     limit: int = 500,
@@ -793,9 +833,10 @@ def buscar_animales(
             where.append("COALESCE(a.sistema_actual, '') != 'tambo'")
         else:
             where.append("(COALESCE(a.es_tambo, 0) = 1 OR COALESCE(a.sistema_actual, '') = 'tambo')")
-    if categoria_aaa:
-        where.append("UPPER(TRIM(COALESCE(a.categoria_aaa,''))) = ?")
-        params.append(categoria_aaa.strip().upper())
+    cat_reg = (categoria_registro or categoria_aaa or "").strip()
+    if cat_reg:
+        where.append("UPPER(TRIM(COALESCE(a.categoria_registro,''))) = ?")
+        params.append(cat_reg.upper())
     if raza:
         where.append("LOWER(COALESCE(a.raza,'')) LIKE ?")
         params.append(f"%{raza.strip().lower()}%")
@@ -805,7 +846,7 @@ def buscar_animales(
             """(
                 a.caravana_visual LIKE ? OR a.caravana_electronica LIKE ?
                 OR a.nombre LIKE ? OR a.senasa_id LIKE ?
-                OR COALESCE(a.rp,'') LIKE ? OR COALESCE(a.registro_aaa,'') LIKE ?
+                OR COALESCE(a.rp,'') LIKE ? OR COALESCE(a.registro_asociacion,'') LIKE ?
                 OR COALESCE(a.prefijo_cabana,'') LIKE ?
             )"""
         )
@@ -823,7 +864,7 @@ def buscar_animales(
         LIMIT ?;
     """
     cur.execute(sql, params)
-    return [dict(r) for r in cur.fetchall()]
+    return [_exponer_registro(dict(r)) for r in cur.fetchall()]
 
 
 def obtener_animal(conn, empresa_id: int, animal_id: int) -> Optional[dict]:
@@ -841,12 +882,13 @@ def obtener_animal(conn, empresa_id: int, animal_id: int) -> Optional[dict]:
         (empresa_id, animal_id),
     )
     row = cur.fetchone()
-    return dict(row) if row else None
+    return _exponer_registro(dict(row)) if row else None
 
 
 def _aplicar_campos_geneticos(cur, animal_id: int, data: dict) -> None:
-    """Actualiza campos de genética AAA / pedigree si vinieron en el payload."""
-    cat = (data.get("categoria_aaa") or "").strip().upper()
+    """Actualiza el registro de asociación si vino en el payload."""
+    _alias_registro(data)
+    cat = (data.get("categoria_registro") or "").strip().upper()
     if cat:
         codes = {c[0] for c in CATEGORIAS_AAA}
         if cat not in codes:
@@ -860,12 +902,12 @@ def _aplicar_campos_geneticos(cur, animal_id: int, data: dict) -> None:
     candidatos = {
         "rp": (data.get("rp") or "").strip() or None,
         "pedigree": (data.get("pedigree") or "").strip() or None,
-        "registro_aaa": (data.get("registro_aaa") or "").strip() or None,
-        "categoria_aaa": cat,
+        "registro_asociacion": (data.get("registro_asociacion") or "").strip() or None,
+        "categoria_registro": cat,
         "color_capa": (data.get("color_capa") or data.get("color") or "").strip() or None,
-        "criador_aaa": (data.get("criador_aaa") or "").strip() or None,
+        "criador_asociacion": (data.get("criador_asociacion") or "").strip() or None,
         "prefijo_cabana": (data.get("prefijo_cabana") or "").strip() or None,
-        "fecha_registro_aaa": (data.get("fecha_registro_aaa") or "").strip() or None,
+        "fecha_registro_asociacion": (data.get("fecha_registro_asociacion") or "").strip() or None,
         "dep_pn": data.get("dep_pn"),
         "dep_pd": data.get("dep_pd"),
         "dep_pf": data.get("dep_pf"),
@@ -874,6 +916,8 @@ def _aplicar_campos_geneticos(cur, animal_id: int, data: dict) -> None:
     sets, vals = [], []
     for k, v in candidatos.items():
         if k not in data and not (k == "color_capa" and data.get("color")):
+            continue
+        if k == "categoria_registro" and "categoria_registro" not in data and "categoria_aaa" not in data:
             continue
         if k.startswith("dep_") and data.get(k) is None:
             continue
@@ -963,6 +1007,7 @@ def crear_animal(conn, empresa_id: int, data: dict, usuario: str = "") -> int:
 
 
 def actualizar_animal(conn, empresa_id: int, animal_id: int, data: dict) -> None:
+    _alias_registro(data)
     cur = conn.cursor()
     cur.execute(
         "SELECT id FROM gan_animales WHERE empresa_id = ? AND id = ?;",
@@ -994,12 +1039,12 @@ def actualizar_animal(conn, empresa_id: int, animal_id: int, data: dict) -> None
         "pedigree",
         "condicion_corporal",
         "estado_repro",
-        "registro_aaa",
-        "categoria_aaa",
+        "registro_asociacion",
+        "categoria_registro",
         "color_capa",
-        "criador_aaa",
+        "criador_asociacion",
         "prefijo_cabana",
-        "fecha_registro_aaa",
+        "fecha_registro_asociacion",
         "dep_pn",
         "dep_pd",
         "dep_pf",
@@ -1541,7 +1586,7 @@ def _nodo_pedigree(conn, empresa_id: int, animal: Optional[dict], profundidad: i
             return None
         cur.execute(
             """
-            SELECT id, caravana_visual, nombre, registro_aaa, categoria_aaa,
+            SELECT id, caravana_visual, nombre, registro_asociacion, categoria_registro,
                    raza, color_capa, sexo, prefijo_cabana, madre_id, padre_id
             FROM gan_animales WHERE empresa_id = ? AND id = ?;
             """,
@@ -1557,8 +1602,10 @@ def _nodo_pedigree(conn, empresa_id: int, animal: Optional[dict], profundidad: i
         "etiqueta": animal.get("caravana_visual")
         or animal.get("nombre")
         or (f"#{animal.get('id')}" if animal.get("id") else "—"),
-        "registro_aaa": animal.get("registro_aaa"),
-        "categoria_aaa": animal.get("categoria_aaa"),
+        "registro_asociacion": animal.get("registro_asociacion") or animal.get("registro_aaa"),
+        "categoria_registro": animal.get("categoria_registro") or animal.get("categoria_aaa"),
+        "registro_aaa": animal.get("registro_asociacion") or animal.get("registro_aaa"),
+        "categoria_aaa": animal.get("categoria_registro") or animal.get("categoria_aaa"),
         "raza": animal.get("raza"),
         "color_capa": animal.get("color_capa"),
         "sexo": animal.get("sexo"),

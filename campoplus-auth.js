@@ -376,6 +376,10 @@
     moduloOn: moduloOn,
     liquidacionOn: liquidacionOn,
     applyModuleVisibility: applyModuleVisibility,
+    nombreEmpresa: function () {
+      var emp = sessionEmpresa();
+      return (emp && emp.razon_social) || "";
+    },
     paintLogo: paintLogo,
     injectFormBrand: injectFormBrand,
   };

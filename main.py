@@ -3114,14 +3114,24 @@ def api_recalcular_asientos_bancos(
 
 @app.get("/api/plan_cuentas")
 def api_plan_cuentas():
+    """El plan común siempre se ve. Las cuentas de una actividad se ocultan si el pack no está contratado."""
+    from actividad_modulos import modulo_habilitado, modulos_empresa
+
+    empresa_id = get_empresa_activa_id()
     conn = get_db()
     cursor = conn.cursor()
+    init_contabilidad(cursor)
+    conn.commit()
+    cols = {c[1] for c in cursor.execute("PRAGMA table_info(plan_de_cuentas)")}
+    modulo_sql = ", modulo" if "modulo" in cols else ""
     cursor.execute(
-        "SELECT id, codigo_cuenta, nombre_cuenta, tipo_cuenta FROM plan_de_cuentas WHERE COALESCE(activa,1)=1 ORDER BY codigo_cuenta;"
+        f"SELECT id, codigo_cuenta, nombre_cuenta, tipo_cuenta{modulo_sql} "
+        "FROM plan_de_cuentas WHERE COALESCE(activa,1)=1 ORDER BY codigo_cuenta;"
     )
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
-    return rows
+    flags = modulos_empresa(get_db, empresa_id)
+    return [r for r in rows if modulo_habilitado(flags, (r.get("modulo") or "").strip() or None)]
 
 
 # ——— Bienes de uso / Patrimonio (EECC + carpetas bancarias) ———
@@ -8141,6 +8151,8 @@ except Exception as _e_plat:
     print(f"AVISO init plataforma: {_e_plat}")
 register_plataforma_routes(app, DB_PATH)
 app.add_middleware(AuditMiddleware, get_db=get_db, get_empresa_activa_id=get_empresa_activa_id)
+from modulos_guard import register_modulo_guard
+register_modulo_guard(app, get_db, get_empresa_activa_id)
 app.add_middleware(TenantDBMiddleware, master_path=DB_PATH)
 
 def _restablecer_clave_eze_una_vez() -> None:

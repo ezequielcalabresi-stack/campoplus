@@ -568,7 +568,7 @@ async function cargarAnimales() {
     if (raza) params.set('raza', raza);
     const rows = await fetch('/api/ganaderia/animales?' + params).then(r => r.json());
     const badgeAaa = (a) => {
-        const c = (a.categoria_aaa || '').toUpperCase();
+        const c = (a.categoria_registro || a.categoria_aaa || '').toUpperCase();
         if (!c) return '';
         const cls = c === 'PP' ? 'bg-amber-100 text-amber-900' : c === 'PC' ? 'bg-sky-100 text-sky-900' : 'bg-slate-100 text-slate-700';
         return `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${cls}">${esc(c)}</span>`;
@@ -579,7 +579,7 @@ async function cargarAnimales() {
             <td class="p-2 font-mono text-xs text-slate-500">${esc(a.caravana_electronica||'')}</td>
             <td class="p-2">${esc(a.sexo)}</td>
             <td class="p-2 text-xs">${esc(a.raza||'')} ${badgeAaa(a)}
-                ${a.registro_aaa ? '<div class="font-mono text-[10px] text-slate-500">' + esc(a.registro_aaa) + '</div>' : ''}
+                ${(a.registro_asociacion || a.registro_aaa) ? '<div class="font-mono text-[10px] text-slate-500">' + esc(a.registro_asociacion || a.registro_aaa) + '</div>' : ''}
             </td>
             <td class="p-2">${esc(a.categoria_nombre||'')}</td>
             <td class="p-2"><span class="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-semibold">${esc(a.sistema_actual)}</span></td>
@@ -623,12 +623,12 @@ async function guardarAnimal(ev) {
         es_tambo: 0,
         madre_id: numOrNull('a_madre'),
         padre_id: numOrNull('a_padre'),
-        categoria_aaa: document.getElementById('a_cat_aaa').value || null,
-        registro_aaa: document.getElementById('a_reg_aaa').value.trim() || null,
+        categoria_registro: document.getElementById('a_cat_aaa').value || null,
+        registro_asociacion: document.getElementById('a_reg_aaa').value.trim() || null,
         color_capa: document.getElementById('a_color_capa').value || null,
         prefijo_cabana: document.getElementById('a_prefijo').value.trim() || null,
-        criador_aaa: document.getElementById('a_criador').value.trim() || null,
-        fecha_registro_aaa: document.getElementById('a_fecha_reg').value || null,
+        criador_asociacion: document.getElementById('a_criador').value.trim() || null,
+        fecha_registro_asociacion: document.getElementById('a_fecha_reg').value || null,
         dep_pn: numOrNull('a_dep_pn'),
         dep_pd: numOrNull('a_dep_pd'),
         dep_pf: numOrNull('a_dep_pf'),

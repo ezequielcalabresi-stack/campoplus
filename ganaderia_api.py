@@ -71,11 +71,15 @@ class AnimalModel(BaseModel):
     es_tambo: int = 0
     rp: Optional[str] = ""
     pedigree: Optional[str] = ""
+    registro_asociacion: Optional[str] = ""
+    categoria_registro: Optional[str] = ""
     registro_aaa: Optional[str] = ""
     categoria_aaa: Optional[str] = ""
     color_capa: Optional[str] = ""
+    criador_asociacion: Optional[str] = ""
     criador_aaa: Optional[str] = ""
     prefijo_cabana: Optional[str] = ""
+    fecha_registro_asociacion: Optional[str] = ""
     fecha_registro_aaa: Optional[str] = ""
     dep_pn: Optional[float] = None
     dep_pd: Optional[float] = None
@@ -103,11 +107,15 @@ class AnimalUpdateModel(BaseModel):
     es_tambo: Optional[int] = None
     rp: Optional[str] = None
     pedigree: Optional[str] = None
+    registro_asociacion: Optional[str] = None
+    categoria_registro: Optional[str] = None
     registro_aaa: Optional[str] = None
     categoria_aaa: Optional[str] = None
     color_capa: Optional[str] = None
+    criador_asociacion: Optional[str] = None
     criador_aaa: Optional[str] = None
     prefijo_cabana: Optional[str] = None
+    fecha_registro_asociacion: Optional[str] = None
     fecha_registro_aaa: Optional[str] = None
     dep_pn: Optional[float] = None
     dep_pd: Optional[float] = None
@@ -280,6 +288,7 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
         rodeo_id: Optional[int] = None,
         estado: str = "activo",
         es_tambo: Optional[int] = None,
+        categoria_registro: Optional[str] = None,
         categoria_aaa: Optional[str] = None,
         raza: Optional[str] = None,
         limit: int = 500,
@@ -294,6 +303,7 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
                 rodeo_id=rodeo_id,
                 estado=estado,
                 es_tambo=es_tambo,
+                categoria_registro=categoria_registro or categoria_aaa,
                 categoria_aaa=categoria_aaa,
                 raza=raza,
                 limit=limit,

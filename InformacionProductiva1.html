@@ -83,7 +83,8 @@ function render(rows){
         return;
     }
     const has = rows.reduce((a,r)=>a+Number(r.has_silo_chico||r.superficie||0),0);
-    document.getElementById('lblResumen').textContent = `${rows.length} lotes - ${fmt(has)} ha Silo Chico`;
+    const emp = (window.CampoAuth && CampoAuth.nombreEmpresa && CampoAuth.nombreEmpresa()) || 'la empresa';
+    document.getElementById('lblResumen').textContent = `${rows.length} lotes - ${fmt(has)} ha ${emp}`;
     tb.innerHTML = rows.map(r => `
         <tr class="hover:bg-purple-50/40">
             <td class="p-2 font-mono text-xs">${esc(r.campania_codigo||'')}</td>

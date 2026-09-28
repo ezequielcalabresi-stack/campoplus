@@ -4,7 +4,7 @@
     <script src="/campoplus-auth.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CAmpo+ - Contabilidad y Plan de Cuentas de Silo Chico S.A.</title>
+    <title>CAmpo+ - Contabilidad y Plan de Cuentas</title>
     <script src="https://cdn.tailwindcss.com"></script>
 <script src="/campoplus-firma.js?v=2"></script>
     <script src="/campoplus-fechas.js"></script>
@@ -14,7 +14,7 @@
     <div class="max-w-7xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg relative">
         <div class="flex justify-between items-center mb-6 border-b pb-4">
             <div>
-                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Contabilidad General - Silo Chico S.A.</span></h2>
+                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span id="tituloEmpresa" class="text-sm font-normal text-slate-500">| Contabilidad General</span></h2>
                 <p id="estado-db" class="text-xs text-amber-600 mt-1">Conectando al núcleo central...</p>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -111,6 +111,7 @@
                             <th class="p-2 text-right">ROA</th>
                             <th class="p-2 text-right">ROE</th>
                             <th class="p-2 text-right">Margen</th>
+                            <th class="p-2 text-right">Resultado homogéneo</th>
                             <th class="p-2 text-right">vs momento 0 (ROE)</th>
                         </tr>
                     </thead>
@@ -120,7 +121,7 @@
 
             <div class="border rounded-lg p-4 bg-slate-50">
                 <h3 class="font-bold text-slate-800 mb-1">Cargar EECC de un ejercicio</h3>
-                <p class="text-xs text-slate-500 mb-3">Para ejercicios que no están en el libro. El patrimonio es el neto sin el resultado del ejercicio, igual que en el corte. Si dejás el resultado vacío, se calcula como ingresos menos gastos.</p>
+                <p class="text-xs text-slate-500 mb-3">Para ejercicios que no están en el libro. El patrimonio es el neto sin el resultado del ejercicio, igual que en el corte. Si dejás el resultado vacío, se calcula como ingresos menos gastos. El índice al cierre (IPC o coeficiente) pasa el resultado y el activo a la moneda del último índice cargado: así la serie no mezcla pesos de años distintos. Los ratios de un mismo año no cambian.</p>
                 <form id="formEecc" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs" onsubmit="return guardarEecc(event)">
                     <input type="hidden" id="eeccId" value="">
                     <div>
@@ -166,6 +167,10 @@
                     <div>
                         <label class="font-bold text-slate-500 uppercase">Resultado</label>
                         <input id="eeccRes" class="mt-1 w-full border rounded p-2 text-right font-mono" placeholder="Vacío = ingresos − gastos">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Índice al cierre</label>
+                        <input id="eeccIndice" class="mt-1 w-full border rounded p-2 text-right font-mono" placeholder="IPC o coeficiente">
                     </div>
                     <div class="flex items-end">
                         <label class="flex items-center gap-2 border rounded px-2 py-2 bg-white">
@@ -428,9 +433,10 @@
                         <td class="p-2 text-right font-mono">${fmtRatio(ratioDe(s, 'roa'))}</td>
                         <td class="p-2 text-right font-mono">${fmtRatio(roe)}</td>
                         <td class="p-2 text-right font-mono">${fmtRatio(ratioDe(s, 'margen'))}</td>
+                        <td class="p-2 text-right font-mono">${s.resultado_homogeneo == null ? '—' : pesos(s.resultado_homogeneo)}</td>
                         <td class="p-2 text-right font-mono">${deltaTxt}</td>
                     </tr>`;
-                }).join('') || '<tr><td colspan="8" class="p-4 text-center text-slate-400">Sin serie. Cargá un ejercicio.</td></tr>';
+                }).join('') || '<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin serie. Cargá un ejercicio.</td></tr>';
                 _eeccCache = data.cargados || [];
                 pintarEecc();
             } catch (e) {
@@ -459,7 +465,7 @@
 
         function limpiarEecc() {
             document.getElementById('eeccId').value = '';
-            ['eeccEj', 'eeccFecha', 'eeccNotas', 'eeccRes'].forEach(id => document.getElementById(id).value = '');
+            ['eeccEj', 'eeccFecha', 'eeccNotas', 'eeccRes', 'eeccIndice'].forEach(id => document.getElementById(id).value = '');
             ['eeccAc', 'eeccAnc', 'eeccPc', 'eeccPnc', 'eeccPn', 'eeccEx', 'eeccIng', 'eeccGas'].forEach(id => document.getElementById(id).value = '0');
             document.getElementById('eeccCerrado').checked = true;
         }
@@ -480,6 +486,7 @@
             document.getElementById('eeccIng').value = t.ingresos || 0;
             document.getElementById('eeccGas').value = t.gastos || 0;
             document.getElementById('eeccRes').value = t.resultado_periodo || 0;
+            document.getElementById('eeccIndice').value = e.indice_cierre || '';
             document.getElementById('eeccNotas').value = e.notas || '';
             document.getElementById('eeccCerrado').checked = !!Number(e.cerrado);
         }
@@ -512,6 +519,7 @@
             ev.preventDefault();
             const id = document.getElementById('eeccId').value;
             const resTxt = document.getElementById('eeccRes').value.trim();
+            const indTxt = document.getElementById('eeccIndice').value.trim();
             const body = {
                 ejercicio: document.getElementById('eeccEj').value.trim(),
                 fecha_cierre: document.getElementById('eeccFecha').value,
@@ -525,6 +533,7 @@
                 ingresos: numCampo('eeccIng'),
                 gastos: numCampo('eeccGas'),
                 resultado: resTxt === '' ? null : numCampo('eeccRes'),
+                indice_cierre: indTxt === '' ? null : numCampo('eeccIndice'),
                 notas: document.getElementById('eeccNotas').value.trim(),
                 origen: 'manual',
             };
@@ -548,7 +557,15 @@
             await cargarRatios();
         }
 
+        function pintarEmpresa() {
+            const nombre = (window.CampoAuth && CampoAuth.nombreEmpresa && CampoAuth.nombreEmpresa()) || '';
+            const el = document.getElementById('tituloEmpresa');
+            if (nombre && el) el.textContent = '| Contabilidad General - ' + nombre;
+            if (nombre) document.title = 'CAmpo+ - Contabilidad - ' + nombre;
+        }
+
         window.onload = async function() {
+            pintarEmpresa();
             await cargarEjercicios();
             await cargarAsientosContables();
             await cargarCorte();

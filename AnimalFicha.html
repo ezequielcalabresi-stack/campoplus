@@ -176,15 +176,17 @@ function kv(label, value) {
 function linkAnimal(a) {
     if (!a) return '<span class="text-slate-400">Sin dato</span>';
     const nom = a.caravana_visual || a.nombre || ('#' + a.id);
-    const aaa = a.categoria_aaa ? ` · <span class="font-bold">${esc(a.categoria_aaa)}</span>` : '';
+    const catReg = a.categoria_registro || a.categoria_aaa;
+    const aaa = catReg ? ` · <span class="font-bold">${esc(catReg)}</span>` : '';
     return `<a class="text-sky-700 font-bold hover:underline" href="AnimalFicha.html?id=${a.id}">${esc(nom)}</a>${aaa}
-        <div class="text-xs text-slate-500">${esc(a.registro_aaa || '')} ${esc(a.caravana_electronica || '')} ${esc(a.raza || '')}</div>`;
+        <div class="text-xs text-slate-500">${esc(a.registro_asociacion || a.registro_aaa || '')} ${esc(a.caravana_electronica || '')} ${esc(a.raza || '')}</div>`;
 }
 
 function nodoPedigree(n, nivel) {
     if (!n) return `<div class="text-xs text-slate-400 italic pl-${Math.min(nivel,3)*2}">—</div>`;
-    const cat = n.categoria_aaa
-        ? `<span class="text-[10px] font-bold px-1 rounded ${n.categoria_aaa==='PP'?'bg-amber-100 text-amber-900':n.categoria_aaa==='PC'?'bg-sky-100 text-sky-900':'bg-slate-100'}">${esc(n.categoria_aaa)}</span>`
+    const catCod = n.categoria_registro || n.categoria_aaa;
+    const cat = catCod
+        ? `<span class="text-[10px] font-bold px-1 rounded ${catCod==='PP'?'bg-amber-100 text-amber-900':catCod==='PC'?'bg-sky-100 text-sky-900':'bg-slate-100'}">${esc(catCod)}</span>`
         : '';
     const link = n.id
         ? `<a class="font-bold text-stone-800 hover:text-sky-700 hover:underline" href="AnimalFicha.html?id=${n.id}">${esc(n.etiqueta)}</a>`
@@ -192,7 +194,7 @@ function nodoPedigree(n, nivel) {
     return `
       <div class="min-w-[160px] border rounded-lg bg-white p-2 shadow-sm">
         <div class="flex items-center gap-1 flex-wrap">${link} ${cat}</div>
-        <div class="text-[10px] text-slate-500 font-mono">${esc(n.registro_aaa || '')}</div>
+        <div class="text-[10px] text-slate-500 font-mono">${esc(n.registro_asociacion || n.registro_aaa || '')}</div>
         <div class="text-[10px] text-slate-500">${esc([n.sexo, n.color_capa, n.prefijo_cabana].filter(Boolean).join(' · '))}</div>
       </div>`;
 }
@@ -285,7 +287,7 @@ function render() {
         kv('SENASA', esc(a.senasa_id)),
         kv('Nombre', esc(a.nombre)),
         kv('Raza', esc(a.raza)),
-        kv((g.aaa && g.aaa.sigla) || 'Registro', esc((a.categoria_aaa || '') + (a.registro_aaa ? ' · ' + a.registro_aaa : ''))),
+        kv((g.aaa && g.aaa.sigla) || 'Registro', esc((a.categoria_registro || a.categoria_aaa || '') + ((a.registro_asociacion || a.registro_aaa) ? ' · ' + (a.registro_asociacion || a.registro_aaa) : ''))),
         kv('Nacimiento', esc(a.fecha_nacimiento)),
     ].join('');
 

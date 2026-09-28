@@ -60,6 +60,20 @@ PLAN_CUENTAS_BASE = [
     ("4.2.04", "Gastos de Financiación e Impuestos Bancarios", "Resultado"),
 ]
 
+# Cuentas de resultado de cada actividad. Se ocultan del plan si el pack no está contratado.
+CUENTAS_POR_ACTIVIDAD = (
+    ("4.1.11", "Ingresos Ganadería", "Resultado", "mod_ganaderia"),
+    ("4.2.11", "Gastos Ganadería", "Resultado", "mod_ganaderia"),
+    ("4.1.12", "Ingresos Tambo", "Resultado", "mod_tambo"),
+    ("4.2.12", "Gastos Tambo", "Resultado", "mod_tambo"),
+    ("4.1.13", "Ingresos Agricultura", "Resultado", "mod_agro"),
+    ("4.2.13", "Gastos Agricultura", "Resultado", "mod_agro"),
+    ("4.1.14", "Ingresos Porcinos", "Resultado", "mod_porcino"),
+    ("4.2.14", "Gastos Porcinos", "Resultado", "mod_porcino"),
+    ("4.1.15", "Ingresos Aviar", "Resultado", "mod_aviar"),
+    ("4.2.15", "Gastos Aviar", "Resultado", "mod_aviar"),
+)
+
 
 def init_contabilidad(cursor) -> None:
     cursor.execute("""
@@ -129,6 +143,9 @@ def init_contabilidad(cursor) -> None:
         WHERE id = 1;
         """
     )
+    cols_plan = {c[1] for c in cursor.execute("PRAGMA table_info(plan_de_cuentas)")}
+    if "modulo" not in cols_plan:
+        cursor.execute("ALTER TABLE plan_de_cuentas ADD COLUMN modulo TEXT;")
     for codigo, nombre, tipo in PLAN_CUENTAS_BASE:
         cursor.execute(
             """
@@ -136,6 +153,22 @@ def init_contabilidad(cursor) -> None:
             VALUES (?, ?, ?);
             """,
             (codigo, nombre, tipo),
+        )
+    for codigo, nombre, tipo, modulo in CUENTAS_POR_ACTIVIDAD:
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO plan_de_cuentas (codigo_cuenta, nombre_cuenta, tipo_cuenta, modulo)
+            VALUES (?, ?, ?, ?);
+            """,
+            (codigo, nombre, tipo, modulo),
+        )
+        cursor.execute(
+            """
+            UPDATE plan_de_cuentas
+            SET modulo = ?
+            WHERE codigo_cuenta = ? AND (modulo IS NULL OR TRIM(modulo) = '');
+            """,
+            (modulo, codigo),
         )
 
     cursor.execute("PRAGMA table_info(movimientos_cta_cte_bancos);")
