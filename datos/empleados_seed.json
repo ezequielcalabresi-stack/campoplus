@@ -1,0 +1,266 @@
+[
+ {
+  "nombre": "Algañaraz Mateo",
+  "dni": "45225147",
+  "cuil": "",
+  "activo": 0
+ },
+ {
+  "nombre": "ANA CLARA",
+  "dni": "34653202",
+  "cuil": "24-34653202-1",
+  "activo": 1
+ },
+ {
+  "nombre": "BOSSIO Eduardo",
+  "dni": "",
+  "cuil": "",
+  "activo": 0
+ },
+ {
+  "nombre": "Capecce Mario Alcides",
+  "dni": "34593580",
+  "cuil": "20-34593580-1",
+  "activo": 1
+ },
+ {
+  "nombre": "Capecce Mario Anibal",
+  "dni": "10780906",
+  "cuil": "",
+  "activo": 0
+ },
+ {
+  "nombre": "Capurro Adalberto Ariel",
+  "dni": "30753690",
+  "cuil": "20-30753690-1",
+  "activo": 1
+ },
+ {
+  "nombre": "CAPURRO Pepe",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "CAROLINA",
+  "dni": "",
+  "cuil": "",
+  "activo": 0
+ },
+ {
+  "nombre": "CORIA JULIO",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "Diaz Rosalia",
+  "dni": "",
+  "cuil": "",
+  "activo": 0
+ },
+ {
+  "nombre": "Escalona (RILLO)",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "Escalona Jose (Sta Julia)",
+  "dni": "92581664",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "EZEQUIEL",
+  "dni": "",
+  "cuil": "20-27068427-1",
+  "activo": 1
+ },
+ {
+  "nombre": "Franco Miguel Ruiz",
+  "dni": "26909537",
+  "cuil": "20-26909537-8",
+  "activo": 1
+ },
+ {
+  "nombre": "Frisari Marcelo (caminera)",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "Gaston Sansiñena",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "GONZALEZ GABRIEL",
+  "dni": "",
+  "cuil": "",
+  "activo": 0
+ },
+ {
+  "nombre": "KIKA",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "LIPERA JUAN FERNANDO",
+  "dni": "",
+  "cuil": "20-36275641-4",
+  "activo": 1
+ },
+ {
+  "nombre": "LIPERA LUJAN",
+  "dni": "",
+  "cuil": "27-33443489-9",
+  "activo": 1
+ },
+ {
+  "nombre": "LOPEZ MARTIN",
+  "dni": "",
+  "cuil": "20-27851664-5",
+  "activo": 1
+ },
+ {
+  "nombre": "Maria Jose Lipera",
+  "dni": "38389699",
+  "cuil": "20-38389699-7",
+  "activo": 1
+ },
+ {
+  "nombre": "Mataza Mariano",
+  "dni": "",
+  "cuil": "",
+  "activo": 0
+ },
+ {
+  "nombre": "MELONE MAXI",
+  "dni": "",
+  "cuil": "20-30753740-1",
+  "activo": 1
+ },
+ {
+  "nombre": "NORMITA",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "Perez Gustavo Adrian",
+  "dni": "28639118",
+  "cuil": "20-28639118-5",
+  "activo": 1
+ },
+ {
+  "nombre": "Perez Jonathan",
+  "dni": "48033699",
+  "cuil": "20-48033699-3",
+  "activo": 1
+ },
+ {
+  "nombre": "PEREZ RAMON BENJAMIN",
+  "dni": "47186624",
+  "cuil": "20-47186624-6",
+  "activo": 0
+ },
+ {
+  "nombre": "Perez Taborda Juan Manuel",
+  "dni": "42839399",
+  "cuil": "20-42839399-7",
+  "activo": 0
+ },
+ {
+  "nombre": "PIRI",
+  "dni": "",
+  "cuil": "23-13086816-9",
+  "activo": 1
+ },
+ {
+  "nombre": "Pollo",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "Ponce Antonia",
+  "dni": "32029259",
+  "cuil": "27-32029259-5",
+  "activo": 1
+ },
+ {
+  "nombre": "Ponce Rolando Esteban",
+  "dni": "38318998",
+  "cuil": "20-38318998-6",
+  "activo": 1
+ },
+ {
+  "nombre": "RAMIRO",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "RAUL Y TOTA",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "RODRIGUEZ ADRIAN",
+  "dni": "27563036",
+  "cuil": "20-27563036-6",
+  "activo": 1
+ },
+ {
+  "nombre": "ROLDAN JOSE",
+  "dni": "11724695",
+  "cuil": "20-11724695-8",
+  "activo": 1
+ },
+ {
+  "nombre": "ROMAN GUILLE",
+  "dni": "",
+  "cuil": "20-24689190-8",
+  "activo": 1
+ },
+ {
+  "nombre": "RUBIERA WALTER",
+  "dni": "",
+  "cuil": "20-20309669-1",
+  "activo": 1
+ },
+ {
+  "nombre": "SOLEDAD",
+  "dni": "",
+  "cuil": "",
+  "activo": 1
+ },
+ {
+  "nombre": "SOVERA",
+  "dni": "",
+  "cuil": "20-13837494-8",
+  "activo": 0
+ },
+ {
+  "nombre": "SUBIZA GUILLERMO",
+  "dni": "",
+  "cuil": "20-26596402-9",
+  "activo": 1
+ },
+ {
+  "nombre": "Tomas Roman",
+  "dni": "46186200",
+  "cuil": "20-46186200-5",
+  "activo": 1
+ },
+ {
+  "nombre": "VENANCIO",
+  "dni": "",
+  "cuil": "20-94938703-9",
+  "activo": 0
+ }
+]

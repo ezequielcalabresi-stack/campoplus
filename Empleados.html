@@ -4,238 +4,641 @@
     <script src="/campoplus-auth.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CAmpo+ - Gestión de Empleados y Sueldos</title>
+    <title>CAmpo+ - Empleados y Sueldos</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
-    <script src="db-core.js"></script>
-<script src="/campoplus-firma.js?v=2"></script>
-<script src="/campoplus-money.js"></script>
-    <script src="/campoplus-fechas.js"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-money.js"></script>
+    <style>
+        .tab-btn.activo { background:#1e293b; color:#fff; }
+        tr.fila-principal td { background:#eef2ff; font-weight:600; }
+        @media print {
+            @page { size: A4 portrait; margin: 10mm; }
+            body { background:#fff !important; }
+            .no-print { display:none !important; }
+            .print-area { box-shadow:none !important; margin:0 !important; padding:0 !important; max-width:none !important; }
+            .bloque-emp { break-inside: avoid; }
+        }
+    </style>
 </head>
 <body class="bg-slate-100 font-sans">
-
-    <div class="max-w-6xl mx-auto p-6 my-8 bg-white rounded-xl shadow-lg relative">
-        <!-- Cabecera -->
-        <div class="flex justify-between items-center mb-6 border-b pb-4">
-            <div>
-                <h2 class="text-2xl font-bold text-slate-800">CAmpo+ <span class="text-sm font-normal text-slate-500">| Sueldos, Cuentas Corrientes y Personal</span></h2>
-                <p id="estado-db" class="text-xs text-amber-600 mt-1">Conectando al núcleo central...</p>
-            </div>
-            <a href="index.html" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-300">
-                Volver al Dashboard
-            </a>
+<div class="max-w-7xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg print-area">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4 no-print">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Empleados y Sueldos <span class="text-sm font-normal text-slate-500">| fuera de convenio</span></h1>
+            <p class="text-xs text-slate-500 mt-1">
+                Nuevo sueldo = sueldo anterior x índice. A cobrar en efectivo = nuevo sueldo - Depósito Bancario (recibo de convenio) - adelantos y descuentos + otros créditos.
+            </p>
         </div>
-
-        <!-- SECCIÓN 1: SELECTOR DE EMPLEADO Y ACCIONES -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border mb-6 text-xs">
-            <div>
-                <label class="block font-medium text-slate-700 mb-1">Seleccionar Empleado (Nómina Central)</label>
-                <select id="selectEmpleado" onchange="cargarDatosEmpleado()" class="w-full rounded border p-2 bg-white font-medium text-slate-800">
-                    <option value="">Cargando empleados...</option>
-                </select>
-            </div>
-            <div>
-                <label class="block font-medium text-slate-700 mb-1">Período de Liquidación</label>
-                <select id="periodoLiq" class="w-full rounded border p-2 bg-white font-medium">
-                    <option value="Septiembre / 2026">Septiembre / 2026</option>
-                    <option value="Agosto / 2026">Agosto / 2026</option>
-                    <option value="Julio / 2026">Julio / 2026</option>
-                </select>
-            </div>
-            <div class="flex items-end">
-                <button onclick="cargarDatosEmpleado()" class="w-full bg-slate-800 text-white p-2.5 rounded font-bold hover:bg-slate-700">
-                    Consultar Legajo
-                </button>
-            </div>
-        </div>
-
-        <!-- SECCIÓN 2: ACTUALIZACIÓN AUTOMÁTICA POR INFLACIÓN -->
-        <div class="bg-indigo-50 border border-indigo-200 p-4 rounded-lg mb-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs">
-            <div>
-                <h3 class="font-bold text-indigo-900 text-sm">Indexación Salarial por Inflación (IPC)</h3>
-                <p class="text-indigo-700">Aplica el ajuste porcentual mensual de forma global sobre el haber base.</p>
-            </div>
-            <div class="flex items-center gap-3">
-                <div>
-                    <label class="block font-semibold text-indigo-900 mb-1">% Inflación Mes</label>
-                    <input type="text" id="porcInflacion" value="4,2" class="border rounded p-1.5 w-20 text-center font-bold bg-white font-mono">
-                </div>
-                <div class="flex items-center pt-4">
-                    <input type="checkbox" id="excluirInflacion" class="mr-2 h-4 w-4 text-indigo-600 rounded">
-                    <label for="excluirInflacion" class="font-medium text-indigo-900">Excluir de la inflación</label>
-                </div>
-                <button onclick="aplicarAjusteIPC()" class="bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700 mt-4">Aplicar Ajuste
-                </button>
-            </div>
-        </div>
-
-        <!-- SECCIÓN 3: CONFORMACIÓN DEL RECIBO Y SALDO A COBRAR -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Detalle de Haberes y Créditos -->
-            <div class="border rounded-lg p-5 bg-white shadow-sm text-xs">
-                <h3 class="font-bold text-slate-800 mb-3 border-b pb-2 text-sm">Conformación del Sueldo Total</h3>
-                <div class="space-y-3">
-                    <div class="flex justify-between items-center">
-                        <span class="text-slate-600">Sueldo Básico Actualizado:</span>
-                        <input type="text" id="inputBasico" value="750.000,00" class="border rounded p-1.5 w-32 text-right font-bold font-mono money-input" data-money inputmode="decimal">
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-slate-600">Presentismo / Antigüedad:</span>
-                        <input type="text" id="inputAdicionales" value="120.000,00" class="border rounded p-1.5 w-32 text-right font-mono" oninput="recalcularSueldo()">
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-slate-600">Otros Créditos / Bonos:</span>
-                        <input type="text" id="inputOtros" value="45.000,00" class="border rounded p-1.5 w-32 text-right font-mono" oninput="recalcularSueldo()">
-                    </div>
-                    <div class="flex justify-between border-t pt-2 font-bold text-slate-800 text-sm">
-                        <span>Total Bruto / Haberes:</span>
-                        <span id="lblTotalBruto" class="text-indigo-700 font-mono">$ 915.000,00</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Deducciones y Neto a Cobrar en Efectivo -->
-            <div class="border rounded-lg p-5 bg-white shadow-sm text-xs">
-                <h3 class="font-bold text-slate-800 mb-3 border-b pb-2 text-sm">Deducciones y Liquidación Final</h3>
-                <div class="space-y-3">
-                    <div class="flex justify-between items-center">
-                        <span class="text-slate-600">Adelantos / Vales en Cta Cte:</span>
-                        <input type="text" id="inputAdelantos" value="150.000,00" class="border rounded p-1.5 w-32 text-right text-red-600 font-medium font-mono money-input" data-money inputmode="decimal" oninput="recalcularSueldo()">
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-slate-600">Depósitos Bancarios Previos:</span>
-                        <input type="text" id="inputDepositos" value="300.000,00" class="border rounded p-1.5 w-32 text-right text-red-600 font-medium font-mono money-input" data-money inputmode="decimal" oninput="recalcularSueldo()">
-                    </div>
-                    <div class="flex justify-between border-t pt-2 font-extrabold text-slate-900 bg-emerald-50 p-2.5 rounded text-sm">
-                        <span>Saldo Neto a Cobrar:</span>
-                        <span id="lblNetoCobrar" class="text-emerald-800 text-base font-mono">$ 465.000,00</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- SECCIÓN 4: VISTA PREVIA DEL RECIBO PARA RECORTAR -->
-        <div class="border-2 border-dashed border-slate-300 rounded-lg p-6 bg-slate-50">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wide">Recibo de Liquidación (Formato para Recortar y Entregar)</h3>
-                <button onclick="window.print();" class="bg-slate-800 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-slate-700">
-                    Imprimir Recibo
-                </button>
-            </div>
-            
-            <div class="bg-white p-6 border rounded shadow-sm text-xs font-mono space-y-2 text-slate-800">
-                <div class="flex justify-between border-b pb-2 font-bold text-sm">
-                    <span>CAmpo+ | RECIBO DE PAGO</span>
-                    <span id="reciboFecha">Fecha: 18/09/2026</span>
-                </div>
-                <div><strong>Empleado:</strong> <span id="reciboEmpleado">Carlos Alberto Gómez</span></div>
-                <div><strong>Período:</strong> <span id="reciboPeriodo">Septiembre 2026</span></div>
-                <div class="border-t border-b py-2 my-2 space-y-1">
-                    <div class="flex justify-between"><span>Sueldo Bruto + Adicionales:</span><span id="reciboBruto">$ 915.000,00</span></div>
-                    <div class="flex justify-between"><span>Menos Adelantos (Cta Cte):</span><span id="reciboAdelantos">- $ 150.000,00</span></div>
-                    <div class="flex justify-between"><span>Menos Depósitos Bancarios:</span><span id="reciboDepositos">- $ 300.000,00</span></div>
-                </div>
-                <div class="flex justify-between font-bold text-sm pt-1">
-                    <span>NETO A COBRAR EN EFECTIVO:</span>
-                    <span id="reciboNeto" class="text-emerald-700">$ 465.000,00</span>
-                </div>
-                <div class="pt-8 flex justify-between text-[11px] text-slate-500">
-                    <span>Firma Empleador: ....................................</span>
-                    <span>Firma Empleado: ....................................</span>
-                </div>
-            </div>
+        <div class="flex gap-2 items-start">
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
         </div>
     </div>
 
-    <script>
-        let db = null;
-        let empleadosData = [];
+    <div class="flex flex-wrap gap-2 mb-4 no-print">
+        <button class="tab-btn activo px-3 py-1.5 rounded border text-sm font-bold" data-tab="conf" onclick="verTab('conf')">Conformación mensual</button>
+        <button class="tab-btn px-3 py-1.5 rounded border text-sm font-bold" data-tab="cuenta" onclick="verTab('cuenta')">Cuenta del empleado</button>
+        <button class="tab-btn px-3 py-1.5 rounded border text-sm font-bold" data-tab="detalle" onclick="verTab('detalle')">Detalle sueldos</button>
+        <button class="tab-btn px-3 py-1.5 rounded border text-sm font-bold" data-tab="padron" onclick="verTab('padron')">Padrón de empleados</button>
+    </div>
 
-        async function inicializarEmpleados() {
-            try {
-                db = await getDbInstance();
-                document.getElementById('estado-db').innerText = "Conectado al núcleo central. Nómina sincronizada.";
-                document.getElementById('estado-db').className = "text-xs text-emerald-600 mt-1 font-medium";
-                poblarSelectEmpleados();
-            } catch (e) {
-                console.error(e);
-                document.getElementById('estado-db').innerText = "Error al conectar con la base de datos.";
-            }
-        }
+    <!-- CONFORMACION MASIVA -->
+    <section id="tab-conf">
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3 bg-slate-50 border rounded-lg p-3 mb-3 text-sm">
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Mes a conformar</label>
+                <input id="c_mes" type="month" class="mt-1 w-full border rounded p-2" onchange="alCambiarMesConf()">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Fecha</label>
+                <input id="c_fecha" type="date" class="mt-1 w-full border rounded p-2">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">% Índice (Indec)</label>
+                <input id="c_pct" type="text" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0,00" onchange="calcularConf()">
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[10px] font-bold uppercase text-slate-500">Detalle índice</label>
+                <input id="c_det" type="text" class="mt-1 w-full border rounded p-2" placeholder="Indec Agosto">
+            </div>
+            <div class="flex items-end">
+                <button onclick="calcularConf()" class="w-full bg-slate-800 text-white px-3 py-2 rounded font-bold">Calcular</button>
+            </div>
+        </div>
 
-        function poblarSelectEmpleados() {
-            if (!db) return;
-            try {
-                const stmt = db.prepare("SELECT id, nombre, cuil, haber_base FROM empleados WHERE activo = 1 ORDER BY nombre ASC;");
-                let html = "";
-                empleadosData = [];
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-2 text-sm">
+            <div class="flex items-center gap-4">
+                <label class="flex items-center gap-2"><input type="checkbox" id="c_todos" checked onchange="marcarTodosConf(this.checked)"> Todos</label>
+                <label class="flex items-center gap-2"><input type="checkbox" id="c_reemplazar"> Reemplazar los ya conformados</label>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="c_resumen" class="text-xs text-slate-500"></span>
+                <button onclick="conformar()" class="bg-indigo-700 text-white px-4 py-2 rounded font-bold hover:bg-indigo-800">Conformar sueldos</button>
+            </div>
+        </div>
 
-                while (stmt.step()) {
-                    let r = stmt.getAsObject();
-                    empleadosData.push(r);
-                    html += `<option value="${r.id}">${r.nombre} (CUIL: ${r.cuil || 'S/D'})</option>`;
-                }
-                stmt.free();
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-indigo-50 text-xs uppercase text-indigo-900">
+                    <tr>
+                        <th class="p-2 w-8"></th>
+                        <th class="p-2 text-left">Nombre</th>
+                        <th class="p-2 text-left">Convenio</th>
+                        <th class="p-2 text-right">Últ. sueldo</th>
+                        <th class="p-2 text-center">Fecha</th>
+                        <th class="p-2 text-right w-24">% Índice</th>
+                        <th class="p-2 text-right w-40">Nuevo sueldo</th>
+                        <th class="p-2 text-right">Aumento</th>
+                        <th class="p-2 text-center">Estado</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="c_tbody" class="divide-y"></tbody>
+                <tfoot class="bg-slate-50 font-bold text-sm">
+                    <tr>
+                        <td colspan="3" class="p-2 text-right">Totales seleccionados</td>
+                        <td id="c_tot_ant" class="p-2 text-right font-mono"></td>
+                        <td></td><td></td>
+                        <td id="c_tot_nuevo" class="p-2 text-right font-mono"></td>
+                        <td id="c_tot_aum" class="p-2 text-right font-mono"></td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </section>
 
-                document.getElementById('selectEmpleado').innerHTML = html !== "" ? html : "<option value=''>No hay empleados activos</option>";
-                if (empleadosData.length > 0) {
-                    cargarDatosEmpleado();
-                }
-            } catch (e) {
-                console.error("Error al poblar empleados:", e);
-            }
-        }
+    <!-- CUENTA DEL EMPLEADO -->
+    <section id="tab-cuenta" class="hidden">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 border rounded-lg p-3 mb-3 text-sm">
+            <div class="md:col-span-2">
+                <label class="text-[10px] font-bold uppercase text-slate-500">Empleado</label>
+                <select id="k_emp" class="mt-1 w-full border rounded p-2 bg-white" onchange="cargarCuenta()"></select>
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Mes</label>
+                <input id="k_mes" type="month" class="mt-1 w-full border rounded p-2" onchange="cargarCuenta()">
+            </div>
+            <div class="flex items-end gap-2">
+                <button onclick="moverMes(-1)" class="flex-1 border rounded p-2 font-bold bg-white">&lt; Mes ant.</button>
+                <button onclick="moverMes(1)" class="flex-1 border rounded p-2 font-bold bg-white">Mes sig. &gt;</button>
+            </div>
+        </div>
 
-        function cargarDatosEmpleado() {
-            let id = parseInt(document.getElementById('selectEmpleado').value);
-            let emp = empleadosData.find(e => e.id === id);
-            if (!emp) return;
+        <div id="k_kpis" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3"></div>
 
-            let basico = emp.haber_base || 750000;
-            document.getElementById('inputBasico').value = basico.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            recalcularSueldo();
-        }
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-2 border rounded-lg p-3 mb-3 text-sm bg-white">
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Fecha</label>
+                <input id="m_fecha" type="date" class="mt-1 w-full border rounded p-2">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Concepto</label>
+                <select id="m_concepto" class="mt-1 w-full border rounded p-2 bg-white" onchange="alElegirConcepto()"></select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[10px] font-bold uppercase text-slate-500">Detalle</label>
+                <input id="m_detalle" type="text" class="mt-1 w-full border rounded p-2" placeholder="Ej: Imp Casa, Viaticos, Ajuste x Recibo">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Importe</label>
+                <input id="m_importe" type="text" data-money class="mt-1 w-full border rounded p-2 text-right font-mono" value="0,00">
+            </div>
+            <div class="flex items-end gap-1">
+                <button onclick="cargarMovimiento('credito')" class="flex-1 bg-emerald-700 text-white px-2 py-2 rounded font-bold text-xs">Cargar crédito</button>
+                <button onclick="cargarMovimiento('debito')" class="flex-1 bg-rose-700 text-white px-2 py-2 rounded font-bold text-xs">Cargar débito</button>
+            </div>
+        </div>
+        <p id="m_editando" class="hidden text-xs text-amber-700 mb-2">
+            Editando un movimiento. <button class="underline font-bold" onclick="cancelarEdicion()">Cancelar</button>
+        </p>
 
-        function limpiarNum(val) {
-            return parseFloat(val.toString().replace(/\./g, '').replace(',', '.')) || 0;
-        }
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-700">
+                    <tr>
+                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-left">Detalle</th>
+                        <th class="p-2 text-right">Créditos</th>
+                        <th class="p-2 text-right">Débitos</th>
+                        <th class="p-2 text-left">Índice</th>
+                        <th class="p-2 text-right">Aumento</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="k_tbody" class="divide-y"></tbody>
+            </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-2">
+            Créditos: sueldo del mes, premios, viáticos, ahorro y otros pagos por fuera del recibo. Débitos: Depósito Bancario (neto del recibo oficial de convenio), adelantos y descuentos.
+            La fila resaltada es el sueldo base del mes: es la que se actualiza con el índice el mes siguiente.
+        </p>
+    </section>
 
-        function recalcularSueldo() {
-            let basico = limpiarNum(document.getElementById('inputBasico').value);
-            let adicionales = limpiarNum(document.getElementById('inputAdicionales').value);
-            let otros = limpiarNum(document.getElementById('inputOtros').value);
-            let bruto = basico + adicionales + otros;
+    <!-- DETALLE SUELDOS (REPORTE) -->
+    <section id="tab-detalle" class="hidden">
+        <div class="flex flex-wrap items-end gap-3 bg-slate-50 border rounded-lg p-3 mb-3 text-sm no-print">
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Mes</label>
+                <input id="d_mes" type="month" class="mt-1 border rounded p-2" onchange="cargarDetalle()">
+            </div>
+            <label class="flex items-center gap-2 pb-2"><input type="checkbox" id="d_activos" checked onchange="cargarDetalle()"> Solo activos</label>
+            <button onclick="cargarDetalle()" class="bg-slate-800 text-white px-3 py-2 rounded font-bold">Ver</button>
+            <button onclick="window.print()" class="bg-indigo-700 text-white px-3 py-2 rounded font-bold">Imprimir / PDF</button>
+            <button onclick="exportarDetalleCsv()" class="bg-emerald-700 text-white px-3 py-2 rounded font-bold">Exportar CSV</button>
+        </div>
+        <div id="d_cont"></div>
+    </section>
 
-            let adelantos = limpiarNum(document.getElementById('inputAdelantos').value);
-            let depositos = limpiarNum(document.getElementById('inputDepositos').value);
-            let neto = bruto - (adelantos + depositos);
+    <!-- PADRON -->
+    <section id="tab-padron" class="hidden">
+        <form id="p_form" class="grid grid-cols-2 md:grid-cols-6 gap-2 border rounded-lg p-3 mb-3 text-sm bg-slate-50" onsubmit="return guardarEmpleado(event)">
+            <input type="hidden" id="p_id">
+            <div class="md:col-span-2">
+                <label class="text-[10px] font-bold uppercase text-slate-500">Nombre</label>
+                <input id="p_nombre" class="mt-1 w-full border rounded p-2" required>
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">DNI</label>
+                <input id="p_dni" class="mt-1 w-full border rounded p-2 font-mono">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">CUIL</label>
+                <input id="p_cuil" class="mt-1 w-full border rounded p-2 font-mono" placeholder="20-12345678-9">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Convenio</label>
+                <select id="p_convenio" class="mt-1 w-full border rounded p-2 bg-white"></select>
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Centro de costo (efectivo)</label>
+                <select id="p_cc" class="mt-1 w-full border rounded p-2 bg-white">
+                    <option value="2">2</option>
+                    <option value="SP">S/P</option>
+                    <option value="1">1</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Banco</label>
+                <input id="p_banco" class="mt-1 w-full border rounded p-2">
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[10px] font-bold uppercase text-slate-500">CBU</label>
+                <input id="p_cbu" class="mt-1 w-full border rounded p-2 font-mono">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Sueldo base inicial</label>
+                <input id="p_base" type="text" data-money class="mt-1 w-full border rounded p-2 text-right font-mono" value="0,00">
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[10px] font-bold uppercase text-slate-500">Observaciones</label>
+                <input id="p_obs" class="mt-1 w-full border rounded p-2">
+            </div>
+            <div class="flex flex-col justify-end gap-1">
+                <label class="flex items-center gap-2"><input type="checkbox" id="p_activo" checked> Activo</label>
+                <label class="flex items-center gap-2"><input type="checkbox" id="p_excluir"> Sin índice</label>
+            </div>
+            <div class="md:col-span-6 flex gap-2">
+                <button class="bg-slate-800 text-white px-4 py-2 rounded font-bold">Guardar empleado</button>
+                <button type="button" onclick="limpiarFormEmpleado()" class="border px-4 py-2 rounded font-bold bg-white">Nuevo</button>
+                <label class="ml-auto flex items-center gap-2"><input type="checkbox" id="p_inactivos" onchange="cargarPadron()"> Mostrar inactivos</label>
+            </div>
+        </form>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-100 text-xs uppercase text-slate-700">
+                    <tr>
+                        <th class="p-2 text-left">Nombre</th>
+                        <th class="p-2 text-left">CUIL</th>
+                        <th class="p-2 text-left">Convenio</th>
+                        <th class="p-2 text-center">C. costo</th>
+                        <th class="p-2 text-right">Últ. sueldo</th>
+                        <th class="p-2 text-center">Fecha</th>
+                        <th class="p-2 text-center">Estado</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="p_tbody" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
 
-            document.getElementById('lblTotalBruto').innerText = "$ " + bruto.toLocaleString('es-AR', {minimumFractionDigits: 2});
-            document.getElementById('lblNetoCobrar').innerText = "$ " + neto.toLocaleString('es-AR', {minimumFractionDigits: 2});
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => '$ ' + Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num = v => CampoMoney.parse(v);
+const fmtFecha = iso => { const s = String(iso||''); return /^\d{4}-\d{2}-\d{2}/.test(s) ? `${s.slice(8,10)}/${s.slice(5,7)}/${s.slice(0,4)}` : ''; };
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-            // Actualizar vista previa recibo
-            let sel = document.getElementById('selectEmpleado');
-            let nombreEmp = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text.split(' (')[0] : 'Empleado';
-            let periodo = document.getElementById('periodoLiq').value;
+let META = { conceptos: [], convenios: [] };
+let EMPLEADOS = [];
+let CONF = [];
+let CUENTA = null;
+let DETALLE = null;
+let movEditando = null;
 
-            document.getElementById('reciboEmpleado').innerText = nombreEmp;
-            document.getElementById('reciboPeriodo').innerText = periodo;
-            document.getElementById('reciboBruto').innerText = "$ " + bruto.toLocaleString('es-AR', {minimumFractionDigits: 2});
-            document.getElementById('reciboAdelantos').innerText = "- $ " + adelantos.toLocaleString('es-AR', {minimumFractionDigits: 2});
-            document.getElementById('reciboDepositos').innerText = "- $ " + depositos.toLocaleString('es-AR', {minimumFractionDigits: 2});
-            document.getElementById('reciboNeto').innerText = "$ " + neto.toLocaleString('es-AR', {minimumFractionDigits: 2});
-        }
+async function api(url, opts) {
+    const res = await fetch(url, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || ('Error ' + res.status));
+    return data;
+}
+const jsonBody = (method, body) => ({ method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
 
-        function aplicarAjusteIPC() {
-            let porc = limpiarNum(document.getElementById('porcInflacion').value);
-            let basicoActual = limpiarNum(document.getElementById('inputBasico').value);
-            let nuevoBasico = basicoActual * (1 + (porc / 100));
-            document.getElementById('inputBasico').value = nuevoBasico.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            recalcularSueldo();
-            alert(`¡Ajuste por inflación del ${porc}% aplicado al sueldo básico con éxito!`);
-        }
+function mesActual() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+function finDeMes(mes) { const [y,m] = mes.split('-').map(Number); const d = new Date(y, m, 0); return `${y}-${String(m).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function sumarMes(mes, n) { const [y,m] = mes.split('-').map(Number); const d = new Date(y, m-1+n, 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
 
-        window.onload = inicializarEmpleados;
-    </script>
+function verTab(t) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('activo', b.dataset.tab === t));
+    ['conf','cuenta','detalle','padron'].forEach(x => document.getElementById('tab-'+x).classList.toggle('hidden', x !== t));
+    if (t === 'cuenta') cargarCuenta();
+    if (t === 'detalle') cargarDetalle();
+    if (t === 'padron') cargarPadron();
+}
+
+async function boot() {
+    META = await api('/api/sueldos/meta');
+    document.getElementById('m_concepto').innerHTML = META.conceptos.map(c => `<option value="${esc(c.nombre)}" data-lado="${c.lado}">${esc(c.nombre)}</option>`).join('');
+    document.getElementById('p_convenio').innerHTML = '<option value="">(sin definir)</option>' + META.convenios.map(c => `<option>${esc(c)}</option>`).join('');
+    const mes = mesActual();
+    document.getElementById('c_mes').value = mes;
+    document.getElementById('k_mes').value = (META.meses && META.meses[0]) || mes;
+    document.getElementById('d_mes').value = (META.meses && META.meses[0]) || mes;
+    alCambiarMesConf();
+    await cargarEmpleadosSelect();
+    CampoMoney.bind(document);
+}
+
+async function cargarEmpleadosSelect() {
+    EMPLEADOS = await api('/api/sueldos/empleados');
+    const sel = document.getElementById('k_emp');
+    const prev = sel.value;
+    sel.innerHTML = EMPLEADOS.map(e => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('') || '<option value="">Sin empleados activos</option>';
+    if (prev && EMPLEADOS.some(e => String(e.id) === prev)) sel.value = prev;
+}
+
+/* ---------- conformación masiva ---------- */
+function alCambiarMesConf() {
+    const mes = document.getElementById('c_mes').value;
+    if (!mes) return;
+    document.getElementById('c_fecha').value = finDeMes(mes);
+    const ant = sumarMes(mes, -1);
+    document.getElementById('c_det').value = 'Indec ' + MESES[Number(ant.slice(5,7)) - 1];
+    calcularConf();
+}
+
+async function calcularConf() {
+    const mes = document.getElementById('c_mes').value;
+    if (!mes) return;
+    const pct = num(document.getElementById('c_pct').value);
+    try {
+        CONF = await api(`/api/sueldos/conformacion?mes=${mes}&porcentaje=${pct}`);
+    } catch (e) { alert(e.message); return; }
+    CONF.forEach(r => r.incluir = !r.ya_conformado && r.sueldo_anterior > 0);
+    renderConf();
+}
+
+function renderConf() {
+    document.getElementById('c_tbody').innerHTML = CONF.map((r, i) => `
+        <tr class="${r.ya_conformado ? 'bg-emerald-50/50' : ''}">
+            <td class="p-2 text-center"><input type="checkbox" ${r.incluir ? 'checked' : ''} onchange="CONF[${i}].incluir=this.checked; totalesConf()"></td>
+            <td class="p-2 font-medium">${esc(r.nombre)}${r.excluir_indice ? ' <span class="text-[10px] text-amber-700">(sin índice)</span>' : ''}</td>
+            <td class="p-2 text-xs text-slate-500">${esc(r.convenio)}</td>
+            <td class="p-2 text-right font-mono">${money(r.sueldo_anterior)}</td>
+            <td class="p-2 text-center text-xs">${fmtFecha(r.fecha_anterior)}</td>
+            <td class="p-2"><input type="text" class="w-20 border rounded p-1 text-right font-mono" value="${String(r.porcentaje).replace('.', ',')}" onchange="cambiarPctFila(${i}, this.value)"></td>
+            <td class="p-2"><input type="text" class="w-36 border rounded p-1 text-right font-mono" value="${CampoMoney.format(r.nuevo_sueldo)}" onchange="cambiarNuevoFila(${i}, this.value)"></td>
+            <td class="p-2 text-right font-mono">${money(r.aumento)}</td>
+            <td class="p-2 text-center text-xs">${r.ya_conformado ? `<span class="text-emerald-700 font-bold">Conformado ${money(r.sueldo_conformado)}</span>` : '<span class="text-slate-400">Pendiente</span>'}</td>
+            <td class="p-2 text-center"><button class="text-indigo-700 text-xs font-bold hover:underline" onclick="irACuenta(${r.empleado_id}, document.getElementById('c_mes').value)">Cuenta</button></td>
+        </tr>`).join('') || '<tr><td colspan="10" class="p-4 text-center text-slate-400">Sin empleados activos</td></tr>';
+    totalesConf();
+}
+
+function cambiarPctFila(i, v) {
+    const r = CONF[i];
+    r.porcentaje = num(v);
+    r.nuevo_sueldo = Math.round(r.sueldo_anterior * (1 + r.porcentaje / 100) * 100) / 100;
+    r.aumento = Math.round((r.nuevo_sueldo - r.sueldo_anterior) * 100) / 100;
+    r.manual = false;
+    renderConf();
+}
+
+function cambiarNuevoFila(i, v) {
+    const r = CONF[i];
+    r.nuevo_sueldo = num(v);
+    r.aumento = Math.round((r.nuevo_sueldo - r.sueldo_anterior) * 100) / 100;
+    r.porcentaje = r.sueldo_anterior ? Math.round((r.nuevo_sueldo / r.sueldo_anterior - 1) * 10000) / 100 : 0;
+    r.manual = true;
+    renderConf();
+}
+
+function marcarTodosConf(v) { CONF.forEach(r => r.incluir = v); renderConf(); }
+
+function totalesConf() {
+    const sel = CONF.filter(r => r.incluir);
+    document.getElementById('c_tot_ant').textContent = money(sel.reduce((a, r) => a + r.sueldo_anterior, 0));
+    document.getElementById('c_tot_nuevo').textContent = money(sel.reduce((a, r) => a + r.nuevo_sueldo, 0));
+    document.getElementById('c_tot_aum').textContent = money(sel.reduce((a, r) => a + r.aumento, 0));
+    const pend = CONF.filter(r => !r.ya_conformado).length;
+    document.getElementById('c_resumen').textContent = `${sel.length} seleccionados | ${pend} pendientes de ${CONF.length}`;
+}
+
+async function conformar() {
+    const sel = CONF.filter(r => r.incluir);
+    if (!sel.length) { alert('No hay empleados seleccionados.'); return; }
+    const mes = document.getElementById('c_mes').value;
+    const reemplazar = document.getElementById('c_reemplazar').checked;
+    if (!confirm(`Conformar ${sel.length} sueldo(s) de ${MESES[Number(mes.slice(5,7))-1]} ${mes.slice(0,4)}?`)) return;
+    try {
+        const r = await api('/api/sueldos/conformar', jsonBody('POST', {
+            mes,
+            fecha: document.getElementById('c_fecha').value,
+            detalle_indice: document.getElementById('c_det').value.trim(),
+            reemplazar,
+            items: sel.map(x => ({ empleado_id: x.empleado_id, porcentaje: x.porcentaje, sueldo: x.nuevo_sueldo })),
+        }));
+        let msg = `Creados: ${r.creados} | Actualizados: ${r.actualizados}`;
+        if (r.omitidos && r.omitidos.length) msg += '\n\nOmitidos:\n' + r.omitidos.join('\n');
+        alert(msg);
+    } catch (e) { alert(e.message); return; }
+    await calcularConf();
+    await cargarEmpleadosSelect();
+}
+
+/* ---------- cuenta del empleado ---------- */
+function irACuenta(id, mes) {
+    document.getElementById('k_emp').value = String(id);
+    document.getElementById('k_mes').value = mes;
+    verTab('cuenta');
+}
+
+function moverMes(n) {
+    const el = document.getElementById('k_mes');
+    el.value = sumarMes(el.value || mesActual(), n);
+    cargarCuenta();
+}
+
+async function cargarCuenta() {
+    const id = document.getElementById('k_emp').value;
+    const mes = document.getElementById('k_mes').value;
+    if (!id || !mes) return;
+    cancelarEdicion();
+    document.getElementById('m_fecha').value = finDeMes(mes);
+    try { CUENTA = await api(`/api/sueldos/empleados/${id}/mes/${mes}`); }
+    catch (e) { alert(e.message); return; }
+    const c = CUENTA;
+    document.getElementById('k_kpis').innerHTML = [
+        ['Haber base', money(c.haber_base), 'bg-slate-50'],
+        ['% Aumento', (c.porcentaje || 0).toLocaleString('es-AR', {maximumFractionDigits: 2}) + '%' + (c.detalle_indice ? ` <span class="text-xs font-normal">${esc(c.detalle_indice)}</span>` : ''), 'bg-slate-50'],
+        ['Sueldo anterior', money(c.sueldo_anterior), 'bg-slate-50'],
+        ['Aumento', money(c.aumento), 'bg-slate-50'],
+        ['Total a cobrar', money(c.total_cobrar), 'bg-emerald-50'],
+    ].map(([a, b, cls]) => `<div class="border rounded-xl p-3 ${cls}"><div class="text-[10px] font-bold uppercase text-slate-500">${a}</div><div class="text-lg font-extrabold font-mono">${b}</div></div>`).join('');
+    const filas = c.filas.map(f => `
+        <tr class="${f.principal ? 'fila-principal' : ''}">
+            <td class="p-2">${fmtFecha(f.fecha)}</td>
+            <td class="p-2">${esc(f.detalle)}</td>
+            <td class="p-2 text-right font-mono">${f.debe ? money(f.debe) : ''}</td>
+            <td class="p-2 text-right font-mono text-rose-700">${f.haber ? money(f.haber) : ''}</td>
+            <td class="p-2 text-xs text-slate-500">${esc(f.varios || '')}</td>
+            <td class="p-2 text-right font-mono text-xs">${f.aumento ? money(f.aumento) : ''}</td>
+            <td class="p-2 text-center whitespace-nowrap">
+                <button class="text-indigo-700 text-xs font-bold" onclick="editarMovimiento(${f.id})">Editar</button>
+                <button class="text-red-600 text-xs font-bold ml-2" onclick="borrarMovimiento(${f.id})">Borrar</button>
+            </td>
+        </tr>`).join('');
+    document.getElementById('k_tbody').innerHTML = (filas || `<tr><td colspan="7" class="p-4 text-center text-slate-400">Sin movimientos en el mes${c.conformado ? '' : '. Conformá el sueldo desde la primera solapa.'}</td></tr>`) + `
+        <tr class="bg-slate-50 font-bold">
+            <td colspan="2" class="p-2 text-right">Totales</td>
+            <td class="p-2 text-right font-mono">${money(c.creditos)}</td>
+            <td class="p-2 text-right font-mono text-rose-700">${money(c.debitos)}</td>
+            <td colspan="2" class="p-2 text-right">A cobrar</td>
+            <td class="p-2 text-right font-mono text-emerald-800">${money(c.total_cobrar)}</td>
+        </tr>`;
+}
+
+function alElegirConcepto() {
+    const sel = document.getElementById('m_concepto');
+    document.getElementById('m_detalle').value = sel.value;
+}
+
+async function cargarMovimiento(lado) {
+    const id = document.getElementById('k_emp').value;
+    if (!id) return;
+    const importe = num(document.getElementById('m_importe').value);
+    const body = {
+        empleado_id: Number(id),
+        fecha: document.getElementById('m_fecha').value,
+        detalle: document.getElementById('m_detalle').value.trim() || document.getElementById('m_concepto').value,
+        debe: lado === 'credito' ? importe : 0,
+        haber: lado === 'debito' ? importe : 0,
+    };
+    try {
+        if (movEditando) await api('/api/sueldos/movimientos/' + movEditando, jsonBody('PUT', body));
+        else await api('/api/sueldos/movimientos', jsonBody('POST', body));
+    } catch (e) { alert(e.message); return; }
+    document.getElementById('m_importe').value = '0,00';
+    document.getElementById('m_detalle').value = '';
+    const mesMov = body.fecha.slice(0, 7);
+    if (mesMov !== document.getElementById('k_mes').value) document.getElementById('k_mes').value = mesMov;
+    await cargarCuenta();
+}
+
+function editarMovimiento(movId) {
+    const f = CUENTA.filas.find(x => x.id === movId);
+    if (!f) return;
+    movEditando = movId;
+    document.getElementById('m_fecha').value = f.fecha.slice(0, 10);
+    document.getElementById('m_detalle').value = f.detalle || '';
+    document.getElementById('m_importe').value = CampoMoney.format(f.debe || f.haber);
+    document.getElementById('m_editando').classList.remove('hidden');
+}
+
+function cancelarEdicion() {
+    movEditando = null;
+    document.getElementById('m_editando').classList.add('hidden');
+}
+
+async function borrarMovimiento(movId) {
+    const f = CUENTA.filas.find(x => x.id === movId);
+    const aviso = f && f.principal ? '\n\nEs el sueldo base del mes: el mes siguiente se va a calcular sobre el sueldo anterior.' : '';
+    if (!confirm('Borrar este movimiento?' + aviso)) return;
+    try { await api('/api/sueldos/movimientos/' + movId, { method: 'DELETE' }); }
+    catch (e) { alert(e.message); return; }
+    await cargarCuenta();
+}
+
+/* ---------- detalle sueldos ---------- */
+async function cargarDetalle() {
+    const mes = document.getElementById('d_mes').value;
+    if (!mes) return;
+    const solo = document.getElementById('d_activos').checked;
+    try { DETALLE = await api(`/api/sueldos/detalle?mes=${mes}&solo_activos=${solo}`); }
+    catch (e) { alert(e.message); return; }
+    const t = DETALLE.totales;
+    const titulo = `${MESES[Number(mes.slice(5,7))-1]} ${mes.slice(0,4)}`;
+    const cab = `
+        <div class="flex justify-between items-end border-b-2 border-slate-800 pb-2 mb-3">
+            <h2 class="text-xl font-bold text-slate-800">Detalle Sueldos - ${titulo}</h2>
+            <span class="text-xs text-slate-500">${DETALLE.empleados.length} empleados</span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+            <div class="border rounded-lg p-2"><div class="text-[10px] uppercase font-bold text-slate-500">Créditos</div><div class="font-mono font-bold">${money(t.creditos)}</div></div>
+            <div class="border rounded-lg p-2"><div class="text-[10px] uppercase font-bold text-slate-500">Depósitos bancarios (convenio)</div><div class="font-mono font-bold">${money(t.depositos_bancarios)}</div></div>
+            <div class="border rounded-lg p-2"><div class="text-[10px] uppercase font-bold text-slate-500">Actualizaciones</div><div class="font-mono font-bold">${money(t.aumentos)}</div></div>
+            <div class="border rounded-lg p-2 bg-emerald-50"><div class="text-[10px] uppercase font-bold text-emerald-800">Total a cobrar (efectivo)</div><div class="font-mono font-extrabold">${money(t.total_cobrar)}</div></div>
+        </div>`;
+    const bloques = DETALLE.empleados.map(e => `
+        <div class="bloque-emp border-b border-dashed border-slate-400 py-3">
+            <div class="flex justify-between items-center mb-1">
+                <span class="font-bold underline text-slate-800">${esc(e.nombre)}</span>
+                <span class="border border-slate-700 px-3 py-1 text-sm">Total a cobrar: <b class="font-mono">${money(e.total_cobrar)}</b></span>
+            </div>
+            <table class="w-full text-xs">
+                <thead class="text-slate-500"><tr>
+                    <th class="text-left p-1 w-24">Fecha</th><th class="text-left p-1">Concepto</th>
+                    <th class="text-right p-1 w-32">Créditos</th><th class="text-right p-1 w-32">Débitos</th><th class="text-right p-1 w-28">Actualización</th>
+                </tr></thead>
+                <tbody>${e.filas.map((f, i) => `
+                    <tr>
+                        <td class="p-1">${fmtFecha(f.fecha)}</td>
+                        <td class="p-1">${esc(f.detalle)}</td>
+                        <td class="p-1 text-right font-mono">${money(f.debe)}</td>
+                        <td class="p-1 text-right font-mono">${money(f.haber)}</td>
+                        <td class="p-1 text-right font-mono">${i === 0 && e.actualizacion ? money(e.actualizacion) : ''}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>`).join('');
+    document.getElementById('d_cont').innerHTML = cab + (bloques || '<p class="text-center text-slate-400 p-6">Sin movimientos en el mes.</p>');
+}
+
+function exportarDetalleCsv() {
+    if (!DETALLE) return;
+    const n = v => String(Number(v || 0).toFixed(2)).replace('.', ',');
+    const lineas = [['Empleado','Fecha','Concepto','Creditos','Debitos','Actualizacion','Total a cobrar'].join(';')];
+    DETALLE.empleados.forEach(e => e.filas.forEach((f, i) => lineas.push([
+        e.nombre, fmtFecha(f.fecha), f.detalle, n(f.debe), n(f.haber),
+        i === 0 ? n(e.actualizacion) : '', i === 0 ? n(e.total_cobrar) : ''
+    ].map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(';'))));
+    const blob = new Blob(['\ufeff' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `detalle_sueldos_${DETALLE.mes}.csv`;
+    a.click();
+}
+
+/* ---------- padrón ---------- */
+let PADRON = [];
+async function cargarPadron() {
+    const inact = document.getElementById('p_inactivos').checked;
+    PADRON = await api('/api/sueldos/empleados?incluir_inactivos=' + inact);
+    document.getElementById('p_tbody').innerHTML = PADRON.map(e => `
+        <tr class="${Number(e.activo) ? '' : 'text-slate-400'}">
+            <td class="p-2 font-medium">${esc(e.nombre)}</td>
+            <td class="p-2 font-mono text-xs">${esc(e.cuil || '')}</td>
+            <td class="p-2 text-xs">${esc(e.convenio || '')}</td>
+            <td class="p-2 text-center text-xs">${e.centro_costo === 'SP' ? 'S/P' : esc(e.centro_costo || '')}</td>
+            <td class="p-2 text-right font-mono">${money(e.ult_sueldo)}</td>
+            <td class="p-2 text-center text-xs">${fmtFecha(e.ult_fecha)}</td>
+            <td class="p-2 text-center text-xs">${Number(e.activo) ? 'Activo' : 'Inactivo'}${Number(e.excluir_indice) ? ' | sin índice' : ''}</td>
+            <td class="p-2 text-center"><button class="text-indigo-700 text-xs font-bold" onclick="editarEmpleado(${e.id})">Editar</button></td>
+        </tr>`).join('') || '<tr><td colspan="8" class="p-4 text-center text-slate-400">Sin empleados</td></tr>';
+}
+
+function editarEmpleado(id) {
+    const e = PADRON.find(x => x.id === id);
+    if (!e) return;
+    document.getElementById('p_id').value = e.id;
+    document.getElementById('p_nombre').value = e.nombre || '';
+    document.getElementById('p_dni').value = e.dni || '';
+    document.getElementById('p_cuil').value = e.cuil || e.cuit || '';
+    document.getElementById('p_convenio').value = e.convenio || '';
+    document.getElementById('p_cc').value = e.centro_costo || '2';
+    document.getElementById('p_banco').value = e.banco || '';
+    document.getElementById('p_cbu').value = e.cbu || '';
+    document.getElementById('p_base').value = CampoMoney.format(e.haber_base || 0);
+    document.getElementById('p_obs').value = e.observaciones || '';
+    document.getElementById('p_activo').checked = Number(e.activo ?? 1) === 1;
+    document.getElementById('p_excluir').checked = Number(e.excluir_indice || 0) === 1;
+    document.getElementById('p_nombre').focus();
+}
+
+function limpiarFormEmpleado() {
+    document.getElementById('p_form').reset();
+    document.getElementById('p_id').value = '';
+    document.getElementById('p_base').value = '0,00';
+}
+
+async function guardarEmpleado(ev) {
+    ev.preventDefault();
+    const id = document.getElementById('p_id').value;
+    const body = {
+        nombre: document.getElementById('p_nombre').value.trim(),
+        dni: document.getElementById('p_dni').value.trim(),
+        cuil: document.getElementById('p_cuil').value.trim(),
+        convenio: document.getElementById('p_convenio').value,
+        centro_costo: document.getElementById('p_cc').value,
+        banco: document.getElementById('p_banco').value.trim(),
+        cbu: document.getElementById('p_cbu').value.trim(),
+        haber_base: num(document.getElementById('p_base').value),
+        observaciones: document.getElementById('p_obs').value.trim(),
+        activo: document.getElementById('p_activo').checked ? 1 : 0,
+        excluir_indice: document.getElementById('p_excluir').checked ? 1 : 0,
+    };
+    try {
+        if (id) await api('/api/sueldos/empleados/' + id, jsonBody('PUT', body));
+        else await api('/api/sueldos/empleados', jsonBody('POST', body));
+    } catch (e) { alert(e.message); return false; }
+    limpiarFormEmpleado();
+    await cargarPadron();
+    await cargarEmpleadosSelect();
+    return false;
+}
+
+boot().catch(e => { console.error(e); alert('No se pudo cargar el módulo de sueldos: ' + e.message); });
+</script>
 </body>
 </html>

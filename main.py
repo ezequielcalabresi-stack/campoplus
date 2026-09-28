@@ -8122,6 +8122,8 @@ from liquidaciones_api import register_liquidaciones_routes
 register_liquidaciones_routes(app, get_db, get_empresa_activa_id)
 from ratios_api import register_ratios_routes
 register_ratios_routes(app, get_db, get_empresa_activa_id)
+from sueldos_api import register_sueldos_routes
+register_sueldos_routes(app, get_db, get_empresa_activa_id)
 
 # Audit schema antes de SaaS (usuarios_sistema)
 try:
@@ -8234,7 +8236,44 @@ if _data_dir:
     os.makedirs(_logos, exist_ok=True)
     app.mount("/logos", StaticFiles(directory=_logos), name="logos")
 
-app.mount("/", StaticFiles(directory=BASE_DIR, html=True), name="static")
+class _StaticSinMayusculas(StaticFiles):
+    """En Linux los nombres distinguen mayúsculas; los links viejos usan ambas formas."""
+
+    def _nombre_real(self, path: str) -> Optional[str]:
+        partes = [p for p in path.replace("\\", "/").split("/") if p]
+        if not partes or any(p in (".", "..") for p in partes):
+            return None
+        actual, reales = BASE_DIR, []
+        for parte in partes:
+            try:
+                nombres = os.listdir(actual)
+            except OSError:
+                return None
+            real = parte if parte in nombres else next((n for n in nombres if n.lower() == parte.lower()), None)
+            if real is None:
+                return None
+            reales.append(real)
+            actual = os.path.join(actual, real)
+        return "/".join(reales)
+
+    async def get_response(self, path, scope):
+        try:
+            resp = await super().get_response(path, scope)
+        except Exception as exc:
+            if getattr(exc, "status_code", None) != 404:
+                raise
+            resp = None
+        if resp is not None and resp.status_code != 404:
+            return resp
+        real = self._nombre_real(path)
+        if real and real != path:
+            return await super().get_response(real, scope)
+        if resp is not None:
+            return resp
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+app.mount("/", _StaticSinMayusculas(directory=BASE_DIR, html=True), name="static")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
