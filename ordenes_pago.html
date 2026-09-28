@@ -383,7 +383,7 @@
             agente_retencion_ganancias: 1,
             agente_percepcion_iibb: 1
         };
-        let empresaConfig = { razon_social: 'SILO CHICO S.A.', cuit: '30717802868', domicilio: '', localidad: 'Chivilcoy' };
+        let empresaConfig = { razon_social: '', cuit: '', domicilio: '', localidad: '' };
 
         function moneyAR(n) {
             return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -395,10 +395,10 @@
         }
 
         function llenarDatosAgenteCertificados() {
-            const nom = empresaConfig.razon_social || 'SILO CHICO S.A.';
-            const cuit = empresaConfig.cuit || '30717802868';
+            const nom = empresaConfig.razon_social || '';
+            const cuit = empresaConfig.cuit || '';
             const dom = empresaConfig.domicilio || 'S/D';
-            const loc = empresaConfig.localidad || 'Chivilcoy';
+            const loc = empresaConfig.localidad || '';
             ['Sicore', 'Iibb'].forEach(suf => {
                 // SICORE uses certAgenteNombreSicore; IIBB uses certAgenteNombreIibb
             });
@@ -531,6 +531,8 @@
                     fetch('/api/configuracion').catch(() => null),
                     fetch('/api/bancos/cheques?estado=disponibles').catch(() => null)
                 ]);
+                const resEmpAct = await fetch('/api/empresa_activa').catch(() => null);
+                const empAct = resEmpAct && resEmpAct.ok ? await resEmpAct.json() : {};
 
                 if (resEnt && resEnt.ok) entidadesCache = await resEnt.json();
                 if (resCtas && resCtas.ok) ctasBancariasCache = await resCtas.json();
@@ -543,11 +545,16 @@
                         agente_percepcion_iibb: cfg.agente_percepcion_iibb !== 0 && cfg.agente_percepcion_iibb !== false ? 1 : 0
                     };
                     empresaConfig = {
-                        razon_social: cfg.razon_social || 'SILO CHICO S.A.',
-                        cuit: cfg.cuit || '30717802868',
+                        razon_social: cfg.razon_social || '',
+                        cuit: cfg.cuit || '',
                         domicilio: cfg.domicilio || '',
-                        localidad: cfg.localidad || 'Chivilcoy'
+                        localidad: cfg.localidad || ''
                     };
+                }
+                if (empAct.razon_social) {
+                    empresaConfig.razon_social = empAct.razon_social;
+                    empresaConfig.cuit = empAct.cuit || empresaConfig.cuit;
+                    empresaConfig.localidad = empAct.localidad || empresaConfig.localidad;
                 }
                 actualizarUIPerfilYProveedor();
 

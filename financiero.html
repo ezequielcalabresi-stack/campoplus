@@ -65,9 +65,9 @@
 <div class="fin-wrap max-w-[1600px] mx-auto p-4 my-4 bg-white rounded-xl shadow-lg">
     <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 mb-4 border-b pb-3">
         <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-sm">SC</div>
+            <div id="empIniciales" class="w-10 h-10 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-sm"></div>
             <div>
-                <h2 class="text-xl font-bold text-blue-800 leading-tight">SILO CHICO S.A.</h2>
+                <h2 id="empNombre" class="text-xl font-bold text-blue-800 leading-tight"></h2>
                 <p id="estado-db" class="text-[11px] text-slate-500 mt-0.5">Consulta de Estado Financiero</p>
             </div>
         </div>
@@ -675,8 +675,22 @@ async function eliminarGasto(id) {
     }
 }
 
+async function cargarEmpresa() {
+    try {
+        const r = await fetch('/api/empresa_activa');
+        const e = r.ok ? await r.json() : {};
+        const nombre = (e.razon_social || '').trim();
+        document.getElementById('empNombre').textContent = nombre.toUpperCase();
+        document.getElementById('empIniciales').textContent = nombre
+            .replace(/\b(S\.?A\.?|S\.?R\.?L\.?|S\.?A\.?S\.?)$/i, '').trim()
+            .split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+        if (nombre) document.title = 'CAmpo+ | Financiero | ' + nombre;
+    } catch (_) { /* encabezado sin nombre */ }
+}
+
 initFechas();
 limpiarFormGasto();
+cargarEmpresa();
 cargarMag().then(cargarProyeccion);
 </script>
 </body>

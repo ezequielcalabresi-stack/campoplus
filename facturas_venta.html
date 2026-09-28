@@ -145,6 +145,15 @@ async function init() {
     ]);
     clientes = rEnt.ok ? await rEnt.json() : [];
     empresa = rCfg.ok ? await rCfg.json() : {};
+    try {
+        const rAct = await fetch('/api/empresa_activa');
+        const act = rAct.ok ? await rAct.json() : {};
+        if (act.razon_social) {
+            empresa.razon_social = act.razon_social;
+            empresa.cuit = act.cuit || empresa.cuit;
+            empresa.localidad = act.localidad || empresa.localidad;
+        }
+    } catch (_) {}
     esAgentePerc = empresa.agente_percepcion_iibb !== 0 && empresa.agente_percepcion_iibb !== false;
     const ban = document.getElementById('bannerAgente');
     if (esAgentePerc) {
@@ -234,7 +243,7 @@ function htmlCertPerc(data) {
         </div>
         <div class="cert-section-title">A. - Agente de percepción</div>
         <div class="row small mb-2">
-            <div class="col-8">Denominación: <strong>${esc(empresa.razon_social || 'SILO CHICO S.A.')}</strong></div>
+            <div class="col-8">Denominación: <strong>${esc(empresa.razon_social || '')}</strong></div>
             <div class="col-4">CUIT: <strong>${esc(empresa.cuit || '')}</strong></div>
             <div class="col-8">Domicilio: <strong>${esc(empresa.domicilio || 'S/D')}</strong></div>
             <div class="col-4">Localidad: <strong>${esc(empresa.localidad || '')}</strong></div>
