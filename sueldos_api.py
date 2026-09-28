@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import HTTPException
+from fastapi import File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from sueldos import (
     CONCEPTOS,
     CONVENIOS,
+    aplicar_depositos,
     borrar_movimiento,
+    importar_recibos,
+    listar_recibos,
+    vincular_recibo,
     conformar_sueldos,
     detalle_sueldos_mes,
     guardar_empleado,
@@ -49,6 +53,15 @@ class ConformarModel(BaseModel):
     fecha: Optional[str] = None
     reemplazar: bool = False
     items: List[ConformarItem]
+
+
+class VincularReciboModel(BaseModel):
+    empleado_id: Optional[int] = None
+
+
+class AplicarRecibosModel(BaseModel):
+    mes: str
+    recibo_ids: Optional[List[int]] = None
 
 
 class MovimientoModel(BaseModel):
@@ -135,3 +148,20 @@ def register_sueldos_routes(app, get_db, get_empresa_activa_id):
     @app.get("/api/sueldos/detalle")
     def api_detalle(mes: str, solo_activos: bool = True):
         return _run(detalle_sueldos_mes, mes, solo_activos=solo_activos)
+
+    @app.post("/api/sueldos/recibos/importar")
+    async def api_recibos_importar(archivos: List[UploadFile] = File(...)):
+        datos = [(a.filename or "recibos.pdf", await a.read()) for a in archivos]
+        return _run(importar_recibos, datos)
+
+    @app.get("/api/sueldos/recibos")
+    def api_recibos(mes: str):
+        return _run(listar_recibos, mes)
+
+    @app.put("/api/sueldos/recibos/{recibo_id}/empleado")
+    def api_recibo_vincular(recibo_id: int, data: VincularReciboModel):
+        return _run(vincular_recibo, recibo_id, data.empleado_id)
+
+    @app.post("/api/sueldos/recibos/aplicar")
+    def api_recibos_aplicar(data: AplicarRecibosModel):
+        return _run(aplicar_depositos, data.mes, data.recibo_ids)

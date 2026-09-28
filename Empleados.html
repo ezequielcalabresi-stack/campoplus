@@ -37,6 +37,7 @@
     <div class="flex flex-wrap gap-2 mb-4 no-print">
         <button class="tab-btn activo px-3 py-1.5 rounded border text-sm font-bold" data-tab="conf" onclick="verTab('conf')">Conformación mensual</button>
         <button class="tab-btn px-3 py-1.5 rounded border text-sm font-bold" data-tab="cuenta" onclick="verTab('cuenta')">Cuenta del empleado</button>
+        <button class="tab-btn px-3 py-1.5 rounded border text-sm font-bold" data-tab="recibos" onclick="verTab('recibos')">Recibos de convenio</button>
         <button class="tab-btn px-3 py-1.5 rounded border text-sm font-bold" data-tab="detalle" onclick="verTab('detalle')">Detalle sueldos</button>
         <button class="tab-btn px-3 py-1.5 rounded border text-sm font-bold" data-tab="padron" onclick="verTab('padron')">Padrón de empleados</button>
     </div>
@@ -174,6 +175,48 @@
         </p>
     </section>
 
+    <!-- RECIBOS DE CONVENIO -->
+    <section id="tab-recibos" class="hidden">
+        <div class="flex flex-wrap items-end gap-3 bg-slate-50 border rounded-lg p-3 mb-3 text-sm">
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Mes</label>
+                <input id="r_mes" type="month" class="mt-1 border rounded p-2" onchange="cargarRecibos()">
+            </div>
+            <div class="flex-1 min-w-[260px]">
+                <label class="text-[10px] font-bold uppercase text-slate-500">Recibos PDF del liquidador (se pueden elegir varios)</label>
+                <input id="r_archivos" type="file" accept="application/pdf" multiple class="mt-1 w-full border rounded p-1.5 bg-white">
+            </div>
+            <button onclick="importarRecibos()" class="bg-slate-800 text-white px-3 py-2 rounded font-bold">Importar recibos</button>
+        </div>
+        <div id="r_resumen" class="mb-3"></div>
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-2 text-sm">
+            <p class="text-xs text-slate-500">
+                El neto de cada recibo se carga como Depósito Bancario en la cuenta fuera de convenio del empleado (resta del sueldo a cobrar en efectivo).
+            </p>
+            <button onclick="aplicarRecibos()" class="bg-indigo-700 text-white px-4 py-2 rounded font-bold hover:bg-indigo-800">Cargar Depósitos Bancarios seleccionados</button>
+        </div>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-xs">
+                <thead class="bg-slate-100 uppercase text-slate-700">
+                    <tr>
+                        <th class="p-2"><input type="checkbox" onchange="marcarTodosRecibos(this.checked)"></th>
+                        <th class="p-2 text-left">Recibo</th>
+                        <th class="p-2 text-left">Convenio / categoría</th>
+                        <th class="p-2 text-right">Remunerativo</th>
+                        <th class="p-2 text-right">No remun.</th>
+                        <th class="p-2 text-right">Descuentos</th>
+                        <th class="p-2 text-right">Neto</th>
+                        <th class="p-2 text-right">Contrib. empleador</th>
+                        <th class="p-2 text-right">Costo total</th>
+                        <th class="p-2 text-left">Empleado (cta. fuera de convenio)</th>
+                        <th class="p-2 text-left">Depósito Bancario</th>
+                    </tr>
+                </thead>
+                <tbody id="r_tbody" class="divide-y"></tbody>
+            </table>
+        </div>
+    </section>
+
     <!-- DETALLE SUELDOS (REPORTE) -->
     <section id="tab-detalle" class="hidden">
         <div class="flex flex-wrap items-end gap-3 bg-slate-50 border rounded-lg p-3 mb-3 text-sm no-print">
@@ -291,8 +334,9 @@ function sumarMes(mes, n) { const [y,m] = mes.split('-').map(Number); const d = 
 
 function verTab(t) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('activo', b.dataset.tab === t));
-    ['conf','cuenta','detalle','padron'].forEach(x => document.getElementById('tab-'+x).classList.toggle('hidden', x !== t));
+    ['conf','cuenta','recibos','detalle','padron'].forEach(x => document.getElementById('tab-'+x).classList.toggle('hidden', x !== t));
     if (t === 'cuenta') cargarCuenta();
+    if (t === 'recibos') cargarRecibos();
     if (t === 'detalle') cargarDetalle();
     if (t === 'padron') cargarPadron();
 }
@@ -305,6 +349,7 @@ async function boot() {
     document.getElementById('c_mes').value = mes;
     document.getElementById('k_mes').value = (META.meses && META.meses[0]) || mes;
     document.getElementById('d_mes').value = (META.meses && META.meses[0]) || mes;
+    document.getElementById('r_mes').value = (META.meses && META.meses[0]) || mes;
     alCambiarMesConf();
     await cargarEmpleadosSelect();
     CampoMoney.bind(document);
@@ -508,6 +553,128 @@ async function borrarMovimiento(movId) {
     try { await api('/api/sueldos/movimientos/' + movId, { method: 'DELETE' }); }
     catch (e) { alert(e.message); return; }
     await cargarCuenta();
+}
+
+/* ---------- recibos de convenio ---------- */
+let RECIBOS = null;
+let TODOS_EMPLEADOS = [];
+
+async function importarRecibos() {
+    const input = document.getElementById('r_archivos');
+    if (!input.files.length) { alert('Elegí uno o más PDF de recibos.'); return; }
+    const fd = new FormData();
+    [...input.files].forEach(f => fd.append('archivos', f));
+    let r;
+    try { r = await api('/api/sueldos/recibos/importar', { method: 'POST', body: fd }); }
+    catch (e) { alert(e.message); return; }
+    let msg = `Recibos leídos: ${r.leidos}`;
+    if (r.errores && r.errores.length) msg += '\n\n' + r.errores.join('\n');
+    alert(msg);
+    input.value = '';
+    if (r.periodos && r.periodos.length) document.getElementById('r_mes').value = r.periodos[r.periodos.length - 1];
+    await cargarRecibos();
+}
+
+async function cargarRecibos() {
+    const mes = document.getElementById('r_mes').value;
+    if (!mes) return;
+    try {
+        [RECIBOS, TODOS_EMPLEADOS] = await Promise.all([
+            api('/api/sueldos/recibos?mes=' + mes),
+            api('/api/sueldos/empleados?incluir_inactivos=true'),
+        ]);
+    } catch (e) { alert(e.message); return; }
+    RECIBOS.recibos.forEach(r => {
+        r.marcado = !!r.empleado_id && r.en_conformacion && r.deposito_cargado !== r.neto
+            && (r.deposito_cargado !== null || r.deposito_mes_anterior);
+        r.abierto = false;
+    });
+    renderRecibos();
+}
+
+function renderRecibos() {
+    const R = RECIBOS;
+    const cols = [['remunerativo','Remunerativo'],['no_remunerativo','No remun.'],['descuentos','Descuentos'],['neto','Neto'],['contribuciones','Contrib. empleador'],['costo_total','Costo total empleador']];
+    const filasConv = [...R.por_convenio, { ...R.total, convenio: 'TOTAL' }];
+    document.getElementById('r_resumen').innerHTML = R.recibos.length ? `
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-xs">
+                <thead class="bg-indigo-50 uppercase text-indigo-900"><tr>
+                    <th class="p-2 text-left">Convenio</th><th class="p-2 text-center">Recibos</th>
+                    ${cols.map(c => `<th class="p-2 text-right">${c[1]}</th>`).join('')}
+                </tr></thead>
+                <tbody class="divide-y">${filasConv.map(t => `
+                    <tr class="${t.convenio === 'TOTAL' ? 'bg-slate-50 font-bold' : ''}">
+                        <td class="p-2">${esc(t.convenio)}</td><td class="p-2 text-center">${t.cantidad}</td>
+                        ${cols.map(c => `<td class="p-2 text-right font-mono">${money(t[c[0]])}</td>`).join('')}
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>` : '<p class="text-sm text-slate-400">No hay recibos importados para este mes.</p>';
+
+    const opts = TODOS_EMPLEADOS.map(e => `<option value="${e.id}">${esc(e.nombre)}${Number(e.activo) ? '' : ' (inactivo)'}</option>`).join('');
+    document.getElementById('r_tbody').innerHTML = R.recibos.map((r, i) => {
+        let estado;
+        if (!r.empleado_id) estado = '<span class="text-amber-700">Asociá el empleado</span>';
+        else if (!r.en_conformacion) estado = '<span class="text-slate-400">Cobra solo por recibo</span>';
+        else if (r.deposito_cargado === r.neto) estado = `<span class="text-emerald-700 font-bold">Cargado ${money(r.deposito_cargado)}</span>`;
+        else if (r.deposito_cargado !== null) estado = `<span class="text-rose-700 font-bold">Difiere: cargado ${money(r.deposito_cargado)}</span>`;
+        else estado = `<span class="text-slate-600">Sin cargar${r.deposito_mes_anterior ? '' : ' (el mes anterior tampoco tenía)'}</span>`;
+        const puede = r.empleado_id && r.en_conformacion;
+        return `
+        <tr>
+            <td class="p-2 text-center"><input type="checkbox" ${r.marcado ? 'checked' : ''} ${puede ? '' : 'disabled'} onchange="RECIBOS.recibos[${i}].marcado=this.checked"></td>
+            <td class="p-2">
+                <button class="font-bold text-slate-800 hover:underline text-left" onclick="RECIBOS.recibos[${i}].abierto=!RECIBOS.recibos[${i}].abierto; renderRecibos()">${esc(r.nombre)}</button>
+                <div class="text-[10px] text-slate-500 font-mono">Leg. ${esc(r.legajo)} | ${esc(r.cuil)}</div>
+            </td>
+            <td class="p-2">${esc(r.convenio)}<div class="text-[10px] text-slate-500">${esc(r.categoria)}</div></td>
+            <td class="p-2 text-right font-mono">${money(r.remunerativo)}</td>
+            <td class="p-2 text-right font-mono">${money(r.no_remunerativo)}</td>
+            <td class="p-2 text-right font-mono text-rose-700">${money(r.descuentos)}</td>
+            <td class="p-2 text-right font-mono font-bold">${money(r.neto)}</td>
+            <td class="p-2 text-right font-mono">${money(r.contribuciones)}</td>
+            <td class="p-2 text-right font-mono">${money(r.costo_total)}</td>
+            <td class="p-2">
+                <select class="border rounded p-1 bg-white max-w-[190px]" onchange="vincularRecibo(${r.id}, this.value)">
+                    <option value="">(sin asociar)</option>${opts}
+                </select>
+            </td>
+            <td class="p-2">${estado}</td>
+        </tr>
+        ${r.abierto ? `<tr class="bg-slate-50"><td></td><td colspan="10" class="p-2">
+            <table class="text-[11px]"><tbody>${r.conceptos.map(c => `
+                <tr><td class="pr-3 font-mono text-slate-500">${esc(c.codigo)}</td><td class="pr-6">${esc(c.concepto)}</td>
+                <td class="pr-6 text-right font-mono">${c.unidad !== null ? CampoMoney.format(c.unidad) : ''}</td>
+                <td class="text-right font-mono ${c.monto < 0 ? 'text-rose-700' : ''}">${money(c.monto)}</td></tr>`).join('')}
+            </tbody></table></td></tr>` : ''}`;
+    }).join('') || '<tr><td colspan="11" class="p-4 text-center text-slate-400">Importá los PDF de recibos del mes.</td></tr>';
+    document.querySelectorAll('#r_tbody select').forEach((sel, i) => { sel.value = R.recibos[i].empleado_id || ''; });
+}
+
+function marcarTodosRecibos(v) {
+    RECIBOS.recibos.forEach(r => { if (r.empleado_id && r.en_conformacion) r.marcado = v; });
+    renderRecibos();
+}
+
+async function vincularRecibo(reciboId, empleadoId) {
+    try {
+        await api(`/api/sueldos/recibos/${reciboId}/empleado`, jsonBody('PUT', { empleado_id: empleadoId ? Number(empleadoId) : null }));
+    } catch (e) { alert(e.message); }
+    await cargarRecibos();
+}
+
+async function aplicarRecibos() {
+    const sel = RECIBOS ? RECIBOS.recibos.filter(r => r.marcado) : [];
+    if (!sel.length) { alert('No hay recibos seleccionados.'); return; }
+    if (!confirm(`Cargar el neto de ${sel.length} recibo(s) como Depósito Bancario?`)) return;
+    let r;
+    try { r = await api('/api/sueldos/recibos/aplicar', jsonBody('POST', { mes: RECIBOS.mes, recibo_ids: sel.map(x => x.id) })); }
+    catch (e) { alert(e.message); return; }
+    let msg = `Creados: ${r.creados} | Actualizados: ${r.actualizados} | Sin cambios: ${r.sin_cambios}`;
+    if (r.omitidos && r.omitidos.length) msg += '\n\nNo aplicados:\n' + r.omitidos.join('\n');
+    alert(msg);
+    await cargarRecibos();
 }
 
 /* ---------- detalle sueldos ---------- */

@@ -36,7 +36,7 @@ CONCEPTOS = [
     {"nombre": "Deposito Bancario SAC", "lado": "debito"},
 ]
 
-CONVENIOS = ["UATRE", "Empleados de Comercio", "Fuera de convenio"]
+CONVENIOS = ["UATRE", "Empleados de Comercio", "Camioneros", "Fuera de convenio"]
 
 _SEED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "datos", "empleados_seed.json")
 _FECHA_OK = "fecha GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'"
@@ -91,6 +91,39 @@ def init_sueldos_schema(cur) -> None:
     _add_col(cur, "empleados", ce, "centro_costo", "TEXT DEFAULT '2'")
     _add_col(cur, "empleados", ce, "excluir_indice", "INTEGER DEFAULT 0")
     _add_col(cur, "empleados", ce, "observaciones", "TEXT DEFAULT ''")
+    _add_col(cur, "empleados", ce, "legajo", "TEXT DEFAULT ''")
+    _add_col(cur, "empleados", ce, "categoria", "TEXT DEFAULT ''")
+    _add_col(cur, "empleados", ce, "fecha_ingreso", "TEXT DEFAULT ''")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recibos_sueldo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER NOT NULL DEFAULT 1,
+            periodo TEXT NOT NULL,
+            tipo_liquidacion TEXT DEFAULT 'Mensual',
+            es_sac INTEGER DEFAULT 0,
+            legajo TEXT DEFAULT '',
+            nombre TEXT DEFAULT '',
+            cuil TEXT DEFAULT '',
+            fecha_ingreso TEXT DEFAULT '',
+            categoria TEXT DEFAULT '',
+            convenio TEXT DEFAULT '',
+            sueldo_basico REAL DEFAULT 0,
+            remunerativo REAL DEFAULT 0,
+            no_remunerativo REAL DEFAULT 0,
+            descuentos REAL DEFAULT 0,
+            neto REAL DEFAULT 0,
+            contribuciones REAL DEFAULT 0,
+            costo_total REAL DEFAULT 0,
+            conceptos_json TEXT DEFAULT '[]',
+            empleado_id INTEGER,
+            movimiento_id INTEGER,
+            archivo TEXT DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (empresa_id, periodo, cuil, tipo_liquidacion)
+        );
+        """
+    )
 
     cc = _cols(cur, "conformacion_sueldos")
     _add_col(cur, "conformacion_sueldos", cc, "empresa_id", "INTEGER DEFAULT 1")
@@ -482,6 +515,292 @@ def detalle_sueldos_mes(conn, emp_id: int, mes: str, solo_activos: bool = True) 
             tot[k] += r[k]
         tot["aumentos"] += r["aumento"]
     return {"mes": mes, "empleados": empleados, "totales": {k: _r2(v) for k, v in tot.items()}}
+
+
+# ---------------------------------------------------------------- recibos de convenio
+
+def _en_conformacion(conn, emp_id: int, nombre: str, mes: str) -> bool:
+    """El empleado cobra una parte fuera de convenio si tiene sueldo base este mes o el anterior."""
+    y, m = int(mes[:4]), int(mes[5:7])
+    ant = f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
+    row = conn.execute(
+        """
+        SELECT 1 FROM conformacion_sueldos
+        WHERE COALESCE(empresa_id,1) = ? AND TRIM(nombre) = ? AND principal = 1
+          AND substr(fecha, 1, 7) IN (?, ?) LIMIT 1;
+        """,
+        (emp_id, nombre, mes, ant),
+    ).fetchone()
+    return bool(row)
+
+
+def _buscar_empleado_para_recibo(conn, emp_id: int, rec: dict, usados: set) -> Optional[int]:
+    from recibos_sueldo import puntaje_nombre, solo_digitos
+
+    empleados = [dict(r) for r in conn.execute(
+        "SELECT id, nombre, cuil, cuit, dni, legajo, activo FROM empleados WHERE COALESCE(empresa_id,1) = ?;", (emp_id,)
+    ).fetchall()]
+    cuil = solo_digitos(rec.get("cuil"))
+    dni = cuil[2:10] if len(cuil) == 11 else ""
+
+    def _dni_de(e):
+        propio = solo_digitos(e.get("cuil")) or solo_digitos(e.get("cuit"))
+        return propio[2:10] if len(propio) == 11 else solo_digitos(e.get("dni")).zfill(8)
+
+    if cuil:
+        for e in empleados:
+            if e["id"] not in usados and cuil in (solo_digitos(e.get("cuil")), solo_digitos(e.get("cuit"))):
+                return e["id"]
+        for e in empleados:
+            if e["id"] not in usados and dni and _dni_de(e) == dni:
+                return e["id"]
+    candidatos = []
+    for e in empleados:
+        if e["id"] in usados:
+            continue
+        if dni and _dni_de(e).strip("0") and _dni_de(e) != dni:
+            continue
+        p = puntaje_nombre(e["nombre"], rec.get("nombre", ""))
+        if p >= 1.0:
+            candidatos.append((int(e.get("activo") or 0), len(e["nombre"] or ""), e["id"]))
+    if not candidatos:
+        return None
+    candidatos.sort(reverse=True)
+    if len(candidatos) > 1 and candidatos[0][:2] == candidatos[1][:2]:
+        return None
+    return candidatos[0][2]
+
+
+def _completar_empleado_desde_recibo(conn, empleado_id: int, rec: dict) -> None:
+    conn.execute(
+        """
+        UPDATE empleados SET
+            cuil = COALESCE(NULLIF(?, ''), cuil),
+            cuit = COALESCE(NULLIF(?, ''), cuit),
+            dni = CASE WHEN LENGTH(?) = 13 THEN CAST(CAST(SUBSTR(?, 4, 8) AS INTEGER) AS TEXT) ELSE dni END,
+            legajo = ?, categoria = ?, fecha_ingreso = ?, convenio = ?
+        WHERE id = ?;
+        """,
+        (rec["cuil"], rec["cuil"], rec["cuil"], rec["cuil"], rec["legajo"], rec["categoria"], rec["fecha_ingreso"],
+         rec["convenio"], empleado_id),
+    )
+
+
+def importar_recibos(conn, emp_id: int, archivos: list[tuple[str, bytes]]) -> dict:
+    from recibos_sueldo import parsear_pdf
+
+    leidos, periodos, errores = 0, set(), []
+    for nombre_archivo, contenido in archivos:
+        try:
+            recibos = parsear_pdf(contenido)
+        except Exception as exc:
+            errores.append(f"{nombre_archivo}: {exc}")
+            continue
+        if not recibos:
+            errores.append(f"{nombre_archivo}: no se encontraron recibos")
+            continue
+        for rec in recibos:
+            leidos += 1
+            periodos.add(rec["periodo"])
+            previo = conn.execute(
+                """
+                SELECT id, empleado_id, movimiento_id FROM recibos_sueldo
+                WHERE empresa_id = ? AND periodo = ? AND cuil = ? AND tipo_liquidacion = ?;
+                """,
+                (emp_id, rec["periodo"], rec["cuil"], rec["tipo_liquidacion"]),
+            ).fetchone()
+            valores = (
+                rec["es_sac"], rec["legajo"], rec["nombre"], rec.get("fecha_ingreso", ""), rec.get("categoria", ""),
+                rec["convenio"], rec["sueldo_basico"], rec["remunerativo"], rec["no_remunerativo"], rec["descuentos"],
+                rec["neto"], rec["contribuciones"], rec["costo_total"], json.dumps(rec["conceptos"], ensure_ascii=False),
+                nombre_archivo,
+            )
+            if previo:
+                conn.execute(
+                    """
+                    UPDATE recibos_sueldo SET es_sac=?, legajo=?, nombre=?, fecha_ingreso=?, categoria=?, convenio=?,
+                        sueldo_basico=?, remunerativo=?, no_remunerativo=?, descuentos=?, neto=?, contribuciones=?,
+                        costo_total=?, conceptos_json=?, archivo=?
+                    WHERE id = ?;
+                    """,
+                    (*valores, previo["id"]),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO recibos_sueldo (empresa_id, periodo, tipo_liquidacion, cuil, es_sac, legajo, nombre,
+                        fecha_ingreso, categoria, convenio, sueldo_basico, remunerativo, no_remunerativo, descuentos,
+                        neto, contribuciones, costo_total, conceptos_json, archivo)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (emp_id, rec["periodo"], rec["tipo_liquidacion"], rec["cuil"], *valores),
+                )
+    for periodo in periodos:
+        _vincular_automatico(conn, emp_id, periodo)
+    conn.commit()
+    return {"leidos": leidos, "periodos": sorted(periodos), "errores": errores}
+
+
+def _vincular_automatico(conn, emp_id: int, periodo: str) -> None:
+    filas = [dict(r) for r in conn.execute(
+        "SELECT * FROM recibos_sueldo WHERE empresa_id = ? AND periodo = ? ORDER BY empleado_id IS NULL, id;",
+        (emp_id, periodo),
+    ).fetchall()]
+    usados = {f["empleado_id"] for f in filas if f["empleado_id"]}
+    for f in filas:
+        if f["empleado_id"]:
+            continue
+        eid = _buscar_empleado_para_recibo(conn, emp_id, f, usados)
+        if eid:
+            usados.add(eid)
+            conn.execute("UPDATE recibos_sueldo SET empleado_id = ? WHERE id = ?;", (eid, f["id"]))
+            _completar_empleado_desde_recibo(conn, eid, f)
+
+
+def _detalle_deposito(es_sac) -> str:
+    return "Deposito Bancario SAC" if int(es_sac or 0) else "Deposito Bancario"
+
+
+def _movimiento_deposito(conn, emp_id: int, nombre: str, mes: str, recibo: dict) -> Optional[dict]:
+    if recibo.get("movimiento_id"):
+        row = conn.execute(
+            "SELECT * FROM conformacion_sueldos WHERE id = ? AND COALESCE(empresa_id,1) = ?;",
+            (recibo["movimiento_id"], emp_id),
+        ).fetchone()
+        if row:
+            return dict(row)
+    row = conn.execute(
+        """
+        SELECT * FROM conformacion_sueldos
+        WHERE COALESCE(empresa_id,1) = ? AND TRIM(nombre) = ? AND substr(fecha,1,7) = ?
+          AND LOWER(TRIM(detalle)) = LOWER(?) AND COALESCE(principal,0) = 0
+        ORDER BY id LIMIT 1;
+        """,
+        (emp_id, nombre, mes, _detalle_deposito(recibo.get("es_sac"))),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def listar_recibos(conn, emp_id: int, mes: str) -> dict:
+    mes = mes_valido(mes)
+    filas = []
+    tot: dict[str, dict] = {}
+    for r in conn.execute(
+        """
+        SELECT r.*, e.nombre AS empleado_nombre FROM recibos_sueldo r
+        LEFT JOIN empleados e ON e.id = r.empleado_id
+        WHERE r.empresa_id = ? AND r.periodo = ?
+        ORDER BY r.convenio, r.nombre;
+        """,
+        (emp_id, mes),
+    ).fetchall():
+        d = dict(r)
+        d["conceptos"] = json.loads(d.pop("conceptos_json") or "[]")
+        d["en_conformacion"] = False
+        d["deposito_cargado"] = None
+        d["deposito_mes_anterior"] = False
+        if d["empleado_nombre"]:
+            nombre = d["empleado_nombre"].strip()
+            d["en_conformacion"] = _en_conformacion(conn, emp_id, nombre, mes)
+            mov = _movimiento_deposito(conn, emp_id, nombre, mes, d)
+            d["deposito_cargado"] = _r2(mov["haber"]) if mov else None
+            y, m = int(mes[:4]), int(mes[5:7])
+            ant = f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
+            d["deposito_mes_anterior"] = bool(conn.execute(
+                """
+                SELECT 1 FROM conformacion_sueldos
+                WHERE COALESCE(empresa_id,1) = ? AND TRIM(nombre) = ? AND substr(fecha,1,7) = ?
+                  AND LOWER(TRIM(detalle)) LIKE 'deposito bancario%' LIMIT 1;
+                """,
+                (emp_id, nombre, ant),
+            ).fetchone())
+        filas.append(d)
+        t = tot.setdefault(d["convenio"] or "Sin convenio", {
+            "convenio": d["convenio"] or "Sin convenio", "cantidad": 0, "remunerativo": 0.0, "no_remunerativo": 0.0,
+            "descuentos": 0.0, "neto": 0.0, "contribuciones": 0.0, "costo_total": 0.0,
+        })
+        t["cantidad"] += 1
+        for k in ("remunerativo", "no_remunerativo", "descuentos", "neto", "contribuciones", "costo_total"):
+            t[k] += float(d[k] or 0)
+    por_convenio = [{k: (_r2(v) if isinstance(v, float) else v) for k, v in t.items()} for t in tot.values()]
+    total = {k: _r2(sum(t[k] for t in por_convenio)) for k in
+             ("remunerativo", "no_remunerativo", "descuentos", "neto", "contribuciones", "costo_total")}
+    total["cantidad"] = len(filas)
+    return {"mes": mes, "recibos": filas, "por_convenio": por_convenio, "total": total}
+
+
+def vincular_recibo(conn, emp_id: int, recibo_id: int, empleado_id: Optional[int]) -> dict:
+    rec = conn.execute(
+        "SELECT * FROM recibos_sueldo WHERE id = ? AND empresa_id = ?;", (recibo_id, emp_id)
+    ).fetchone()
+    if not rec:
+        raise ValueError("Recibo inexistente.")
+    if empleado_id:
+        _empleado(conn, emp_id, empleado_id)
+        otro = conn.execute(
+            "SELECT id FROM recibos_sueldo WHERE empresa_id = ? AND periodo = ? AND empleado_id = ? AND id <> ? AND tipo_liquidacion = ?;",
+            (emp_id, rec["periodo"], empleado_id, recibo_id, rec["tipo_liquidacion"]),
+        ).fetchone()
+        if otro:
+            raise ValueError("Ese empleado ya tiene otro recibo asociado en el mes.")
+        conn.execute(
+            "UPDATE recibos_sueldo SET empleado_id = ?, movimiento_id = NULL WHERE id = ?;", (empleado_id, recibo_id)
+        )
+        _completar_empleado_desde_recibo(conn, empleado_id, dict(rec))
+    else:
+        conn.execute("UPDATE recibos_sueldo SET empleado_id = NULL, movimiento_id = NULL WHERE id = ?;", (recibo_id,))
+    conn.commit()
+    return {"status": "ok"}
+
+
+def aplicar_depositos(conn, emp_id: int, mes: str, recibo_ids: Optional[list[int]] = None) -> dict:
+    """Carga el neto de cada recibo como Depósito Bancario en la cuenta fuera de convenio."""
+    mes = mes_valido(mes)
+    fecha = fin_de_mes(mes)
+    elegidos = set(recibo_ids) if recibo_ids is not None else None
+    creados, actualizados, sin_cambios, omitidos = 0, 0, 0, []
+    for r in conn.execute(
+        """
+        SELECT r.*, e.nombre AS empleado_nombre FROM recibos_sueldo r
+        LEFT JOIN empleados e ON e.id = r.empleado_id
+        WHERE r.empresa_id = ? AND r.periodo = ?;
+        """,
+        (emp_id, mes),
+    ).fetchall():
+        d = dict(r)
+        if elegidos is not None and d["id"] not in elegidos:
+            continue
+        if not d["empleado_nombre"]:
+            omitidos.append(f"{d['nombre']} (sin empleado asociado)")
+            continue
+        nombre = d["empleado_nombre"].strip()
+        if not _en_conformacion(conn, emp_id, nombre, mes):
+            omitidos.append(f"{d['nombre']} (cobra solo por recibo)")
+            continue
+        neto = _r2(d["neto"])
+        mov = _movimiento_deposito(conn, emp_id, nombre, mes, d)
+        if mov:
+            if _r2(mov["haber"]) == neto and _r2(mov["debe"]) == 0:
+                sin_cambios += 1
+            else:
+                conn.execute(
+                    "UPDATE conformacion_sueldos SET haber = ?, debe = 0 WHERE id = ?;", (neto, mov["id"])
+                )
+                actualizados += 1
+            mov_id = mov["id"]
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO conformacion_sueldos (empresa_id, fecha, nombre, detalle, aumento, debe, haber, principal)
+                VALUES (?, ?, ?, ?, 0, 0, ?, 0);
+                """,
+                (emp_id, fecha, nombre, _detalle_deposito(d["es_sac"]), neto),
+            )
+            mov_id = cur.lastrowid
+            creados += 1
+        conn.execute("UPDATE recibos_sueldo SET movimiento_id = ? WHERE id = ?;", (mov_id, d["id"]))
+    conn.commit()
+    return {"creados": creados, "actualizados": actualizados, "sin_cambios": sin_cambios, "omitidos": omitidos}
 
 
 def meses_con_movimientos(conn, emp_id: int) -> list[str]:
