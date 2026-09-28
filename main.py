@@ -8222,6 +8222,61 @@ def _restablecer_clave_eze_una_vez() -> None:
 _restablecer_clave_eze_una_vez()
 
 
+def _completar_padron_access_una_vez() -> None:
+    """Agrega las fichas del padrón de Access que no llegaron con la base semilla.
+    Solo inserta CUIT inexistentes: no modifica ni borra fichas ya cargadas."""
+    import json
+
+    ruta = os.path.join(BASE_DIR, "datos", "padron_entidades_access.json")
+    if not os.path.exists(DB_PATH) or not os.path.exists(ruta):
+        return
+    flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
+    os.makedirs(flag_dir, exist_ok=True)
+    flag = os.path.join(flag_dir, ".padron_access_v1")
+    if os.path.exists(flag):
+        return
+    with open(ruta, encoding="utf-8") as fh:
+        fichas = json.load(fh)
+    solo_digitos = lambda v: "".join(ch for ch in str(v or "") if ch.isdigit())
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cols_db = [r[1] for r in cur.execute("PRAGMA table_info(entidades)")]
+        if "empresa_id" not in cols_db:
+            _separar_entidades_por_empresa(cur)
+            cols_db = [r[1] for r in cur.execute("PRAGMA table_info(entidades)")]
+        existentes = {
+            solo_digitos(r[0])
+            for r in cur.execute("SELECT cuit FROM entidades WHERE COALESCE(empresa_id, 1) = 1;")
+        }
+        nuevas = 0
+        for ficha in fichas:
+            cuit = solo_digitos(ficha.get("cuit"))
+            if not cuit or cuit in existentes:
+                continue
+            datos = {k: v for k, v in ficha.items() if k in cols_db and k != "empresa_id"}
+            datos["empresa_id"] = 1
+            cols = list(datos)
+            cur.execute(
+                f"INSERT OR IGNORE INTO entidades ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)});",
+                [datos[c] for c in cols],
+            )
+            existentes.add(cuit)
+            nuevas += cur.rowcount
+        conn.commit()
+        print(f"[padron] fichas de Access agregadas: {nuevas}")
+    except sqlite3.Error as exc:
+        print(f"[padron] no se pudo completar el padrón: {exc}")
+        return
+    finally:
+        conn.close()
+    with open(flag, "w", encoding="utf-8") as fh:
+        fh.write("ok")
+
+
+_completar_padron_access_una_vez()
+
+
 @app.get("/")
 @app.get("/index.html")
 @app.get("/Index.html")
