@@ -60,14 +60,7 @@
                 </div>
                 <div class="col-md-3">
                     <label class="small fw-bold">Tipo de labor</label>
-                    <select id="tipoLabor" class="form-select form-select-sm">
-                        <option>Pulverización Terrestre</option>
-                        <option>Pulverización Aérea</option>
-                        <option>Siembra Directa</option>
-                        <option>Fertilización</option>
-                        <option>Cosecha</option>
-                        <option>Laboreo general</option>
-                    </select>
+                    <select id="tipoLabor" class="form-select form-select-sm" onchange="onTipoLaborChange()" title="Carga la labor en la orden automáticamente"></select>
                 </div>
                 <div class="col-md-3">
                     <label class="small fw-bold">Labor cultural</label>
@@ -349,8 +342,9 @@ async function init() {
     selCampo.innerHTML = '<option value="">Seleccione...</option>' +
         camposCache.map(c => `<option value="${c.id}">${esc(c.nombre)} (${esc(c.tipo)})</option>`).join('');
     renderHist(ots || []);
-    agregarLinea('laboreo');
+    llenarTiposLabor();
     agregarLinea('producto');
+    onTipoLaborChange();
     if (selC.value) await cargarPlanCampania();
     selC.addEventListener('change', cargarPlanCampania);
     actualizarBadgePendientes();
@@ -360,6 +354,45 @@ function llenarDatalistItems() {
     const opt = i => `<option value="${esc(i.nombre)}">stock ${numAr(i.stock_cantidad)} ${esc(i.unidad || '')}</option>`;
     document.getElementById('dlProductos').innerHTML = itemsCache.filter(i => (i.tipo || 'producto') !== 'laboreo').map(opt).join('');
     document.getElementById('dlLabores').innerHTML = itemsCache.filter(i => i.tipo === 'laboreo').map(opt).join('');
+}
+
+function llenarTiposLabor() {
+    const labores = itemsCache.filter(i => i.tipo === 'laboreo');
+    const sel = document.getElementById('tipoLabor');
+    sel.innerHTML = '<option value="">(sin labor)</option>' +
+        labores.map(i => `<option value="${i.id}">${esc(i.nombre)}</option>`).join('');
+    const def = labores.find(i => i.nombre.trim().toLowerCase() === 'pulverizacion terrestre');
+    if (def) sel.value = String(def.id);
+}
+
+function onTipoLaborChange() {
+    const id = document.getElementById('tipoLabor').value;
+    const it = itemsCache.find(i => String(i.id) === id);
+    const tbody = document.getElementById('tablaConsumos');
+    let tr = tbody.querySelector('tr[data-auto="1"]');
+    if (!it) {
+        if (tr) tr.remove();
+        return;
+    }
+    if (!tr) {
+        agregarLinea('laboreo');
+        tr = tbody.lastElementChild;
+        tr.dataset.auto = '1';
+        tbody.insertBefore(tr, tbody.firstElementChild);
+    }
+    const inp = tr.querySelector('.cons-item');
+    inp.value = it.nombre;
+    const dosis = tr.querySelector('.cons-dosis');
+    if (parseFloat(dosis.value || 0) <= 0) dosis.value = '1';
+    onItemChange(inp);
+}
+
+function errMsg(d, def) {
+    const det = d && d.detail;
+    if (!det) return def;
+    if (typeof det === 'string') return det;
+    if (Array.isArray(det)) return det.map(x => (x.loc ? x.loc.slice(-1)[0] + ': ' : '') + (x.msg || '')).join('\n');
+    return JSON.stringify(det);
 }
 
 function proveedorPorTexto(txt) {
@@ -519,7 +552,8 @@ async function emitirOT() {
         nro_ot: document.getElementById('nroOT').value.trim(),
         fecha: document.getElementById('fechaOT').value,
         fecha_aplicacion: document.getElementById('fechaAplic').value,
-        tipo_labor: document.getElementById('tipoLabor').value,
+        tipo_labor: document.getElementById('tipoLabor').value
+            ? document.getElementById('tipoLabor').selectedOptions[0].textContent.trim() : '',
         labor_cultural: document.getElementById('laborCultural').value.trim(),
         contratista_nombre: prov ? prov.nombre : contTxt,
         contratista_cuit: prov ? prov.cuit : '',
@@ -539,7 +573,7 @@ async function emitirOT() {
     });
     const d = await res.json().catch(() => ({}));
     btn.disabled = false;
-    if (!res.ok) return alert(d.detail || 'Error al emitir OT');
+    if (!res.ok) return alert(errMsg(d, 'Error al emitir OT'));
     let msg = d.message;
     if ((d.sin_stock || []).length) {
         msg += '\n\n' + d.sin_stock.map(s => `${s.nombre}: había ${numAr(s.stock_previo)} ${s.unidad}, se usaron ${numAr(s.pedido)}`).join('\n');
@@ -590,7 +624,7 @@ async function anularOT(id, nro) {
     if (!confirm(`¿Anular la OT ${nro}? El stock vuelve al almacén y se borran sus costos. El número no se reutiliza.`)) return;
     const res = await fetch(`/api/agro/ot/${id}/anular`, { method: 'POST' });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) return alert(d.detail || 'No se pudo anular');
+    if (!res.ok) return alert(errMsg(d, 'No se pudo anular'));
     alert(d.message);
     location.reload();
 }
@@ -678,7 +712,7 @@ function renderLineas() {
 async function abrirCosteo(id) {
     const res = await fetch(`/api/agro/ot/lineas/${id}/opciones`);
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) return alert(d.detail || 'No se pudo abrir la línea');
+    if (!res.ok) return alert(errMsg(d, 'No se pudo abrir la línea'));
     mcLinea = d;
     mcOrigen = { origen: 'manual', mov_ingreso_id: null };
     const l = d.linea;
@@ -828,7 +862,7 @@ async function guardarCosteo() {
         method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) return alert(d.detail || 'No se pudo guardar el costo');
+    if (!res.ok) return alert(errMsg(d, 'No se pudo guardar el costo'));
     modalCosteo.hide();
     await cargarLineas();
     actualizarBadgePendientes();
