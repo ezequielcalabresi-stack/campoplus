@@ -157,7 +157,69 @@ def init_almacen_schema(cursor) -> None:
     cols_mov = {r[1] for r in cursor.fetchall()}
     if "precio_unitario_usd" not in cols_mov:
         cursor.execute("ALTER TABLE almacen_movimientos ADD COLUMN precio_unitario_usd REAL DEFAULT 0;")
+    cursor.execute("PRAGMA table_info(ordenes_trabajo);")
+    cols_ot = {r[1] for r in cursor.fetchall()}
+    if "fecha_aplicacion" not in cols_ot:
+        cursor.execute("ALTER TABLE ordenes_trabajo ADD COLUMN fecha_aplicacion TEXT;")
+    if "labor_cultural" not in cols_ot:
+        cursor.execute("ALTER TABLE ordenes_trabajo ADD COLUMN labor_cultural TEXT;")
+    init_lineas_ot_schema(cursor)
     _aplicar_costos_usd_access(cursor)
+
+
+def init_lineas_ot_schema(cursor) -> None:
+    """margenes_access guarda las líneas de OT (históricas de Access y nuevas)."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS margenes_access (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            id_access INTEGER,
+            campania_codigo TEXT,
+            cultivo TEXT,
+            nro_orden INTEGER,
+            campo TEXT,
+            lote TEXT,
+            cantidad_has REAL DEFAULT 0,
+            fecha_orden TEXT,
+            laboreo TEXT,
+            labor_cultural TEXT,
+            contratista TEXT,
+            producto TEXT,
+            tipo TEXT,
+            dosis_ha REAL DEFAULT 0,
+            cantidad_total REAL DEFAULT 0,
+            fecha_aplicacion TEXT,
+            precio REAL DEFAULT 0,
+            costo_ars REAL DEFAULT 0,
+            tc REAL DEFAULT 0,
+            costo_usd REAL DEFAULT 0,
+            varios TEXT,
+            fecha_compra TEXT,
+            nro_remito TEXT,
+            proveedor TEXT,
+            cantidad_ingresada REAL DEFAULT 0,
+            unidad TEXT,
+            empresa_nombre TEXT,
+            UNIQUE(empresa_id, id_access)
+        );
+        """
+    )
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(margenes_access)").fetchall()}
+    for col, ddl in (
+        ("almacen_item_id", "INTEGER"),
+        ("ot_id", "INTEGER"),
+        ("ot_consumo_id", "INTEGER"),
+        ("moneda_costo", "TEXT"),
+        ("origen_costo", "TEXT"),
+        ("mov_ingreso_id", "INTEGER"),
+        ("fecha_costeo", "TEXT"),
+    ):
+        if col not in cols:
+            cursor.execute(f"ALTER TABLE margenes_access ADD COLUMN {col} {ddl};")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_margenes_nro_orden ON margenes_access(empresa_id, nro_orden);"
+    )
 
 
 CRITERIOS_COSTO = {
@@ -937,25 +999,46 @@ def egresar_almacen_nc(
     }
 
 
-def siguiente_nro_ot(cursor, empresa_id: int, anio: Optional[int] = None) -> str:
-    anio = anio or datetime.now().year
-    prefix = f"OT-{anio}-"
+NRO_OT_INICIAL = 3274
+
+
+def _ultimo_nro_ot(cursor, empresa_id: int) -> int:
+    ultimo = NRO_OT_INICIAL - 1
     cursor.execute(
         """
-        SELECT nro_ot FROM ordenes_trabajo
-        WHERE empresa_id=? AND nro_ot LIKE ?
-        ORDER BY id DESC LIMIT 1;
+        SELECT MAX(CAST(nro_ot AS INTEGER)) FROM ordenes_trabajo
+        WHERE empresa_id=? AND TRIM(COALESCE(nro_ot,'')) != '' AND nro_ot NOT GLOB '*[^0-9]*';
         """,
-        (empresa_id, f"{prefix}%"),
+        (empresa_id,),
     )
     row = cursor.fetchone()
-    seq = 1
-    if row and row["nro_ot"]:
-        try:
-            seq = int(str(row["nro_ot"]).split("-")[-1]) + 1
-        except ValueError:
-            seq = 1
-    return f"{prefix}{seq:05d}"
+    if row and row[0]:
+        ultimo = max(ultimo, int(row[0]))
+    cursor.execute("SELECT MAX(nro_orden) FROM margenes_access WHERE empresa_id=?;", (empresa_id,))
+    row = cursor.fetchone()
+    if row and row[0]:
+        ultimo = max(ultimo, int(row[0]))
+    return ultimo
+
+
+def siguiente_nro_ot(cursor, empresa_id: int, anio: Optional[int] = None) -> str:
+    return str(_ultimo_nro_ot(cursor, empresa_id) + 1)
+
+
+def _nro_ot_en_uso(cursor, empresa_id: int, nro: str) -> bool:
+    cursor.execute(
+        "SELECT 1 FROM ordenes_trabajo WHERE empresa_id=? AND TRIM(nro_ot)=? LIMIT 1;",
+        (empresa_id, nro),
+    )
+    if cursor.fetchone():
+        return True
+    if nro.isdigit():
+        cursor.execute(
+            "SELECT 1 FROM margenes_access WHERE empresa_id=? AND nro_orden=? LIMIT 1;",
+            (empresa_id, int(nro)),
+        )
+        return cursor.fetchone() is not None
+    return False
 
 
 def emitir_ot_consumiendo_almacen(
@@ -974,32 +1057,57 @@ def emitir_ot_consumiendo_almacen(
     observaciones: str = "",
     consumos: Optional[List[Dict[str, Any]]] = None,
     nro_ot: Optional[str] = None,
+    fecha_aplicacion: str = "",
+    labor_cultural: str = "",
 ) -> Dict[str, Any]:
     """
-    Emite OT y descuenta del almacén (productos y/o laboreos) a costo promedio neto.
+    Emite la OT: registra las líneas y la salida física del almacén, sin costo.
+    El costo se asigna después con costear_linea_ot. No se bloquea por falta de stock.
     cada consumo: {item_id, cantidad?, dosis_por_ha?}
     """
     consumos = consumos or []
     fecha = (fecha or datetime.now().strftime("%Y-%m-%d"))[:10]
-    nro = nro_ot or siguiente_nro_ot(cursor, empresa_id)
+    fecha_aplic = (fecha_aplicacion or fecha)[:10]
+    nro = str(nro_ot or "").strip() or siguiente_nro_ot(cursor, empresa_id)
+    if _nro_ot_en_uso(cursor, empresa_id, nro):
+        raise ValueError(f"La OT Nº {nro} ya existe.")
+    if not any(int(c.get("item_id") or 0) for c in consumos):
+        raise ValueError("Agregá al menos un producto o labor.")
+
+    campania_codigo = ""
+    if campania_id:
+        cursor.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,))
+        r = cursor.fetchone()
+        campania_codigo = (r["codigo"] if r else "") or ""
+    campo_nombre = ""
+    if campo_id:
+        cursor.execute("SELECT nombre FROM campos_agro WHERE id=?;", (campo_id,))
+        r = cursor.fetchone()
+        campo_nombre = (r["nombre"] if r else "") or ""
+    lote_nombre = ""
+    if lote_id:
+        cursor.execute("SELECT nombre FROM lotes_agro WHERE id=?;", (lote_id,))
+        r = cursor.fetchone()
+        lote_nombre = (r["nombre"] if r else "") or ""
 
     cursor.execute(
         """
         INSERT INTO ordenes_trabajo
         (empresa_id, nro_ot, fecha, tipo_labor, contratista_cuit, contratista_nombre,
-         campania_id, campo_id, lote_id, superficie_has, cultivo, estado, observaciones)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Emitida', ?);
+         campania_id, campo_id, lote_id, superficie_has, cultivo, estado, observaciones,
+         fecha_aplicacion, labor_cultural)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente de costeo', ?, ?, ?);
         """,
         (
             empresa_id, nro, fecha, tipo_labor or "",
             contratista_cuit or "", contratista_nombre or "",
             campania_id, campo_id, lote_id, superficie_has, cultivo or "",
-            observaciones or "",
+            observaciones or "", fecha_aplic, labor_cultural or "",
         ),
     )
     ot_id = cursor.lastrowid
-    costo_prod = 0.0
-    costo_lab = 0.0
+    sin_stock = []
+    lineas = 0
 
     for c in consumos:
         item_id = int(c.get("item_id") or 0)
@@ -1031,19 +1139,16 @@ def emitir_ot_consumiendo_almacen(
             cant = round(dosis * superficie_has, 6)
         if cant <= 0:
             continue
+        tipo_item = item.get("tipo") or "producto"
         stock = float(item.get("stock_cantidad") or 0)
-        if cant > stock + 1e-6:
-            raise ValueError(
-                f"Stock insuficiente de '{item.get('nombre')}': hay {stock}, se piden {cant}."
-            )
-        if (item.get("tipo") or "") != "laboreo":
-            valuacion = valuar_salida_insumo(cursor, empresa_id, item_id, cant)
-            costo_u = float(valuacion["costo_unitario"] or 0)
-            costo_t = float(valuacion["costo_total"] or 0)
-        else:
-            costo_u = float(item.get("costo_promedio_neto") or 0)
-            costo_t = round(cant * costo_u, 2)
         nuevo_stock = round(stock - cant, 6)
+        if tipo_item != "laboreo" and nuevo_stock < -1e-6:
+            sin_stock.append({
+                "nombre": item.get("nombre"),
+                "stock_previo": round(stock, 4),
+                "pedido": round(cant, 4),
+                "unidad": item.get("unidad") or "",
+            })
 
         cursor.execute(
             "UPDATE almacen_items SET stock_cantidad=? WHERE id=?;",
@@ -1054,52 +1159,432 @@ def emitir_ot_consumiendo_almacen(
             INSERT INTO almacen_movimientos
             (empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, importe_neto,
              stock_resultante, costo_prom_resultante, campania_id, lote_id, ot_id, observaciones)
-            VALUES (?, ?, ?, 'egreso_ot', ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, 'egreso_ot', ?, 0, 0, ?, ?, ?, ?, ?, ?);
             """,
             (
-                empresa_id, item_id, fecha, cant, costo_u, costo_t,
-                nuevo_stock, costo_u, campania_id, lote_id, ot_id,
-                f"Consumo OT {nro}",
+                empresa_id, item_id, fecha_aplic, cant,
+                nuevo_stock, float(item.get("costo_promedio_neto") or 0),
+                campania_id, lote_id, ot_id, f"Consumo OT {nro}",
             ),
         )
         mov_id = cursor.lastrowid
-        tipo_item = item.get("tipo") or "producto"
         cursor.execute(
             """
             INSERT INTO ot_consumos
             (ot_id, item_id, tipo_item, dosis_por_ha, cantidad, unidad,
              costo_unitario_neto, costo_total_neto, movimiento_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?);
+            """,
+            (ot_id, item_id, tipo_item, dosis, cant, item.get("unidad") or "", mov_id),
+        )
+        consumo_id = cursor.lastrowid
+        es_lab = tipo_item == "laboreo"
+        cursor.execute(
+            """
+            INSERT INTO margenes_access (
+                empresa_id, campania_codigo, cultivo, nro_orden, campo, lote, cantidad_has,
+                fecha_orden, laboreo, labor_cultural, contratista, producto, tipo, dosis_ha,
+                cantidad_total, fecha_aplicacion, unidad, almacen_item_id, ot_id, ot_consumo_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
             """,
             (
-                ot_id, item_id, tipo_item, dosis, cant, item.get("unidad") or "",
-                costo_u, costo_t, mov_id,
+                empresa_id, campania_codigo, cultivo or "", int(nro) if nro.isdigit() else None,
+                campo_nombre, lote_nombre, float(superficie_has or 0), fecha,
+                (item.get("nombre") or "") if es_lab else "",
+                (labor_cultural or tipo_labor or "") if es_lab else "",
+                (contratista_nombre or "") if es_lab else "",
+                "" if es_lab else (item.get("nombre") or ""),
+                item.get("categoria") or "", dosis, cant, fecha_aplic,
+                item.get("unidad") or "", item_id, ot_id, consumo_id,
             ),
         )
-        if tipo_item == "laboreo":
-            costo_lab += costo_t
-        else:
-            costo_prod += costo_t
+        lineas += 1
 
-    insumos_usd = round(costo_prod, 2)
-    labores_ars = round(costo_lab, 2)
-    cursor.execute(
-        """
-        UPDATE ordenes_trabajo
-        SET costo_insumos_neto=?, costo_laboreos_neto=?, costo_total_neto=?
-        WHERE id=?;
-        """,
-        (insumos_usd, labores_ars, insumos_usd, ot_id),
-    )
+    if not lineas:
+        raise ValueError("Ninguna línea tiene cantidad. Indicá dosis y hectáreas o la cantidad.")
+    msg = f"OT {nro} emitida con {lineas} línea(s). Queda pendiente de costeo."
+    if sin_stock:
+        msg += " Atención: algunos productos quedaron con stock negativo en el almacén."
     return {
         "status": "success",
         "ot_id": ot_id,
         "nro_ot": nro,
-        "costo_insumos_neto": insumos_usd,
-        "costo_laboreos_neto": labores_ars,
-        "costo_total_neto": insumos_usd,
-        "message": f"OT {nro} emitida. Insumos en U$S (moneda constante). Laboreos en pesos netos.",
+        "lineas": lineas,
+        "sin_stock": sin_stock,
+        "message": msg,
     }
+
+
+def _recalcular_totales_ot(cursor, ot_id: int) -> None:
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS n,
+               SUM(CASE WHEN COALESCE(costo_ars,0) != 0 OR COALESCE(costo_usd,0) != 0 THEN 1 ELSE 0 END) AS costeadas,
+               COALESCE(SUM(CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN costo_usd END), 0) AS insumos_usd,
+               COALESCE(SUM(CASE WHEN TRIM(COALESCE(producto,'')) = '' THEN costo_ars END), 0) AS labores_ars,
+               COALESCE(SUM(costo_usd), 0) AS total_usd
+        FROM margenes_access WHERE ot_id=?;
+        """,
+        (ot_id,),
+    )
+    r = dict(cursor.fetchone())
+    n = int(r["n"] or 0)
+    costeadas = int(r["costeadas"] or 0)
+    if n and costeadas >= n:
+        estado = "Costeada"
+    elif costeadas:
+        estado = "Costeo parcial"
+    else:
+        estado = "Pendiente de costeo"
+    cursor.execute(
+        """
+        UPDATE ordenes_trabajo
+        SET costo_insumos_neto=?, costo_laboreos_neto=?, costo_total_neto=?, estado=?
+        WHERE id=? AND COALESCE(estado,'') != 'Anulada';
+        """,
+        (
+            round(float(r["insumos_usd"] or 0), 2), round(float(r["labores_ars"] or 0), 2),
+            round(float(r["total_usd"] or 0), 2), estado, ot_id,
+        ),
+    )
+
+
+def _es_linea_laboreo(linea: Dict[str, Any]) -> bool:
+    return not (linea.get("producto") or "").strip()
+
+
+def _item_de_linea(cursor, empresa_id: int, linea: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if linea.get("almacen_item_id"):
+        cursor.execute(
+            "SELECT * FROM almacen_items WHERE id=? AND empresa_id=?;",
+            (linea["almacen_item_id"], empresa_id),
+        )
+        r = cursor.fetchone()
+        if r:
+            return dict(r)
+    nombre = (linea.get("producto") or linea.get("laboreo") or "").strip()
+    if not nombre:
+        return None
+    cursor.execute(
+        """
+        SELECT * FROM almacen_items
+        WHERE empresa_id=? AND UPPER(TRIM(nombre))=UPPER(TRIM(?))
+        ORDER BY COALESCE(activo,1) DESC, id LIMIT 1;
+        """,
+        (empresa_id, nombre),
+    )
+    r = cursor.fetchone()
+    return dict(r) if r else None
+
+
+def _cuit_contratista(cursor, empresa_id: int, linea: Dict[str, Any]) -> str:
+    if linea.get("ot_id"):
+        cursor.execute("SELECT contratista_cuit FROM ordenes_trabajo WHERE id=?;", (linea["ot_id"],))
+        r = cursor.fetchone()
+        if r and (r[0] or "").strip():
+            return r[0].strip()
+    nombre = (linea.get("contratista") or "").strip()
+    if not nombre:
+        return ""
+    cursor.execute(
+        """
+        SELECT cuit FROM entidades
+        WHERE COALESCE(empresa_id,1)=? AND COALESCE(es_proveedor,0)=1
+          AND (UPPER(TRIM(razon_social))=UPPER(TRIM(?)) OR UPPER(TRIM(nombre_fantasia))=UPPER(TRIM(?)))
+        LIMIT 1;
+        """,
+        (empresa_id, nombre, nombre),
+    )
+    r = cursor.fetchone()
+    return (r[0] or "").strip() if r else ""
+
+
+def _tc_sugerido(cursor, empresa_id: int, fecha: str) -> float:
+    cursor.execute(
+        """
+        SELECT tc FROM margenes_access
+        WHERE empresa_id=? AND COALESCE(tc,0) > 0 AND COALESCE(fecha_aplicacion,'') <= ?
+        ORDER BY fecha_aplicacion DESC, id DESC LIMIT 1;
+        """,
+        (empresa_id, fecha or "9999-12-31"),
+    )
+    r = cursor.fetchone()
+    return float(r[0]) if r else 0.0
+
+
+def listar_lineas_ot(
+    cursor,
+    empresa_id: int,
+    *,
+    solo_pendientes: bool = True,
+    nro_orden: Optional[int] = None,
+    campania_codigo: str = "",
+    ultimas_ot: int = 40,
+) -> List[Dict[str, Any]]:
+    """Líneas de OT (Access + nuevas) agrupables por Nº de orden, para costear."""
+    where = " WHERE m.empresa_id=? AND m.nro_orden IS NOT NULL "
+    params: List[Any] = [empresa_id]
+    if nro_orden:
+        where += " AND m.nro_orden=? "
+        params.append(int(nro_orden))
+    if campania_codigo:
+        where += " AND m.campania_codigo=? "
+        params.append(campania_codigo)
+    pend = " AND COALESCE(m.costo_ars,0)=0 AND COALESCE(m.costo_usd,0)=0 "
+    if solo_pendientes:
+        where += pend
+    anuladas = " AND (m.ot_id IS NULL OR COALESCE(o.estado,'') != 'Anulada') "
+    cursor.execute(
+        f"""
+        SELECT DISTINCT m.nro_orden FROM margenes_access m
+        LEFT JOIN ordenes_trabajo o ON o.id = m.ot_id
+        {where} {anuladas}
+        ORDER BY m.nro_orden DESC LIMIT ?;
+        """,
+        params + [max(1, min(int(ultimas_ot or 40), 500))],
+    )
+    nros = [r[0] for r in cursor.fetchall()]
+    if not nros:
+        return []
+    marcas = ",".join("?" for _ in nros)
+    cursor.execute(
+        f"""
+        SELECT m.id, m.nro_orden, m.campania_codigo, m.cultivo, m.campo, m.lote, m.cantidad_has,
+               m.fecha_orden, m.fecha_aplicacion, m.laboreo, m.labor_cultural, m.contratista,
+               m.producto, m.dosis_ha, m.cantidad_total, m.unidad, m.precio, m.tc,
+               m.costo_ars, m.costo_usd, m.moneda_costo, m.origen_costo, m.proveedor,
+               m.nro_remito, m.fecha_compra, m.almacen_item_id, m.ot_id, m.id_access,
+               o.estado AS estado_ot
+        FROM margenes_access m
+        LEFT JOIN ordenes_trabajo o ON o.id = m.ot_id
+        {where} {anuladas} AND m.nro_orden IN ({marcas})
+        ORDER BY m.nro_orden DESC, CASE WHEN TRIM(COALESCE(m.producto,''))='' THEN 0 ELSE 1 END, m.id;
+        """,
+        params + nros,
+    )
+    return [dict(r) for r in cursor.fetchall()]
+
+
+def opciones_costeo_linea(cursor, empresa_id: int, linea_id: int) -> Dict[str, Any]:
+    """Compras del almacén y facturas del contratista para elegir el costo de una línea."""
+    cursor.execute("SELECT * FROM margenes_access WHERE id=? AND empresa_id=?;", (linea_id, empresa_id))
+    r = cursor.fetchone()
+    if not r:
+        raise ValueError("Línea de OT no encontrada.")
+    linea = dict(r)
+    es_lab = _es_linea_laboreo(linea)
+    item = _item_de_linea(cursor, empresa_id, linea)
+    fecha = (linea.get("fecha_aplicacion") or linea.get("fecha_orden") or "")[:10]
+    cuit = _cuit_contratista(cursor, empresa_id, linea) if es_lab else ""
+
+    ingresos: List[Dict[str, Any]] = []
+    vistos = set()
+
+    def _agregar_ingresos(sql: str, args: tuple) -> None:
+        cursor.execute(sql, args)
+        for m in cursor.fetchall():
+            d = dict(m)
+            if d["id"] in vistos:
+                continue
+            vistos.add(d["id"])
+            ars = float(d.get("precio_unitario_neto") or 0)
+            usd = float(d.get("precio_unitario_usd") or 0)
+            d["tc"] = round(ars / usd, 4) if usd > 0 and ars > 0 else 0
+            d["posterior"] = bool(fecha and (d.get("fecha") or "") > fecha)
+            ingresos.append(d)
+
+    base_sql = """
+        SELECT m.id, m.fecha, m.cantidad, m.precio_unitario_neto,
+               COALESCE(m.precio_unitario_usd,0) AS precio_unitario_usd,
+               m.proveedor_cuit, m.proveedor_nombre, m.nro_comprobante,
+               i.id AS item_id, i.nombre AS item_nombre, i.unidad
+        FROM almacen_movimientos m JOIN almacen_items i ON i.id = m.item_id
+        WHERE m.empresa_id=? AND m.tipo_mov='ingreso' AND COALESCE(m.precio_unitario_neto,0) > 0
+    """
+    if item:
+        _agregar_ingresos(base_sql + " AND m.item_id=? ORDER BY m.fecha DESC, m.id DESC LIMIT 40;",
+                          (empresa_id, item["id"]))
+    if es_lab and cuit:
+        _agregar_ingresos(
+            base_sql + """ AND i.tipo='laboreo'
+              AND REPLACE(COALESCE(m.proveedor_cuit,''),'-','')=REPLACE(?,'-','')
+            ORDER BY m.fecha DESC, m.id DESC LIMIT 40;""",
+            (empresa_id, cuit),
+        )
+    ingresos.sort(key=lambda d: (d.get("fecha") or "", d["id"]), reverse=True)
+
+    facturas: List[Dict[str, Any]] = []
+    if es_lab and cuit:
+        cursor.execute(
+            """
+            SELECT id, fecha, tipo_comprobante, numero_comprobante, neto, iva, debe, total, observaciones
+            FROM cuentas_corrientes
+            WHERE COALESCE(empresa_id,1)=? AND REPLACE(entidad_id,'-','')=REPLACE(?,'-','')
+              AND COALESCE(debe,0) > 0
+              AND COALESCE(tipo_comprobante,'') NOT LIKE 'Ajuste%'
+              AND COALESCE(tipo_comprobante,'') NOT LIKE 'Pago%'
+            ORDER BY fecha DESC, id DESC LIMIT 20;
+            """,
+            (empresa_id, cuit),
+        )
+        for f in cursor.fetchall():
+            d = dict(f)
+            neto = float(d.get("neto") or 0)
+            d["neto_estimado"] = neto <= 0
+            d["neto_usar"] = round(neto if neto > 0 else float(d.get("debe") or 0) / 1.21, 2)
+            d["comprobante"] = (d.get("numero_comprobante") or d.get("tipo_comprobante") or "").strip()
+            facturas.append(d)
+
+    sugerido = None
+    cant = float(linea.get("cantidad_total") or 0)
+    if item and not es_lab and cant > 0:
+        try:
+            sugerido = valuar_salida_insumo(cursor, empresa_id, int(item["id"]), cant)
+        except ValueError:
+            sugerido = None
+
+    return {
+        "linea": linea,
+        "es_laboreo": es_lab,
+        "item": {k: item.get(k) for k in ("id", "nombre", "unidad", "costo_promedio_neto", "costo_promedio_usd", "stock_cantidad")} if item else None,
+        "contratista_cuit": cuit,
+        "ingresos": ingresos,
+        "facturas": facturas,
+        "sugerido_criterio": sugerido,
+        "tc_sugerido": _tc_sugerido(cursor, empresa_id, fecha),
+    }
+
+
+def costear_linea_ot(
+    cursor,
+    empresa_id: int,
+    linea_id: int,
+    *,
+    precio: float,
+    moneda: str = "USD",
+    tc: float = 0.0,
+    origen: str = "manual",
+    mov_ingreso_id: Optional[int] = None,
+    proveedor: str = "",
+    nro_comprobante: str = "",
+    fecha_compra: str = "",
+) -> Dict[str, Any]:
+    """Asigna el costo a una línea de OT. Costo = cantidad × precio unitario neto."""
+    cursor.execute("SELECT * FROM margenes_access WHERE id=? AND empresa_id=?;", (linea_id, empresa_id))
+    r = cursor.fetchone()
+    if not r:
+        raise ValueError("Línea de OT no encontrada.")
+    linea = dict(r)
+    precio = float(precio or 0)
+    tc = float(tc or 0)
+    moneda = "ARS" if (moneda or "").upper() in ("ARS", "$", "PESOS") else "USD"
+    if precio < 0:
+        raise ValueError("El precio no puede ser negativo.")
+    cant = float(linea.get("cantidad_total") or 0)
+    if cant <= 0:
+        has = float(linea.get("cantidad_has") or 0)
+        dosis = float(linea.get("dosis_ha") or 0) or (1.0 if _es_linea_laboreo(linea) else 0.0)
+        cant = round(has * dosis, 4)
+    if cant <= 0:
+        raise ValueError("La línea no tiene cantidad (hectáreas × dosis).")
+    if precio > 0 and tc <= 0:
+        raise ValueError("Indicá el tipo de cambio para calcular pesos y dólares.")
+    total = round(cant * precio, 2)
+    if moneda == "USD":
+        costo_usd, costo_ars = total, round(total * tc, 2)
+        precio_ars, precio_usd = round(precio * tc, 4), precio
+    else:
+        costo_ars, costo_usd = total, round(total / tc, 2) if tc else 0.0
+        precio_ars, precio_usd = precio, round(precio / tc, 4) if tc else 0.0
+
+    if mov_ingreso_id:
+        cursor.execute(
+            "SELECT fecha, proveedor_nombre, nro_comprobante FROM almacen_movimientos WHERE id=? AND empresa_id=?;",
+            (int(mov_ingreso_id), empresa_id),
+        )
+        m = cursor.fetchone()
+        if m:
+            fecha_compra = fecha_compra or (m["fecha"] or "")
+            proveedor = proveedor or (m["proveedor_nombre"] or "")
+            nro_comprobante = nro_comprobante or (m["nro_comprobante"] or "")
+
+    cursor.execute(
+        """
+        UPDATE margenes_access
+        SET cantidad_total=?, precio=?, tc=?, costo_ars=?, costo_usd=?, moneda_costo=?,
+            origen_costo=?, mov_ingreso_id=?, proveedor=?, nro_remito=?, fecha_compra=?,
+            fecha_costeo=?
+        WHERE id=?;
+        """,
+        (
+            cant, round(precio, 4), round(tc, 4), costo_ars, costo_usd, moneda,
+            (origen or "manual")[:20], int(mov_ingreso_id) if mov_ingreso_id else None,
+            proveedor or "", nro_comprobante or "", (fecha_compra or "")[:10],
+            datetime.now().strftime("%Y-%m-%d %H:%M"), linea_id,
+        ),
+    )
+
+    if linea.get("ot_consumo_id"):
+        es_lab = _es_linea_laboreo(linea)
+        cursor.execute(
+            "UPDATE ot_consumos SET costo_unitario_neto=?, costo_total_neto=? WHERE id=?;",
+            (
+                precio_ars if es_lab else precio_usd,
+                costo_ars if es_lab else costo_usd,
+                linea["ot_consumo_id"],
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE almacen_movimientos
+            SET precio_unitario_neto=?, importe_neto=?, precio_unitario_usd=?
+            WHERE id=(SELECT movimiento_id FROM ot_consumos WHERE id=?);
+            """,
+            (precio_ars, costo_ars, precio_usd, linea["ot_consumo_id"]),
+        )
+    if linea.get("ot_id"):
+        _recalcular_totales_ot(cursor, int(linea["ot_id"]))
+    return {
+        "status": "success",
+        "id": linea_id,
+        "cantidad": cant,
+        "precio": round(precio, 4),
+        "moneda": moneda,
+        "tc": round(tc, 4),
+        "costo_ars": costo_ars,
+        "costo_usd": costo_usd,
+    }
+
+
+def anular_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
+    """Anula una OT emitida en el sistema: devuelve el stock y borra sus líneas de costos."""
+    cursor.execute("SELECT * FROM ordenes_trabajo WHERE id=? AND empresa_id=?;", (ot_id, empresa_id))
+    ot = cursor.fetchone()
+    if not ot:
+        raise ValueError("OT no encontrada.")
+    if (ot["estado"] or "") == "Anulada":
+        raise ValueError("La OT ya está anulada.")
+    cursor.execute(
+        "SELECT id, item_id, cantidad FROM almacen_movimientos WHERE ot_id=? AND tipo_mov='egreso_ot';",
+        (ot_id,),
+    )
+    for m in cursor.fetchall():
+        cursor.execute(
+            "UPDATE almacen_items SET stock_cantidad=ROUND(COALESCE(stock_cantidad,0)+?, 6) WHERE id=?;",
+            (abs(float(m["cantidad"] or 0)), m["item_id"]),
+        )
+        cursor.execute("DELETE FROM almacen_movimientos WHERE id=?;", (m["id"],))
+    cursor.execute("UPDATE ot_consumos SET movimiento_id=NULL WHERE ot_id=?;", (ot_id,))
+    cursor.execute("DELETE FROM margenes_access WHERE ot_id=?;", (ot_id,))
+    cursor.execute(
+        """
+        UPDATE ordenes_trabajo
+        SET estado='Anulada', costo_insumos_neto=0, costo_laboreos_neto=0, costo_total_neto=0
+        WHERE id=?;
+        """,
+        (ot_id,),
+    )
+    return {"status": "success", "message": f"OT {ot['nro_ot']} anulada. El stock volvió al almacén."}
 
 
 def costos_por_lote_campania(cursor, campania_id: int, empresa_id: int) -> List[Dict[str, Any]]:

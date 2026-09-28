@@ -12,9 +12,13 @@
         .hint { font-size:12px; color:#64748b; }
         .font-mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
         .cons-tipo { font-weight:600; }
-        .cons-tipo option[value="producto"] { color:#1e40af; }
-        .cons-tipo option[value="laboreo"] { color:#92400e; }
-        .cons-cu, .cons-ct, th.costo-col { white-space: nowrap; }
+        .nav-tabs .nav-link { font-weight:600; color:#475569; }
+        .nav-tabs .nav-link.active { color:#0f172a; }
+        tr.ot-head td { background:#f8fafc; border-top:2px solid #cbd5e1; }
+        tr.linea-costeada td { background:#f0fdf4; }
+        .tabla-opc tr.posterior td { color:#94a3b8; }
+        .tabla-opc td, .tabla-opc th { font-size:12.5px; }
+        .badge-estado { font-size:11px; }
     </style>
 <script src="/campoplus-firma.js?v=2"></script>
     <script src="/campoplus-fechas.js"></script>
@@ -24,7 +28,7 @@
     <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
         <div>
             <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Órdenes de Trabajo</small></h4>
-            <p class="hint mb-0">Asigná productos y laboreos del almacén (costo neto) al lote / campaña.</p>
+            <p class="hint mb-0">El ingeniero emite la orden con productos, dosis y labores. El costo se asigna después, en "Costear OT".</p>
         </div>
         <div class="d-flex gap-2">
             <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
@@ -33,143 +37,341 @@
         </div>
     </div>
 
-    <div class="main-card">
-        <div class="row g-2">
-            <div class="col-md-2">
-                <label class="small fw-bold">Nº OT</label>
-                <input id="nroOT" class="form-control form-control-sm font-mono fw-bold" readonly>
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item"><button class="nav-link active" id="tabBtnEmitir" onclick="mostrarTab('emitir')">Emitir OT</button></li>
+        <li class="nav-item"><button class="nav-link" id="tabBtnCostear" onclick="mostrarTab('costear')">Costear OT <span class="badge bg-warning text-dark" id="badgePend"></span></button></li>
+    </ul>
+
+    <!-- ===================== EMITIR ===================== -->
+    <div id="tabEmitir">
+        <div class="main-card">
+            <div class="row g-2">
+                <div class="col-md-2">
+                    <label class="small fw-bold">Nº OT</label>
+                    <input id="nroOT" class="form-control form-control-sm font-mono fw-bold" title="Número sugerido. Podés cambiarlo para cargar una orden manual.">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Fecha orden</label>
+                    <input type="date" id="fechaOT" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Fecha aplicación</label>
+                    <input type="date" id="fechaAplic" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-3">
+                    <label class="small fw-bold">Tipo de labor</label>
+                    <select id="tipoLabor" class="form-select form-select-sm">
+                        <option>Pulverización Terrestre</option>
+                        <option>Pulverización Aérea</option>
+                        <option>Siembra Directa</option>
+                        <option>Fertilización</option>
+                        <option>Cosecha</option>
+                        <option>Laboreo general</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="small fw-bold">Labor cultural</label>
+                    <input id="laborCultural" class="form-control form-control-sm" list="dlLaborCultural" placeholder="Ej: Barbecho, Presiembra">
+                    <datalist id="dlLaborCultural">
+                        <option value="BARBECHO"></option><option value="BARBECHO LARGO"></option><option value="BARBECHO CORTO"></option>
+                        <option value="PRESIEMBRA"></option><option value="PREEMERGENCIA"></option><option value="POSTEMERGENCIA"></option>
+                        <option value="SIEMBRA"></option><option value="FERTILIZACION"></option><option value="FUNGICIDA"></option>
+                        <option value="INSECTICIDA"></option><option value="COSECHA"></option>
+                    </datalist>
+                </div>
+                <div class="col-md-4">
+                    <label class="small fw-bold">Contratista (proveedor)</label>
+                    <input id="contratista" class="form-control form-control-sm" list="dlProveedores" placeholder="Buscar por nombre o CUIT" oninput="onContratistaInput()">
+                    <datalist id="dlProveedores"></datalist>
+                    <div class="hint" id="contratistaInfo"></div>
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Campaña</label>
+                    <select id="selCampania" class="form-select form-select-sm"></select>
+                </div>
+                <div class="col-md-3">
+                    <label class="small fw-bold">Campo</label>
+                    <select id="selCampo" class="form-select form-select-sm" onchange="onCampoChange()"></select>
+                </div>
+                <div class="col-md-3">
+                    <label class="small fw-bold">Lote</label>
+                    <select id="selLote" class="form-select form-select-sm" onchange="onLoteChange()"></select>
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Has afectadas</label>
+                    <input type="number" step="0.01" id="superficie" class="form-control form-control-sm font-mono" value="0" oninput="recalcularLineas()">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Cultivo</label>
+                    <input id="cultivo" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-8">
+                    <label class="small fw-bold">Observaciones</label>
+                    <input id="observaciones" class="form-control form-control-sm">
+                </div>
             </div>
-            <div class="col-md-2">
-                <label class="small fw-bold">Fecha</label>
-                <input type="date" id="fechaOT" class="form-control form-control-sm" required>
+        </div>
+
+        <div class="main-card">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <div>
+                    <h5 class="fw-bold mb-0">Productos y labores</h5>
+                    <span class="hint">Podés elegir cualquier ítem del almacén aunque no tenga stock cargado. La salida se registra igual y el costo se asigna después.</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="agregarLinea('producto')">+ Producto</button>
+                    <button type="button" class="btn btn-sm btn-outline-warning fw-bold" onclick="agregarLinea('laboreo')">+ Labor</button>
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="small fw-bold">Tipo de labor</label>
-                <select id="tipoLabor" class="form-select form-select-sm">
-                    <option>Pulverización Terrestre</option>
-                    <option>Siembra Directa</option>
-                    <option>Fertilización</option>
-                    <option>Cosecha</option>
-                    <option>Laboreo general</option>
-                </select>
+            <datalist id="dlProductos"></datalist>
+            <datalist id="dlLabores"></datalist>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:120px;">Tipo</th>
+                            <th>Ítem del almacén</th>
+                            <th class="text-center" style="width:110px;">Dosis / ha</th>
+                            <th class="text-end" style="width:130px;">Cantidad</th>
+                            <th style="width:60px;">Un.</th>
+                            <th class="text-end" style="width:150px;">Stock actual</th>
+                            <th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaConsumos"></tbody>
+                </table>
             </div>
-            <div class="col-md-3">
-                <label class="small fw-bold">Contratista</label>
-                <input id="contratista" class="form-control form-control-sm" placeholder="Opcional si el laboreo ya está en almacén">
+            <div class="text-end mt-3">
+                <button class="btn btn-success fw-bold px-4" id="btnEmitir" onclick="emitirOT()">Emitir Orden de Trabajo</button>
             </div>
-            <div class="col-md-2">
-                <label class="small fw-bold">Campaña</label>
-                <select id="selCampania" class="form-select form-select-sm"></select>
+        </div>
+    </div>
+
+    <!-- ===================== COSTEAR ===================== -->
+    <div id="tabCostear" class="d-none">
+        <div class="main-card">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="small fw-bold">Nº OT</label>
+                    <input id="fNro" type="number" class="form-control form-control-sm font-mono" placeholder="Todas">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Campaña</label>
+                    <input id="fCampania" class="form-control form-control-sm" placeholder="Ej: 27-28">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Últimas OT</label>
+                    <select id="fUltimas" class="form-select form-select-sm">
+                        <option value="20">20</option><option value="40" selected>40</option><option value="100">100</option><option value="300">300</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" id="fPend" checked>
+                        <label class="form-check-label small fw-bold" for="fPend">Solo líneas sin costo</label>
+                    </div>
+                </div>
+                <div class="col-md-3 text-end">
+                    <button class="btn btn-sm btn-dark fw-bold" onclick="cargarLineas()">Buscar</button>
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="small fw-bold">Campo</label>
-                <select id="selCampo" class="form-select form-select-sm" onchange="onCampoChange()"></select>
-            </div>
-            <div class="col-md-3">
-                <label class="small fw-bold">Lote</label>
-                <select id="selLote" class="form-select form-select-sm" onchange="onLoteChange()"></select>
-            </div>
-            <div class="col-md-2">
-                <label class="small fw-bold">Has afectadas</label>
-                <input type="number" step="0.01" id="superficie" class="form-control form-control-sm font-mono" value="0" oninput="recalcularLineas()">
-            </div>
-            <div class="col-md-2">
-                <label class="small fw-bold">Cultivo</label>
-                <input id="cultivo" class="form-control form-control-sm" readonly>
+            <p class="hint mt-2 mb-0">Incluye las órdenes pasadas de Access que quedaron sin costo y las nuevas emitidas acá. Productos: elegí la compra del almacén por fecha y comprobante. Labores: tomá el precio de la factura del contratista. En ambos casos podés escribir el precio a mano.</p>
+        </div>
+        <div class="main-card">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Ítem</th>
+                            <th class="text-end">Dosis/ha</th>
+                            <th class="text-end">Cantidad</th>
+                            <th class="text-end">Precio unit.</th>
+                            <th class="text-end">TC</th>
+                            <th class="text-end">Costo U$S</th>
+                            <th class="text-end">Costo $</th>
+                            <th>Origen</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaLineas"><tr><td colspan="9" class="text-muted text-center py-3">Cargando...</td></tr></tbody>
+                </table>
             </div>
         </div>
     </div>
 
     <div class="main-card">
-        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-            <div>
-                <h5 class="fw-bold mb-0">Consumos desde almacén</h5>
-                <span class="hint" id="criterioCosto">Los productos se costean en U$S según el criterio de la empresa. Las labores siguen en pesos.</span>
-            </div>
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="agregarLinea('producto')">+ Producto</button>
-                <button type="button" class="btn btn-sm btn-outline-warning fw-bold" onclick="agregarLinea('laboreo')">+ Labor</button>
-            </div>
-        </div>
+        <h5 class="fw-bold">Últimas OT emitidas en el sistema</h5>
         <div class="table-responsive">
-            <table class="table table-sm table-bordered align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width:120px;">Tipo</th>
-                        <th>Ítem almacén</th>
-                        <th class="text-center">Dosis / ha</th>
-                        <th class="text-end">Cantidad</th>
-                        <th>Un.</th>
-                        <th class="text-end costo-col" style="min-width:9.5rem;">Costo unitario</th>
-                        <th class="text-end costo-col" style="min-width:9.5rem;">Costo total</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody id="tablaConsumos"></tbody>
-                <tfoot>
-                    <tr>
-                        <td colspan="6" class="text-end fw-bold">Total productos</td>
-                        <td class="text-end font-mono fw-bold text-nowrap" id="lblTotalOT">U$S 0,00</td>
-                        <td></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        <div class="text-end mt-3">
-            <button class="btn btn-success fw-bold px-4" onclick="emitirOT()">Emitir Orden de Trabajo</button>
-        </div>
-    </div>
-
-    <div class="main-card">
-        <h5 class="fw-bold">Últimas OT</h5>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-                <thead><tr><th>Nº</th><th>Fecha</th><th>Labor</th><th>Has</th><th class="text-end">Insumos U$S</th><th class="text-end">Laboreos $</th></tr></thead>
-                <tbody id="tablaOTHist"><tr><td colspan="6" class="text-muted text-center py-2"> - </td></tr></tbody>
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead><tr><th>Nº</th><th>Fecha</th><th>Campo / Lote</th><th>Labor</th><th>Contratista</th><th class="text-end">Has</th><th>Estado</th><th class="text-end">Insumos U$S</th><th class="text-end">Labores $</th><th></th></tr></thead>
+                <tbody id="tablaOTHist"><tr><td colspan="10" class="text-muted text-center py-2"> - </td></tr></tbody>
             </table>
         </div>
     </div>
 </div>
+
+<!-- ===================== MODAL COSTEO ===================== -->
+<div class="modal fade" id="modalCosteo" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title fw-bold" id="mcTitulo">Costear línea</h5>
+                    <div class="hint" id="mcSub"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="mcSugerido" class="alert alert-info py-2 small d-none"></div>
+                <h6 class="fw-bold" id="mcIngTitulo">Compras en el almacén</h6>
+                <div class="table-responsive mb-3" style="max-height:260px;">
+                    <table class="table table-sm table-hover tabla-opc mb-0">
+                        <thead class="table-light"><tr><th>Fecha</th><th>Ítem</th><th>Proveedor</th><th>Comprobante</th><th class="text-end">Cantidad</th><th class="text-end">$ neto</th><th class="text-end">U$S</th><th class="text-end">TC</th><th></th></tr></thead>
+                        <tbody id="mcIngresos"></tbody>
+                    </table>
+                </div>
+                <div id="mcFactWrap" class="d-none">
+                    <h6 class="fw-bold">Facturas del contratista <span class="hint" id="mcCuit"></span></h6>
+                    <div class="table-responsive mb-3" style="max-height:220px;">
+                        <table class="table table-sm table-hover tabla-opc mb-0">
+                            <thead class="table-light"><tr><th>Fecha</th><th>Comprobante</th><th class="text-end">Neto</th><th class="text-end">Total</th><th class="text-end">Neto / cantidad</th><th></th></tr></thead>
+                            <tbody id="mcFacturas"></tbody>
+                        </table>
+                    </div>
+                    <p class="hint">Si la factura abarca varios lotes, conviene escribir el precio por hectárea que figura en la factura.</p>
+                </div>
+                <div class="border rounded p-3 bg-light">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-2">
+                            <label class="small fw-bold">Precio unitario neto</label>
+                            <input type="number" step="0.0001" id="mcPrecio" class="form-control form-control-sm font-mono" oninput="mcPreview()">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="small fw-bold">Moneda</label>
+                            <select id="mcMoneda" class="form-select form-select-sm" onchange="mcPreview()">
+                                <option value="USD">U$S</option><option value="ARS">$</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="small fw-bold">Tipo de cambio</label>
+                            <input type="number" step="0.01" id="mcTC" class="form-control form-control-sm font-mono" oninput="mcPreview()">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="small fw-bold">Proveedor</label>
+                            <input id="mcProveedor" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="small fw-bold">Comprobante</label>
+                            <input id="mcComprobante" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-1">
+                            <label class="small fw-bold">F. compra</label>
+                            <input type="date" id="mcFechaCompra" class="form-control form-control-sm px-1">
+                        </div>
+                    </div>
+                    <div class="mt-2 small" id="mcPreview"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-success fw-bold" onclick="guardarCosteo()">Guardar costo</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 let camposCache = [];
 let lotesCache = [];
 let itemsCache = [];
 let planCache = [];
+let proveedoresCache = [];
+let lineasCache = [];
+let mcLinea = null;
+let mcOrigen = { origen: 'manual', mov_ingreso_id: null };
+let modalCosteo = null;
+
+function moneyAr(n, dec) {
+    const d = dec == null ? 2 : dec;
+    return Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function numAr(n) {
+    return Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 });
+}
+function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function fechaAr(f) {
+    return (f || '').slice(0, 10).split('-').reverse().join('/');
+}
+
+function mostrarTab(t) {
+    document.getElementById('tabEmitir').classList.toggle('d-none', t !== 'emitir');
+    document.getElementById('tabCostear').classList.toggle('d-none', t !== 'costear');
+    document.getElementById('tabBtnEmitir').classList.toggle('active', t === 'emitir');
+    document.getElementById('tabBtnCostear').classList.toggle('active', t === 'costear');
+    if (t === 'costear') cargarLineas();
+}
 
 async function init() {
-    document.getElementById('fechaOT').value = new Date().toISOString().split('T')[0];
-    const [nro, camps, campos, items, ots] = await Promise.all([
+    modalCosteo = new bootstrap.Modal(document.getElementById('modalCosteo'));
+    const hoy = new Date().toISOString().split('T')[0];
+    document.getElementById('fechaOT').value = hoy;
+    document.getElementById('fechaAplic').value = hoy;
+    const [nro, camps, campos, items, ots, provs] = await Promise.all([
         fetch('/api/agro/ot/siguiente_nro').then(r => r.json()),
         fetch('/api/agro/campanias').then(r => r.json()),
         fetch('/api/agro/campos').then(r => r.json()),
-        fetch('/api/agro/almacen/items?solo_con_stock=true&orden=nombre&solo_aplica_ot=true').then(r => r.json()),
-        fetch('/api/agro/ot?limit=20').then(r => r.json()),
+        fetch('/api/agro/almacen/items?orden=nombre&solo_aplica_ot=true').then(r => r.json()),
+        fetch('/api/agro/ot?limit=30').then(r => r.json()),
+        fetch('/api/entidades?rol=proveedor').then(r => r.ok ? r.json() : []).catch(() => []),
     ]);
     document.getElementById('nroOT').value = nro.nro_ot || '';
     camposCache = campos || [];
     itemsCache = (items || []).slice().sort((a, b) =>
         String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' })
     );
+    proveedoresCache = (provs || []).map(p => ({
+        cuit: p.cuit || '',
+        nombre: (p.nombre_fantasia || p.razon_social || '').trim(),
+        razon: (p.razon_social || '').trim(),
+    })).filter(p => p.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    document.getElementById('dlProveedores').innerHTML = proveedoresCache.map(p =>
+        `<option value="${esc(p.nombre)}">${esc(p.razon !== p.nombre ? p.razon + ' | ' : '')}CUIT ${esc(p.cuit)}</option>`
+    ).join('');
+    llenarDatalistItems();
+
     const selC = document.getElementById('selCampania');
-    selC.innerHTML = (camps || []).map(c => `<option value="${c.id}">Campaña ${c.codigo}</option>`).join('')
+    selC.innerHTML = (camps || []).map(c => `<option value="${c.id}" data-codigo="${esc(c.codigo)}">Campaña ${esc(c.codigo)}</option>`).join('')
         || '<option value="">Sin campaña</option>';
     const selCampo = document.getElementById('selCampo');
     selCampo.innerHTML = '<option value="">Seleccione...</option>' +
-        camposCache.map(c => `<option value="${c.id}">${c.nombre} (${c.tipo})</option>`).join('');
+        camposCache.map(c => `<option value="${c.id}">${esc(c.nombre)} (${esc(c.tipo)})</option>`).join('');
     renderHist(ots || []);
-    fetch('/api/configuracion').then(r => r.json()).then(cfg => {
-        const nombres = {
-            peps: 'Primero entrado, primero salido',
-            ueps: 'Último entrado, primero salido',
-            ppp: 'Precio promedio ponderado',
-            ultima: 'Precio de la última compra'
-        };
-        const el = document.getElementById('criterioCosto');
-        if (el) el.textContent = 'Criterio de la empresa: ' + (nombres[cfg.criterio_costo] || nombres.peps) + '. Los insumos salen en U$S; las labores, en pesos.';
-    }).catch(() => {});
+    agregarLinea('laboreo');
     agregarLinea('producto');
     if (selC.value) await cargarPlanCampania();
     selC.addEventListener('change', cargarPlanCampania);
+    actualizarBadgePendientes();
+}
+
+function llenarDatalistItems() {
+    const opt = i => `<option value="${esc(i.nombre)}">stock ${numAr(i.stock_cantidad)} ${esc(i.unidad || '')}</option>`;
+    document.getElementById('dlProductos').innerHTML = itemsCache.filter(i => (i.tipo || 'producto') !== 'laboreo').map(opt).join('');
+    document.getElementById('dlLabores').innerHTML = itemsCache.filter(i => i.tipo === 'laboreo').map(opt).join('');
+}
+
+function proveedorPorTexto(txt) {
+    const t = (txt || '').trim().toLowerCase();
+    if (!t) return null;
+    const dig = t.replace(/\D/g, '');
+    return proveedoresCache.find(p => p.nombre.toLowerCase() === t || p.razon.toLowerCase() === t)
+        || (dig.length >= 8 ? proveedoresCache.find(p => String(p.cuit).replace(/\D/g, '') === dig) : null);
+}
+function onContratistaInput() {
+    const p = proveedorPorTexto(document.getElementById('contratista').value);
+    document.getElementById('contratistaInfo').textContent = p ? ('CUIT ' + p.cuit) : '';
 }
 
 async function cargarPlanCampania() {
@@ -177,22 +379,19 @@ async function cargarPlanCampania() {
     planCache = [];
     if (!id) return;
     const res = await fetch(`/api/agro/campanias/${id}/plan`);
-    planCache = await res.json();
+    planCache = res.ok ? await res.json() : [];
 }
 
 async function onCampoChange() {
     const id = document.getElementById('selCampo').value;
     const selLote = document.getElementById('selLote');
     lotesCache = [];
-    if (!id) {
-        selLote.innerHTML = '';
-        return;
-    }
+    if (!id) { selLote.innerHTML = ''; return; }
     const res = await fetch(`/api/agro/campos/${id}`);
     const d = await res.json();
     lotesCache = d.lotes || [];
     selLote.innerHTML = lotesCache.map(l =>
-        `<option value="${l.id}" data-has="${l.superficie_campania || l.superficie_base || 0}">${l.nombre} (${Number(l.superficie_campania||l.superficie_base||0).toFixed(1)} has)</option>`
+        `<option value="${l.id}" data-has="${l.superficie_campania || l.superficie_base || 0}">${esc(l.nombre)} (${Number(l.superficie_campania||l.superficie_base||0).toFixed(1)} has)</option>`
     ).join('');
     onLoteChange();
 }
@@ -208,43 +407,13 @@ function onLoteChange() {
     recalcularLineas();
 }
 
-function moneyAr(n) {
-    return Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function escAttr(s) {
-    return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-function optsItems(tipo) {
-    const t = (tipo || 'producto').toLowerCase();
-    const list = itemsCache.filter(i => (i.tipo || 'producto') === t);
-    const vacio = `<option value="">Seleccione...</option>`;
-    if (!list.length) {
-        return `<option value="">Sin ${t === 'laboreo' ? 'labores' : 'productos'} con stock</option>`;
-    }
-    return vacio + list.map(i => {
-        const usd = Number(i.costo_promedio_usd || 0);
-        const ars = Number(i.costo_promedio_neto || 0);
-        const enUsd = t !== 'laboreo' && usd > 0;
-        const costo = enUsd ? usd : ars;
-        const moneda = enUsd ? 'USD' : 'ARS';
-        const precio = enUsd ? ('U$S ' + moneyAr(usd)) : ('$ ' + moneyAr(ars));
-        return `<option value="${i.id}" data-unidad="${escAttr(i.unidad||'')}" data-costo="${costo}" data-moneda="${moneda}" data-tipo="${escAttr(i.tipo)}">${escAttr(i.nombre)} · stock ${Number(i.stock_cantidad||0).toLocaleString('es-AR', {maximumFractionDigits:2})} ${escAttr(i.unidad||'')} · ${precio}</option>`;
-    }).join('');
-}
-
-function onTipoLineaChange(selTipo) {
-    const tr = selTipo.closest('tr');
-    const tipo = selTipo.value;
-    const selItem = tr.querySelector('.cons-item');
-    selItem.innerHTML = optsItems(tipo);
-    selTipo.classList.toggle('border-warning', tipo === 'laboreo');
-    selTipo.classList.toggle('border-primary', tipo === 'producto');
-    // labor: dosis típica 1 Has/ha
-    if (tipo === 'laboreo') {
-        const dosis = tr.querySelector('.cons-dosis');
-        if (parseFloat(dosis.value || 0) <= 0) dosis.value = '1';
-    }
-    onItemChange(selItem);
+function itemPorNombre(nombre, tipo) {
+    const n = (nombre || '').trim().toLowerCase();
+    if (!n) return null;
+    const lista = itemsCache.filter(i => i.nombre && i.nombre.trim().toLowerCase() === n &&
+        (tipo === 'laboreo' ? i.tipo === 'laboreo' : (i.tipo || 'producto') !== 'laboreo'));
+    lista.sort((a, b) => Number(b.stock_cantidad || 0) - Number(a.stock_cantidad || 0));
+    return lista[0] || null;
 }
 
 function agregarLinea(tipoInicial) {
@@ -252,88 +421,78 @@ function agregarLinea(tipoInicial) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td>
-            <select class="form-select form-select-sm cons-tipo" onchange="onTipoLineaChange(this)" title="Producto o Labor">
+            <select class="form-select form-select-sm cons-tipo" onchange="onTipoLineaChange(this)">
                 <option value="producto"${tipo==='producto'?' selected':''}>Producto</option>
                 <option value="laboreo"${tipo==='laboreo'?' selected':''}>Labor</option>
             </select>
         </td>
-        <td><select class="form-select form-select-sm cons-item" onchange="onItemChange(this)">${optsItems(tipo)}</select></td>
-        <td class="text-center"><input type="number" step="0.01" class="form-control form-control-sm font-mono cons-dosis" value="${tipo==='laboreo'?'1':'0'}" oninput="recalcularLineas()"></td>
-        <td class="text-end"><input type="number" step="0.01" class="form-control form-control-sm font-mono cons-cant" value="0" oninput="recalcularLineas()"></td>
-        <td class="cons-un small"> - </td>
-        <td class="text-end font-mono cons-cu">$ 0,00</td>
-        <td class="text-end font-mono fw-bold cons-ct">$ 0,00</td>
-        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove(); recalcularLineas();">×</button></td>`;
+        <td><input class="form-control form-control-sm cons-item" placeholder="Escribí para buscar..." oninput="onItemChange(this)"></td>
+        <td><input type="number" step="0.001" class="form-control form-control-sm font-mono text-end cons-dosis" value="${tipo==='laboreo'?'1':'0'}" oninput="recalcularLineas()"></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm font-mono text-end cons-cant" value="0"></td>
+        <td class="cons-un small"></td>
+        <td class="text-end font-mono small cons-stock"></td>
+        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove();">x</button></td>`;
     document.getElementById('tablaConsumos').appendChild(tr);
     onTipoLineaChange(tr.querySelector('.cons-tipo'));
 }
 
-function etiquetaCosto(moneda, n) {
-    if (!n) return moneda === 'USD' ? 's/U$S' : '$ 0,00';
-    return (moneda === 'USD' ? 'U$S ' : '$ ') + moneyAr(n);
-}
-function onItemChange(sel) {
-    const opt = sel.selectedOptions[0];
-    const tr = sel.closest('tr');
-    if (!opt || !opt.value) {
-        tr.querySelector('.cons-un').innerText = '';
-        tr.querySelector('.cons-cu').innerText = '';
-        tr.querySelector('.cons-ct').innerText = '';
-        recalcularLineas();
-        return;
+function onTipoLineaChange(selTipo) {
+    const tr = selTipo.closest('tr');
+    const tipo = selTipo.value;
+    const inp = tr.querySelector('.cons-item');
+    inp.setAttribute('list', tipo === 'laboreo' ? 'dlLabores' : 'dlProductos');
+    selTipo.classList.toggle('border-warning', tipo === 'laboreo');
+    selTipo.classList.toggle('border-primary', tipo === 'producto');
+    if (tipo === 'laboreo') {
+        const dosis = tr.querySelector('.cons-dosis');
+        if (parseFloat(dosis.value || 0) <= 0) dosis.value = '1';
     }
-    tr.querySelector('.cons-un').innerText = opt.dataset.unidad || '';
-    const cu = Number(opt.dataset.costo || 0);
-    tr.querySelector('.cons-cu').innerText = etiquetaCosto(opt.dataset.moneda, cu);
+    onItemChange(inp);
+}
+
+function onItemChange(inp) {
+    const tr = inp.closest('tr');
+    const tipo = tr.querySelector('.cons-tipo').value;
+    const it = itemPorNombre(inp.value, tipo);
+    tr.dataset.itemId = it ? it.id : '';
+    inp.classList.toggle('is-invalid', !!inp.value.trim() && !it);
+    tr.querySelector('.cons-un').textContent = it ? (it.unidad || '') : '';
+    const st = tr.querySelector('.cons-stock');
+    if (it && tipo !== 'laboreo') {
+        const s = Number(it.stock_cantidad || 0);
+        st.textContent = numAr(s) + ' ' + (it.unidad || '');
+        st.classList.toggle('text-danger', s <= 0);
+    } else {
+        st.textContent = '';
+    }
     recalcularLineas();
 }
 
-async function recalcularLineas() {
+function recalcularLineas() {
     const has = parseFloat(document.getElementById('superficie').value || 0);
-    let totalUsd = 0;
-    let totalArs = 0;
-    const filas = [...document.querySelectorAll('#tablaConsumos tr')];
-    for (const tr of filas) {
+    document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
         const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
         const cantInp = tr.querySelector('.cons-cant');
-        let cant = parseFloat(cantInp.value || 0);
-        const opt = tr.querySelector('.cons-item').selectedOptions[0];
-        if (!opt || !opt.value) {
-            tr.querySelector('.cons-ct').innerText = '';
-            continue;
+        if (dosis > 0 && has > 0 && !cantInp.dataset.manual) {
+            cantInp.value = Math.round(dosis * has * 1000) / 1000;
         }
-        if (dosis > 0 && has > 0 && (!cantInp.dataset.manual || cant < 0.0001)) {
-            cant = Math.round(dosis * has * 1000) / 1000;
-            cantInp.value = cant;
+        const st = tr.querySelector('.cons-stock');
+        const it = itemsCache.find(i => String(i.id) === tr.dataset.itemId);
+        if (it && it.tipo !== 'laboreo') {
+            const falta = parseFloat(cantInp.value || 0) > Number(it.stock_cantidad || 0) + 1e-6;
+            st.classList.toggle('text-danger', falta);
+            st.title = falta ? 'El almacén no tiene esa cantidad cargada. Se emite igual y el stock queda negativo.' : '';
         }
-        const moneda = opt.dataset.moneda || 'ARS';
-        if (moneda === 'USD' && opt.dataset.tipo !== 'laboreo') {
-            const pedir = cant > 0 ? cant : 1;
-            try {
-                const res = await fetch('/api/agro/almacen/valuacion?item_id=' + opt.value + '&cantidad=' + pedir);
-                const data = await res.json();
-                if (res.ok) {
-                    tr.querySelector('.cons-cu').innerText = etiquetaCosto('USD', data.costo_unitario);
-                    const total = cant > 0 ? Number(data.costo_total || 0) : 0;
-                    tr.querySelector('.cons-ct').innerText = etiquetaCosto('USD', total);
-                    totalUsd += total;
-                    const capas = (data.capas || []).filter(c => c.fecha);
-                    tr.title = capas.map(c => c.fecha.split('-').reverse().join('/') + ' · ' + c.cantidad + ' × U$S ' + moneyAr(c.costo_unitario)).join(' | ');
-                    continue;
-                }
-            } catch (e) { /* sigue con el promedio */ }
-        }
-        const cu = Number(opt.dataset.costo || 0);
-        const ct = cant * cu;
-        tr.querySelector('.cons-ct').innerText = etiquetaCosto(moneda, ct);
-        if (moneda === 'USD') totalUsd += ct;
-        else totalArs += ct;
-    }
-    document.getElementById('lblTotalOT').innerText = 'U$S ' + moneyAr(totalUsd) + (totalArs ? ' · labores $ ' + moneyAr(totalArs) : '');
+    });
 }
 
 document.addEventListener('input', e => {
     if (e.target.classList.contains('cons-cant')) e.target.dataset.manual = '1';
+    if (e.target.classList.contains('cons-dosis')) {
+        const c = e.target.closest('tr').querySelector('.cons-cant');
+        delete c.dataset.manual;
+        recalcularLineas();
+    }
 });
 
 async function emitirOT() {
@@ -342,50 +501,338 @@ async function emitirOT() {
     const campania_id = parseInt(document.getElementById('selCampania').value || 0, 10) || null;
     if (!campo_id || !lote_id) return alert('Seleccioná campo y lote.');
     const consumos = [];
+    const invalidos = [];
     document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
-        const item_id = parseInt(tr.querySelector('.cons-item').value || 0, 10);
+        const nombre = tr.querySelector('.cons-item').value.trim();
+        const item_id = parseInt(tr.dataset.itemId || 0, 10);
         const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
         const cantidad = parseFloat(tr.querySelector('.cons-cant').value || 0);
+        if (nombre && !item_id) invalidos.push(nombre);
         if (item_id && cantidad > 0) consumos.push({ item_id, dosis_por_ha: dosis, cantidad });
     });
-    if (!consumos.length) return alert('Agregá al menos un consumo del almacén.');
+    if (invalidos.length) return alert('Estos ítems no están en el almacén (elegilos de la lista):\n' + invalidos.join('\n'));
+    if (!consumos.length) return alert('Agregá al menos un producto o labor con cantidad.');
+    const contTxt = document.getElementById('contratista').value.trim();
+    const prov = proveedorPorTexto(contTxt);
+    if (contTxt && !prov && !confirm('El contratista no está en la lista de proveedores. Sin CUIT no se podrán traer sus facturas al costear. ¿Emitir igual?')) return;
     const payload = {
-        nro_ot: document.getElementById('nroOT').value,
+        nro_ot: document.getElementById('nroOT').value.trim(),
         fecha: document.getElementById('fechaOT').value,
+        fecha_aplicacion: document.getElementById('fechaAplic').value,
         tipo_labor: document.getElementById('tipoLabor').value,
-        contratista_nombre: document.getElementById('contratista').value.trim(),
+        labor_cultural: document.getElementById('laborCultural').value.trim(),
+        contratista_nombre: prov ? prov.nombre : contTxt,
+        contratista_cuit: prov ? prov.cuit : '',
         campania_id,
         campo_id,
         lote_id,
         superficie_has: parseFloat(document.getElementById('superficie').value || 0),
-        cultivo: document.getElementById('cultivo').value,
+        cultivo: document.getElementById('cultivo').value.trim(),
+        observaciones: document.getElementById('observaciones').value.trim(),
         consumos
     };
+    const btn = document.getElementById('btnEmitir');
+    btn.disabled = true;
     const res = await fetch('/api/agro/ot', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify(payload)
     });
-    const d = await res.json().catch(()=>({}));
+    const d = await res.json().catch(() => ({}));
+    btn.disabled = false;
     if (!res.ok) return alert(d.detail || 'Error al emitir OT');
-    alert(`${d.message}\nInsumos: U$S ${moneyAr(d.costo_insumos_neto)}\nLaboreos: $ ${moneyAr(d.costo_laboreos_neto)}`);
+    let msg = d.message;
+    if ((d.sin_stock || []).length) {
+        msg += '\n\n' + d.sin_stock.map(s => `${s.nombre}: había ${numAr(s.stock_previo)} ${s.unidad}, se usaron ${numAr(s.pedido)}`).join('\n');
+    }
+    alert(msg);
     location.reload();
+}
+
+function badgeEstado(e) {
+    const m = {
+        'Pendiente de costeo': 'bg-warning text-dark',
+        'Costeo parcial': 'bg-info text-dark',
+        'Costeada': 'bg-success',
+        'Anulada': 'bg-secondary',
+    };
+    return `<span class="badge badge-estado ${m[e] || 'bg-light text-dark'}">${esc(e || 'Emitida')}</span>`;
 }
 
 function renderHist(rows) {
     const tb = document.getElementById('tablaOTHist');
     if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="6" class="text-muted text-center py-2">Sin OT aún.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="10" class="text-muted text-center py-2">Todavía no hay OT emitidas en el sistema. Las anteriores de Access se ven en "Costear OT".</td></tr>`;
         return;
     }
-    tb.innerHTML = rows.map(o => `
-        <tr>
-            <td class="font-mono fw-bold">${o.nro_ot}</td>
-            <td>${(o.fecha||'').split('-').reverse().join('/')}</td>
-            <td>${o.tipo_labor||''}</td>
-            <td class="font-mono">${Number(o.superficie_has||0).toFixed(1)}</td>
-            <td class="text-end font-mono">U$S ${moneyAr(o.costo_insumos_neto)}</td>
-            <td class="text-end font-mono">$ ${moneyAr(o.costo_laboreos_neto)}</td>
-        </tr>`).join('');
+    tb.innerHTML = rows.map(o => {
+        const anulada = o.estado === 'Anulada';
+        const nro = String(o.nro_ot || '');
+        return `
+        <tr class="${anulada ? 'text-muted' : ''}">
+            <td class="font-mono fw-bold">${esc(nro)}</td>
+            <td>${fechaAr(o.fecha)}</td>
+            <td>${esc(o.campo_nombre || '')}${o.lote_nombre ? ' | ' + esc(o.lote_nombre) : ''}</td>
+            <td>${esc(o.tipo_labor || '')}</td>
+            <td>${esc(o.contratista_nombre || '')}</td>
+            <td class="text-end font-mono">${Number(o.superficie_has||0).toFixed(1)}</td>
+            <td>${badgeEstado(o.estado)}</td>
+            <td class="text-end font-mono">${moneyAr(o.costo_insumos_neto)}</td>
+            <td class="text-end font-mono">${moneyAr(o.costo_laboreos_neto)}</td>
+            <td class="text-nowrap text-end">
+                ${!anulada && /^\d+$/.test(nro) ? `<button class="btn btn-outline-success btn-sm py-0" onclick="irACostear(${nro})">Costear</button>` : ''}
+                ${!anulada ? `<button class="btn btn-outline-danger btn-sm py-0" onclick="anularOT(${o.id}, '${esc(nro)}')">Anular</button>` : ''}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function anularOT(id, nro) {
+    if (!confirm(`¿Anular la OT ${nro}? El stock vuelve al almacén y se borran sus costos. El número no se reutiliza.`)) return;
+    const res = await fetch(`/api/agro/ot/${id}/anular`, { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo anular');
+    alert(d.message);
+    location.reload();
+}
+
+function irACostear(nro) {
+    document.getElementById('fNro').value = nro;
+    document.getElementById('fPend').checked = false;
+    mostrarTab('costear');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function actualizarBadgePendientes() {
+    try {
+        const res = await fetch('/api/agro/ot/lineas?solo_pendientes=true&ultimas_ot=500');
+        const rows = res.ok ? await res.json() : [];
+        const nros = new Set(rows.map(r => r.nro_orden));
+        document.getElementById('badgePend').textContent = nros.size ? nros.size : '';
+    } catch (e) { /* sin badge */ }
+}
+
+// ===================== COSTEO =====================
+async function cargarLineas() {
+    const p = new URLSearchParams();
+    p.set('solo_pendientes', document.getElementById('fPend').checked ? 'true' : 'false');
+    p.set('ultimas_ot', document.getElementById('fUltimas').value);
+    const nro = document.getElementById('fNro').value.trim();
+    const camp = document.getElementById('fCampania').value.trim();
+    if (nro) p.set('nro_orden', nro);
+    if (camp) p.set('campania', camp);
+    const tb = document.getElementById('tablaLineas');
+    tb.innerHTML = '<tr><td colspan="9" class="text-muted text-center py-3">Cargando...</td></tr>';
+    const res = await fetch('/api/agro/ot/lineas?' + p.toString());
+    lineasCache = res.ok ? await res.json() : [];
+    renderLineas();
+}
+
+function renderLineas() {
+    const tb = document.getElementById('tablaLineas');
+    if (!lineasCache.length) {
+        tb.innerHTML = '<tr><td colspan="9" class="text-muted text-center py-3">No hay líneas para mostrar.</td></tr>';
+        return;
+    }
+    let html = '';
+    let actual = null;
+    for (const l of lineasCache) {
+        if (l.nro_orden !== actual) {
+            actual = l.nro_orden;
+            const grupo = lineasCache.filter(x => x.nro_orden === actual);
+            const usd = grupo.reduce((s, x) => s + Number(x.costo_usd || 0), 0);
+            const pend = grupo.filter(x => !Number(x.costo_usd || 0) && !Number(x.costo_ars || 0)).length;
+            const origen = l.ot_id ? '' : ' <span class="badge bg-light text-secondary border">Access</span>';
+            html += `<tr class="ot-head"><td colspan="9">
+                <span class="font-mono fw-bold">OT ${esc(l.nro_orden)}</span>${origen}
+                <span class="ms-2">${fechaAr(l.fecha_orden)}</span>
+                <span class="ms-2 fw-semibold">${esc(l.campo || '')}${l.lote ? ' | ' + esc(l.lote) : ''}</span>
+                <span class="ms-2">${numAr(l.cantidad_has)} has</span>
+                <span class="ms-2">${esc(l.cultivo || '')}</span>
+                <span class="ms-2 text-muted">Campaña ${esc(l.campania_codigo || '-')}</span>
+                <span class="float-end small">${pend ? `<span class="text-warning fw-bold">${pend} sin costo</span> | ` : ''}U$S ${moneyAr(usd)}</span>
+            </td></tr>`;
+        }
+        const esLab = !(l.producto || '').trim();
+        const costeada = Number(l.costo_usd || 0) || Number(l.costo_ars || 0);
+        const moneda = l.moneda_costo || (esLab ? 'ARS' : 'USD');
+        const precio = Number(l.precio || 0) ? ((moneda === 'ARS' ? '$ ' : 'U$S ') + moneyAr(l.precio, 2)) : '';
+        const nombre = esLab
+            ? `<span class="badge bg-warning-subtle text-warning-emphasis border me-1">Labor</span>${esc(l.laboreo || l.labor_cultural || '')}${l.contratista ? ` <span class="hint">| ${esc(l.contratista)}</span>` : ''}`
+            : `<span class="badge bg-primary-subtle text-primary-emphasis border me-1">Prod.</span>${esc(l.producto)}`;
+        const origenTxt = costeada ? esc([l.proveedor, l.nro_remito].filter(Boolean).join(' | ') || l.origen_costo || '') : '';
+        html += `<tr class="${costeada ? 'linea-costeada' : ''}">
+            <td>${nombre}</td>
+            <td class="text-end font-mono">${numAr(l.dosis_ha)}</td>
+            <td class="text-end font-mono">${numAr(l.cantidad_total)} ${esc(l.unidad || '')}</td>
+            <td class="text-end font-mono">${precio}</td>
+            <td class="text-end font-mono">${Number(l.tc || 0) ? moneyAr(l.tc) : ''}</td>
+            <td class="text-end font-mono">${costeada ? moneyAr(l.costo_usd) : ''}</td>
+            <td class="text-end font-mono">${costeada ? moneyAr(l.costo_ars) : ''}</td>
+            <td class="small">${origenTxt}</td>
+            <td class="text-end"><button class="btn btn-sm py-0 ${costeada ? 'btn-outline-secondary' : 'btn-success'}" onclick="abrirCosteo(${l.id})">${costeada ? 'Editar' : 'Costear'}</button></td>
+        </tr>`;
+    }
+    tb.innerHTML = html;
+}
+
+async function abrirCosteo(id) {
+    const res = await fetch(`/api/agro/ot/lineas/${id}/opciones`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo abrir la línea');
+    mcLinea = d;
+    mcOrigen = { origen: 'manual', mov_ingreso_id: null };
+    const l = d.linea;
+    const nombre = d.es_laboreo ? (l.laboreo || l.labor_cultural || 'Labor') : l.producto;
+    document.getElementById('mcTitulo').textContent = `OT ${l.nro_orden} | ${nombre}`;
+    document.getElementById('mcSub').textContent =
+        `${l.campo || ''}${l.lote ? ' | ' + l.lote : ''} | ${numAr(l.cantidad_has)} has | dosis ${numAr(l.dosis_ha)} | cantidad ${numAr(l.cantidad_total)} ${l.unidad || ''} | aplicación ${fechaAr(l.fecha_aplicacion || l.fecha_orden)}`
+        + (d.item ? '' : ' | (sin ítem de almacén asociado)');
+    document.getElementById('mcIngTitulo').textContent = d.es_laboreo
+        ? 'Labores cargadas en el almacén (de esta labor o del contratista)'
+        : 'Compras de este producto en el almacén (las posteriores a la aplicación se ven en gris)';
+
+    const sug = document.getElementById('mcSugerido');
+    if (d.sugerido_criterio && Number(d.sugerido_criterio.costo_unitario || 0) > 0) {
+        const s = d.sugerido_criterio;
+        sug.innerHTML = `Criterio de la empresa (${esc(s.criterio_nombre)}): <b>${s.moneda === 'USD' ? 'U$S' : '$'} ${moneyAr(s.costo_unitario, 4)}</b> por unidad.
+            <button class="btn btn-sm btn-outline-primary py-0 ms-2" onclick="usarSugerido()">Usar</button>`;
+        sug.classList.remove('d-none');
+    } else {
+        sug.classList.add('d-none');
+    }
+
+    document.getElementById('mcIngresos').innerHTML = (d.ingresos || []).length
+        ? d.ingresos.map((m, i) => `
+            <tr class="${m.posterior ? 'posterior' : ''}">
+                <td>${fechaAr(m.fecha)}</td>
+                <td>${esc(m.item_nombre)}</td>
+                <td>${esc(m.proveedor_nombre || '')}</td>
+                <td class="font-mono">${esc(m.nro_comprobante || '')}</td>
+                <td class="text-end font-mono">${numAr(m.cantidad)} ${esc(m.unidad || '')}</td>
+                <td class="text-end font-mono">${moneyAr(m.precio_unitario_neto)}</td>
+                <td class="text-end font-mono">${Number(m.precio_unitario_usd || 0) ? moneyAr(m.precio_unitario_usd, 4) : ''}</td>
+                <td class="text-end font-mono">${Number(m.tc || 0) ? moneyAr(m.tc) : ''}</td>
+                <td><button class="btn btn-sm btn-outline-success py-0" onclick="usarIngreso(${i})">Usar</button></td>
+            </tr>`).join('')
+        : '<tr><td colspan="9" class="text-muted text-center">No hay compras cargadas en el almacén para este ítem. Escribí el precio a mano.</td></tr>';
+
+    const fw = document.getElementById('mcFactWrap');
+    if (d.es_laboreo) {
+        fw.classList.remove('d-none');
+        document.getElementById('mcCuit').textContent = d.contratista_cuit ? ('CUIT ' + d.contratista_cuit) : '(contratista sin CUIT en proveedores)';
+        const cant = Number(l.cantidad_total || 0) || Number(l.cantidad_has || 0);
+        document.getElementById('mcFacturas').innerHTML = (d.facturas || []).length
+            ? d.facturas.map((f, i) => `
+                <tr>
+                    <td>${fechaAr(f.fecha)}</td>
+                    <td class="font-mono">${esc(f.comprobante)}</td>
+                    <td class="text-end font-mono">${moneyAr(f.neto_usar)}${f.neto_estimado ? ' <span class="hint" title="Neto estimado: total / 1,21">(est.)</span>' : ''}</td>
+                    <td class="text-end font-mono">${moneyAr(f.debe)}</td>
+                    <td class="text-end font-mono">${cant ? '$ ' + moneyAr(f.neto_usar / cant) : ''}</td>
+                    <td><button class="btn btn-sm btn-outline-success py-0" onclick="usarFactura(${i})" ${cant ? '' : 'disabled'}>Usar</button></td>
+                </tr>`).join('')
+            : '<tr><td colspan="6" class="text-muted text-center">Sin facturas del contratista en la cuenta corriente.</td></tr>';
+    } else {
+        fw.classList.add('d-none');
+    }
+
+    const moneda = l.moneda_costo || (d.es_laboreo ? 'ARS' : 'USD');
+    document.getElementById('mcPrecio').value = Number(l.precio || 0) ? l.precio : '';
+    document.getElementById('mcMoneda').value = moneda;
+    document.getElementById('mcTC').value = Number(l.tc || 0) ? l.tc : (d.tc_sugerido || '');
+    document.getElementById('mcProveedor').value = l.proveedor || '';
+    document.getElementById('mcComprobante').value = l.nro_remito || '';
+    document.getElementById('mcFechaCompra').value = (l.fecha_compra || '').slice(0, 10);
+    mcPreview();
+    modalCosteo.show();
+}
+
+function usarIngreso(i) {
+    const m = mcLinea.ingresos[i];
+    const usd = Number(m.precio_unitario_usd || 0);
+    if (!mcLinea.es_laboreo && usd > 0) {
+        document.getElementById('mcPrecio').value = usd;
+        document.getElementById('mcMoneda').value = 'USD';
+        if (Number(m.tc || 0)) document.getElementById('mcTC').value = m.tc;
+    } else {
+        document.getElementById('mcPrecio').value = m.precio_unitario_neto;
+        document.getElementById('mcMoneda').value = 'ARS';
+        if (Number(m.tc || 0)) document.getElementById('mcTC').value = m.tc;
+    }
+    document.getElementById('mcProveedor').value = m.proveedor_nombre || '';
+    document.getElementById('mcComprobante').value = m.nro_comprobante || '';
+    document.getElementById('mcFechaCompra').value = (m.fecha || '').slice(0, 10);
+    mcOrigen = { origen: 'almacen', mov_ingreso_id: m.id };
+    mcPreview();
+}
+
+function usarFactura(i) {
+    const f = mcLinea.facturas[i];
+    const l = mcLinea.linea;
+    const cant = Number(l.cantidad_total || 0) || Number(l.cantidad_has || 0);
+    if (!cant) return;
+    document.getElementById('mcPrecio').value = Math.round(f.neto_usar / cant * 100) / 100;
+    document.getElementById('mcMoneda').value = 'ARS';
+    document.getElementById('mcProveedor').value = l.contratista || '';
+    document.getElementById('mcComprobante').value = f.comprobante || '';
+    document.getElementById('mcFechaCompra').value = (f.fecha || '').slice(0, 10);
+    mcOrigen = { origen: 'factura', mov_ingreso_id: null };
+    mcPreview();
+}
+
+function usarSugerido() {
+    const s = mcLinea.sugerido_criterio;
+    document.getElementById('mcPrecio').value = s.costo_unitario;
+    document.getElementById('mcMoneda').value = s.moneda === 'USD' ? 'USD' : 'ARS';
+    mcOrigen = { origen: 'criterio', mov_ingreso_id: null };
+    mcPreview();
+}
+
+function mcCantidad() {
+    const l = mcLinea.linea;
+    let c = Number(l.cantidad_total || 0);
+    if (c <= 0) c = Number(l.cantidad_has || 0) * (Number(l.dosis_ha || 0) || (mcLinea.es_laboreo ? 1 : 0));
+    return c;
+}
+
+function mcPreview() {
+    if (!mcLinea) return;
+    const precio = parseFloat(document.getElementById('mcPrecio').value || 0);
+    const moneda = document.getElementById('mcMoneda').value;
+    const tc = parseFloat(document.getElementById('mcTC').value || 0);
+    const cant = mcCantidad();
+    const total = cant * precio;
+    let usd = 0, ars = 0;
+    if (moneda === 'USD') { usd = total; ars = total * tc; } else { ars = total; usd = tc ? total / tc : 0; }
+    document.getElementById('mcPreview').innerHTML =
+        `Cantidad ${numAr(cant)} ${esc(mcLinea.linea.unidad || '')} x ${moneda === 'USD' ? 'U$S' : '$'} ${moneyAr(precio, 4)} = <b>U$S ${moneyAr(usd)}</b> | <b>$ ${moneyAr(ars)}</b>`
+        + (precio > 0 && !tc ? ' <span class="text-danger fw-bold">Falta el tipo de cambio.</span>' : '');
+}
+
+async function guardarCosteo() {
+    const precio = parseFloat(document.getElementById('mcPrecio').value || 0);
+    const tc = parseFloat(document.getElementById('mcTC').value || 0);
+    if (!(precio > 0)) return alert('Indicá el precio unitario.');
+    if (!(tc > 0)) return alert('Indicá el tipo de cambio.');
+    const body = {
+        precio,
+        moneda: document.getElementById('mcMoneda').value,
+        tc,
+        origen: mcOrigen.origen,
+        mov_ingreso_id: mcOrigen.mov_ingreso_id,
+        proveedor: document.getElementById('mcProveedor').value.trim(),
+        nro_comprobante: document.getElementById('mcComprobante').value.trim(),
+        fecha_compra: document.getElementById('mcFechaCompra').value,
+    };
+    const res = await fetch(`/api/agro/ot/lineas/${mcLinea.linea.id}/costo`, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo guardar el costo');
+    modalCosteo.hide();
+    await cargarLineas();
+    actualizarBadgePendientes();
+    fetch('/api/agro/ot?limit=30').then(r => r.json()).then(renderHist).catch(() => {});
 }
 
 init();

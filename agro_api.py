@@ -95,6 +95,87 @@ class PlanLoteLoteModel(BaseModel):
     items: List[PlanLoteItemModel]
 
 
+# Con `from __future__ import annotations` los modelos del body tienen que estar
+# a nivel de módulo; definidos dentro de register_agro_routes FastAPI los toma como query.
+class AlmacenIngresoModel(BaseModel):
+    item_id: Optional[int] = None
+    tipo: str = "producto"  # producto | laboreo
+    codigo: Optional[str] = ""
+    nombre: Optional[str] = ""
+    categoria: Optional[str] = ""
+    categoria_codigo: Optional[str] = ""
+    unidad: Optional[str] = "Kg"
+    fecha: Optional[str] = ""
+    cantidad: float
+    precio_unitario_neto: float  # SIN impuestos
+    proveedor_cuit: Optional[str] = ""
+    proveedor_nombre: Optional[str] = ""
+    nro_comprobante: Optional[str] = ""
+    observaciones: Optional[str] = ""
+
+
+class AlmacenCategoriaModel(BaseModel):
+    codigo: str
+    nombre: str
+    aplica_ot: bool = False
+    orden: int = 100
+
+
+class AlmacenItemCategoriaModel(BaseModel):
+    categoria_codigo: Optional[str] = None
+    tipo: Optional[str] = None  # producto | laboreo
+    unidad: Optional[str] = None
+
+
+class OtConsumoModel(BaseModel):
+    item_id: int
+    dosis_por_ha: float = 0.0
+    cantidad: float = 0.0
+
+
+class OrdenTrabajoModel(BaseModel):
+    fecha: str
+    tipo_labor: str
+    contratista_nombre: Optional[str] = ""
+    contratista_cuit: Optional[str] = ""
+    campania_id: Optional[int] = None
+    campo_id: Optional[int] = None
+    lote_id: Optional[int] = None
+    superficie_has: float = 0.0
+    cultivo: Optional[str] = ""
+    observaciones: Optional[str] = ""
+    nro_ot: Optional[str] = ""
+    fecha_aplicacion: Optional[str] = ""
+    labor_cultural: Optional[str] = ""
+    consumos: Optional[List[OtConsumoModel]] = None
+
+
+class CosteoLineaModel(BaseModel):
+    precio: float
+    moneda: str = "USD"
+    tc: float = 0.0
+    origen: str = "manual"
+    mov_ingreso_id: Optional[int] = None
+    proveedor: Optional[str] = ""
+    nro_comprobante: Optional[str] = ""
+    fecha_compra: Optional[str] = ""
+
+
+class AlquilerVentaModel(BaseModel):
+    locador: str
+    campania_codigo: str
+    grano: str
+    tns_vendidas: float
+    precio_pizarra: float = 0
+    fecha_pizarra: Optional[str] = ""
+    dias_pago: int = 12
+    fecha_pago: Optional[str] = ""
+    detalle: Optional[str] = "Venta"
+    actividad: Optional[str] = ""
+    cuenta: Optional[str] = ""
+    forzar: bool = False  # permite vender por encima del saldo
+
+
 def _guardar_contrato_campo(cursor, campo_id: int, empresa_id: int, contrato: ContratoArrendamientoModel) -> int:
     cursor.execute(
         """
@@ -601,6 +682,10 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         valuar_salida_insumo,
         siguiente_nro_ot,
         costos_por_lote_campania,
+        listar_lineas_ot,
+        opciones_costeo_linea,
+        costear_linea_ot,
+        anular_ot,
     )
 
     try:
@@ -610,52 +695,6 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         _ca.close()
     except Exception as e:
         print(f"AVISO init almacen schema: {e}")
-
-    class AlmacenIngresoModel(BaseModel):
-        item_id: Optional[int] = None
-        tipo: str = "producto"  # producto | laboreo
-        codigo: Optional[str] = ""
-        nombre: Optional[str] = ""
-        categoria: Optional[str] = ""
-        categoria_codigo: Optional[str] = ""
-        unidad: Optional[str] = "Kg"
-        fecha: Optional[str] = ""
-        cantidad: float
-        precio_unitario_neto: float  # SIN impuestos
-        proveedor_cuit: Optional[str] = ""
-        proveedor_nombre: Optional[str] = ""
-        nro_comprobante: Optional[str] = ""
-        observaciones: Optional[str] = ""
-
-    class AlmacenCategoriaModel(BaseModel):
-        codigo: str
-        nombre: str
-        aplica_ot: bool = False
-        orden: int = 100
-
-    class AlmacenItemCategoriaModel(BaseModel):
-        categoria_codigo: Optional[str] = None
-        tipo: Optional[str] = None  # producto | laboreo
-        unidad: Optional[str] = None
-
-    class OtConsumoModel(BaseModel):
-        item_id: int
-        dosis_por_ha: float = 0.0
-        cantidad: float = 0.0
-
-    class OrdenTrabajoModel(BaseModel):
-        fecha: str
-        tipo_labor: str
-        contratista_nombre: Optional[str] = ""
-        contratista_cuit: Optional[str] = ""
-        campania_id: Optional[int] = None
-        campo_id: Optional[int] = None
-        lote_id: Optional[int] = None
-        superficie_has: float = 0.0
-        cultivo: Optional[str] = ""
-        observaciones: Optional[str] = ""
-        nro_ot: Optional[str] = ""
-        consumos: Optional[List[OtConsumoModel]] = None
 
     @app.get("/api/agro/almacen/categorias")
     def api_almacen_categorias(solo_aplica_ot: Optional[bool] = None):
@@ -875,12 +914,18 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         empresa_id = get_empresa_activa_id()
         conn = get_db()
         cur = conn.cursor()
-        q = "SELECT * FROM ordenes_trabajo WHERE empresa_id=?"
+        q = """
+            SELECT o.*, c.nombre AS campo_nombre, l.nombre AS lote_nombre
+            FROM ordenes_trabajo o
+            LEFT JOIN campos_agro c ON c.id = o.campo_id
+            LEFT JOIN lotes_agro l ON l.id = o.lote_id
+            WHERE o.empresa_id=?
+        """
         params: List[Any] = [empresa_id]
         if campania_id:
-            q += " AND campania_id=?"
+            q += " AND o.campania_id=?"
             params.append(campania_id)
-        q += " ORDER BY fecha DESC, id DESC LIMIT ?;"
+        q += " ORDER BY o.id DESC LIMIT ?;"
         params.append(limit)
         cur.execute(q, params)
         rows = [dict(r) for r in cur.fetchall()]
@@ -909,12 +954,87 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                 observaciones=data.observaciones or "",
                 consumos=consumos,
                 nro_ot=data.nro_ot or None,
+                fecha_aplicacion=data.fecha_aplicacion or "",
+                labor_cultural=data.labor_cultural or "",
             )
             conn.commit()
         except Exception as e:
             conn.rollback()
             conn.close()
             raise HTTPException(status_code=400, detail=str(e))
+        conn.close()
+        return result
+
+    @app.get("/api/agro/ot/lineas")
+    def api_ot_lineas(
+        solo_pendientes: bool = True,
+        nro_orden: Optional[int] = None,
+        campania: Optional[str] = None,
+        ultimas_ot: int = 40,
+    ):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        rows = listar_lineas_ot(
+            cur, empresa_id,
+            solo_pendientes=solo_pendientes,
+            nro_orden=nro_orden,
+            campania_codigo=normalizar_codigo_campania(campania) if campania else "",
+            ultimas_ot=ultimas_ot,
+        )
+        conn.close()
+        return rows
+
+    @app.get("/api/agro/ot/lineas/{linea_id}/opciones")
+    def api_ot_linea_opciones(linea_id: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            data = opciones_costeo_linea(cur, empresa_id, linea_id)
+        except ValueError as e:
+            conn.close()
+            raise HTTPException(404, str(e))
+        conn.close()
+        return data
+
+    @app.put("/api/agro/ot/lineas/{linea_id}/costo")
+    def api_ot_linea_costear(linea_id: int, data: CosteoLineaModel):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            result = costear_linea_ot(
+                cur, empresa_id, linea_id,
+                precio=data.precio,
+                moneda=data.moneda,
+                tc=data.tc,
+                origen=data.origen,
+                mov_ingreso_id=data.mov_ingreso_id,
+                proveedor=data.proveedor or "",
+                nro_comprobante=data.nro_comprobante or "",
+                fecha_compra=data.fecha_compra or "",
+            )
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, str(e))
+        conn.close()
+        return result
+
+    @app.post("/api/agro/ot/{ot_id}/anular")
+    def api_ot_anular(ot_id: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            result = anular_ot(cur, empresa_id, ot_id)
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, str(e))
         conn.close()
         return result
 
@@ -1210,20 +1330,6 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-
-    class AlquilerVentaModel(BaseModel):
-        locador: str
-        campania_codigo: str
-        grano: str
-        tns_vendidas: float
-        precio_pizarra: float = 0
-        fecha_pizarra: Optional[str] = ""
-        dias_pago: int = 12
-        fecha_pago: Optional[str] = ""
-        detalle: Optional[str] = "Venta"
-        actividad: Optional[str] = ""
-        cuenta: Optional[str] = ""
-        forzar: bool = False  # permite vender por encima del saldo
 
     @app.post("/api/agro/alquileres_cc/venta")
     def api_alquileres_cc_venta(data: AlquilerVentaModel):
