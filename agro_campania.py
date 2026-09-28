@@ -71,7 +71,10 @@ def normalizar_codigo_campania(codigo: Optional[str]) -> str:
         b = int(nums[1]) % 100
         return f"{a:02d}-{b:02d}"
     if len(nums) == 1 and len(nums[0]) == 4:
-        # Solo año de inicio
+        a, b = int(nums[0][:2]), int(nums[0][2:])
+        # Access guarda la campaña como AABB (2627 = 26/27); si no, es año de inicio
+        if b == (a + 1) % 100:
+            return f"{a:02d}-{b:02d}"
         return codigo_campania_desde_anio_inicio(int(nums[0]))
     return raw.replace("/", "-")
 

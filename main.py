@@ -8402,6 +8402,61 @@ def _completar_padron_access_una_vez() -> None:
 _completar_padron_access_una_vez()
 
 
+def _corregir_campanias_margenes_una_vez() -> None:
+    """Access guarda la campaña de Márgenes como AABB (2627 = 26/27) y el import la
+    leía como año de inicio (27-28). Reasigna por Id de Access solo los renglones que
+    siguen con el código erróneo; deja copia previa en margenes_access_campania_bak."""
+    import json
+
+    ruta = os.path.join(BASE_DIR, "datos", "margenes_campania_fix.json")
+    if not os.path.exists(DB_PATH) or not os.path.exists(ruta):
+        return
+    flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
+    os.makedirs(flag_dir, exist_ok=True)
+    flag = os.path.join(flag_dir, ".margenes_campania_v1")
+    if os.path.exists(flag):
+        return
+    with open(ruta, encoding="utf-8") as fh:
+        grupos = json.load(fh)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        if not cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='margenes_access';").fetchone():
+            return
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS margenes_access_campania_bak AS
+            SELECT id, id_access, campania_codigo FROM margenes_access WHERE id_access IS NOT NULL;
+            """
+        )
+        total = 0
+        for clave, ids in grupos.items():
+            erroneo, correcto = clave.split("|")
+            for i in range(0, len(ids), 500):
+                lote = ids[i:i + 500]
+                ph = ",".join("?" for _ in lote)
+                cur.execute(
+                    f"""
+                    UPDATE margenes_access SET campania_codigo = ?
+                    WHERE campania_codigo = ? AND CAST(id_access AS INTEGER) IN ({ph});
+                    """,
+                    (correcto, erroneo, *lote),
+                )
+                total += cur.rowcount
+        conn.commit()
+        print(f"[margenes] campañas de Access corregidas: {total}")
+    except sqlite3.Error as exc:
+        print(f"[margenes] no se pudo corregir campañas: {exc}")
+        return
+    finally:
+        conn.close()
+    with open(flag, "w", encoding="utf-8") as fh:
+        fh.write("ok")
+
+
+_corregir_campanias_margenes_una_vez()
+
+
 def _indices_cuit_normalizado() -> None:
     """Las cuentas corrientes se cruzan con el padrón por REPLACE(cuit,'-','');
     sin estos índices cada cruce recorre todo el padrón por cada movimiento."""
