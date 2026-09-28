@@ -125,9 +125,7 @@
             <label class="block text-[10px] font-bold uppercase text-slate-500" title="Índice Sugerido de Alquiler Ganadero (MAG), $/kg carne">Índice MAG $/kg</label>
             <input type="text" id="paramMag" inputmode="decimal"
                    class="w-28 rounded-md border border-slate-300 p-2 font-bold text-right font-mono"
-                   onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this, 3); guardarMag()" value="4.249,438">
-            <span id="lblMagFecha" class="block text-[9px] text-slate-400"></span>
-        </div>
+                   onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this, 3); guardarMag()" value="4.249,438">        </div>
         <label class="flex items-center gap-2 px-2 py-2 border rounded-md bg-slate-50 cursor-pointer select-none">
             <input type="checkbox" id="chkDisp" checked class="rounded border-slate-400">
             <span class="font-semibold text-slate-700">Disponibilidades a hoy<br><span class="font-normal text-[10px] text-slate-500">(saldos, caja, FCI, plazos fijos)</span></span>
@@ -347,7 +345,6 @@ async function cargarMag() {
         if (v.valor) {
             magGuardado = Number(v.valor);
             document.getElementById('paramMag').value = formatMoney(magGuardado, 3);
-            document.getElementById('lblMagFecha').textContent = 'vigente desde ' + fmtFecha(v.fecha);
         }
     } catch (e) { console.warn('MAG', e); }
 }
