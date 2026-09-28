@@ -44,6 +44,10 @@
 
     <!-- ===================== EMITIR ===================== -->
     <div id="tabEmitir">
+        <div id="bannerEdicion" class="alert alert-warning d-none d-flex justify-content-between align-items-center py-2">
+            <span>Editando la <b id="bannerNro"></b>. Al guardar se rehacen las salidas de almacén y las líneas de costo; el costeo ya cargado se conserva.</span>
+            <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="cancelarEdicion()">Cancelar edición</button>
+        </div>
         <div class="main-card">
             <div class="row g-2">
                 <div class="col-md-2">
@@ -82,26 +86,41 @@
                     <label class="small fw-bold">Campaña</label>
                     <select id="selCampania" class="form-select form-select-sm"></select>
                 </div>
-                <div class="col-md-3">
-                    <label class="small fw-bold">Campo</label>
-                    <select id="selCampo" class="form-select form-select-sm" onchange="onCampoChange()"></select>
-                </div>
-                <div class="col-md-3">
-                    <label class="small fw-bold">Lote</label>
-                    <select id="selLote" class="form-select form-select-sm" onchange="onLoteChange()"></select>
-                </div>
-                <div class="col-md-2">
-                    <label class="small fw-bold">Has afectadas</label>
-                    <input type="number" step="0.01" id="superficie" class="form-control form-control-sm font-mono" value="0" oninput="recalcularLineas()">
-                </div>
-                <div class="col-md-2">
-                    <label class="small fw-bold">Cultivo</label>
-                    <input id="cultivo" class="form-control form-control-sm">
-                </div>
-                <div class="col-md-8">
+                <div class="col-md-6">
                     <label class="small fw-bold">Observaciones</label>
                     <input id="observaciones" class="form-control form-control-sm">
                 </div>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <div>
+                    <h5 class="fw-bold mb-0">Campos y lotes de la orden</h5>
+                    <span class="hint">La misma OT puede aplicarse a varios lotes o campos. Cada producto se reparte según las hectáreas de cada lote.</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="agregarDestino()">+ Campo / lote</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Campo</th>
+                            <th>Lote</th>
+                            <th class="text-end" style="width:130px;">Has afectadas</th>
+                            <th style="width:180px;">Cultivo</th>
+                            <th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaDestinos"></tbody>
+                    <tfoot>
+                        <tr class="table-light">
+                            <td colspan="2" class="text-end fw-bold">Total has</td>
+                            <td class="text-end font-mono fw-bold" id="totalHas">0</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
         </div>
 
@@ -276,7 +295,8 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 let camposCache = [];
-let lotesCache = [];
+const lotesPorCampo = {};
+let otEditId = null;
 let itemsCache = [];
 let planCache = [];
 let proveedoresCache = [];
@@ -338,16 +358,88 @@ async function init() {
     const selC = document.getElementById('selCampania');
     selC.innerHTML = (camps || []).map(c => `<option value="${c.id}" data-codigo="${esc(c.codigo)}">Campaña ${esc(c.codigo)}</option>`).join('')
         || '<option value="">Sin campaña</option>';
-    const selCampo = document.getElementById('selCampo');
-    selCampo.innerHTML = '<option value="">Seleccione...</option>' +
-        camposCache.map(c => `<option value="${c.id}">${esc(c.nombre)} (${esc(c.tipo)})</option>`).join('');
     renderHist(ots || []);
     llenarTiposLabor();
+    agregarDestino();
     agregarLinea('producto');
     onTipoLaborChange();
     if (selC.value) await cargarPlanCampania();
     selC.addEventListener('change', cargarPlanCampania);
     actualizarBadgePendientes();
+}
+
+// ===================== DESTINOS (campos / lotes) =====================
+async function lotesDeCampo(id) {
+    if (!id) return [];
+    if (!lotesPorCampo[id]) {
+        const res = await fetch(`/api/agro/campos/${id}`);
+        const d = res.ok ? await res.json() : {};
+        lotesPorCampo[id] = d.lotes || [];
+    }
+    return lotesPorCampo[id];
+}
+
+async function agregarDestino(d) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><select class="form-select form-select-sm dest-campo" onchange="onDestCampoChange(this)">
+            <option value="">Seleccione...</option>
+            ${camposCache.map(c => `<option value="${c.id}">${esc(c.nombre)} (${esc(c.tipo)})</option>`).join('')}
+        </select></td>
+        <td><select class="form-select form-select-sm dest-lote" onchange="onDestLoteChange(this)"></select></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm font-mono text-end dest-has" value="0" oninput="recalcularLineas()"></td>
+        <td><input class="form-control form-control-sm dest-cultivo"></td>
+        <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="quitarDestino(this)">x</button></td>`;
+    document.getElementById('tablaDestinos').appendChild(tr);
+    if (d && d.campo_id) {
+        tr.querySelector('.dest-campo').value = String(d.campo_id);
+        await onDestCampoChange(tr.querySelector('.dest-campo'), true);
+        if (d.lote_id) tr.querySelector('.dest-lote').value = String(d.lote_id);
+        tr.querySelector('.dest-has').value = Number(d.superficie_has || 0);
+        tr.querySelector('.dest-cultivo').value = d.cultivo || '';
+    }
+    recalcularLineas();
+    return tr;
+}
+
+function quitarDestino(btn) {
+    const tb = document.getElementById('tablaDestinos');
+    if (tb.children.length <= 1) return alert('La OT necesita al menos un campo y lote.');
+    btn.closest('tr').remove();
+    recalcularLineas();
+}
+
+async function onDestCampoChange(sel, sinAutocompletar) {
+    const tr = sel.closest('tr');
+    const selLote = tr.querySelector('.dest-lote');
+    const lotes = await lotesDeCampo(sel.value);
+    selLote.innerHTML = lotes.map(l =>
+        `<option value="${l.id}" data-has="${l.superficie_campania || l.superficie_base || 0}">${esc(l.nombre)} (${Number(l.superficie_campania||l.superficie_base||0).toFixed(1)} has)</option>`
+    ).join('');
+    if (!sinAutocompletar) onDestLoteChange(selLote);
+}
+
+function onDestLoteChange(selLote) {
+    const tr = selLote.closest('tr');
+    const opt = selLote.selectedOptions[0];
+    tr.querySelector('.dest-has').value = opt ? (opt.dataset.has || 0) : 0;
+    const loteId = opt ? parseInt(opt.value, 10) : 0;
+    const pl = planCache.find(p => p.lote_id === loteId);
+    tr.querySelector('.dest-cultivo').value = pl ? (pl.cultivo_planificado || pl.cultivo_sugerido || '') : '';
+    recalcularLineas();
+}
+
+function leerDestinos() {
+    return [...document.querySelectorAll('#tablaDestinos tr')].map(tr => ({
+        campo_id: parseInt(tr.querySelector('.dest-campo').value || 0, 10) || null,
+        lote_id: parseInt(tr.querySelector('.dest-lote').value || 0, 10) || null,
+        superficie_has: parseFloat(tr.querySelector('.dest-has').value || 0),
+        cultivo: tr.querySelector('.dest-cultivo').value.trim(),
+    }));
+}
+
+function totalHas() {
+    return leerDestinos().reduce((s, d) => s + (d.superficie_has || 0), 0);
 }
 
 function llenarDatalistItems() {
@@ -415,31 +507,6 @@ async function cargarPlanCampania() {
     planCache = res.ok ? await res.json() : [];
 }
 
-async function onCampoChange() {
-    const id = document.getElementById('selCampo').value;
-    const selLote = document.getElementById('selLote');
-    lotesCache = [];
-    if (!id) { selLote.innerHTML = ''; return; }
-    const res = await fetch(`/api/agro/campos/${id}`);
-    const d = await res.json();
-    lotesCache = d.lotes || [];
-    selLote.innerHTML = lotesCache.map(l =>
-        `<option value="${l.id}" data-has="${l.superficie_campania || l.superficie_base || 0}">${esc(l.nombre)} (${Number(l.superficie_campania||l.superficie_base||0).toFixed(1)} has)</option>`
-    ).join('');
-    onLoteChange();
-}
-
-function onLoteChange() {
-    const opt = document.getElementById('selLote').selectedOptions[0];
-    if (opt) {
-        document.getElementById('superficie').value = opt.dataset.has || 0;
-        const loteId = parseInt(opt.value, 10);
-        const pl = planCache.find(p => p.lote_id === loteId);
-        document.getElementById('cultivo').value = pl ? (pl.cultivo_planificado || pl.cultivo_sugerido || '') : '';
-    }
-    recalcularLineas();
-}
-
 function itemPorNombre(nombre, tipo) {
     const n = (nombre || '').trim().toLowerCase();
     if (!n) return null;
@@ -502,7 +569,8 @@ function onItemChange(inp) {
 }
 
 function recalcularLineas() {
-    const has = parseFloat(document.getElementById('superficie').value || 0);
+    const has = totalHas();
+    document.getElementById('totalHas').textContent = numAr(has);
     document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
         const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
         const cantInp = tr.querySelector('.cons-cant');
@@ -529,10 +597,13 @@ document.addEventListener('input', e => {
 });
 
 async function emitirOT() {
-    const lote_id = parseInt(document.getElementById('selLote').value || 0, 10);
-    const campo_id = parseInt(document.getElementById('selCampo').value || 0, 10);
     const campania_id = parseInt(document.getElementById('selCampania').value || 0, 10) || null;
-    if (!campo_id || !lote_id) return alert('Seleccioná campo y lote.');
+    const destinos = leerDestinos();
+    if (!destinos.length || destinos.some(d => !d.campo_id || !d.lote_id)) {
+        return alert('Seleccioná campo y lote en cada fila de "Campos y lotes de la orden".');
+    }
+    const lotesIds = destinos.map(d => d.lote_id);
+    if (new Set(lotesIds).size !== lotesIds.length) return alert('Hay un lote repetido en la orden.');
     const consumos = [];
     const invalidos = [];
     document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
@@ -558,22 +629,23 @@ async function emitirOT() {
         contratista_nombre: prov ? prov.nombre : contTxt,
         contratista_cuit: prov ? prov.cuit : '',
         campania_id,
-        campo_id,
-        lote_id,
-        superficie_has: parseFloat(document.getElementById('superficie').value || 0),
-        cultivo: document.getElementById('cultivo').value.trim(),
+        campo_id: destinos[0].campo_id,
+        lote_id: destinos[0].lote_id,
+        superficie_has: totalHas(),
+        cultivo: destinos[0].cultivo,
         observaciones: document.getElementById('observaciones').value.trim(),
+        destinos,
         consumos
     };
     const btn = document.getElementById('btnEmitir');
     btn.disabled = true;
-    const res = await fetch('/api/agro/ot', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+    const res = await fetch(otEditId ? `/api/agro/ot/${otEditId}` : '/api/agro/ot', {
+        method: otEditId ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify(payload)
     });
     const d = await res.json().catch(() => ({}));
     btn.disabled = false;
-    if (!res.ok) return alert(errMsg(d, 'Error al emitir OT'));
+    if (!res.ok) return alert(errMsg(d, otEditId ? 'Error al guardar la OT' : 'Error al emitir OT'));
     let msg = d.message;
     if ((d.sin_stock || []).length) {
         msg += '\n\n' + d.sin_stock.map(s => `${s.nombre}: había ${numAr(s.stock_previo)} ${s.unidad}, se usaron ${numAr(s.pedido)}`).join('\n');
@@ -600,24 +672,103 @@ function renderHist(rows) {
     }
     tb.innerHTML = rows.map(o => {
         const anulada = o.estado === 'Anulada';
+        const confirmada = Number(o.confirmada || 0) === 1;
         const nro = String(o.nro_ot || '');
+        const destinos = Number(o.n_destinos || 0) > 1
+            ? `<span class="badge bg-light text-dark border me-1">${o.n_destinos} lotes</span><span class="small">${esc(o.destinos_txt || '')}</span>`
+            : `${esc(o.campo_nombre || '')}${o.lote_nombre ? ' | ' + esc(o.lote_nombre) : ''}`;
         return `
         <tr class="${anulada ? 'text-muted' : ''}">
             <td class="font-mono fw-bold">${esc(nro)}</td>
             <td>${fechaAr(o.fecha)}</td>
-            <td>${esc(o.campo_nombre || '')}${o.lote_nombre ? ' | ' + esc(o.lote_nombre) : ''}</td>
+            <td>${destinos}</td>
             <td>${esc(o.tipo_labor || '')}</td>
             <td>${esc(o.contratista_nombre || '')}</td>
             <td class="text-end font-mono">${Number(o.superficie_has||0).toFixed(1)}</td>
-            <td>${badgeEstado(o.estado)}</td>
+            <td>${badgeEstado(o.estado)}${confirmada ? ' <span class="badge badge-estado bg-dark" title="Confirmada ' + esc(o.fecha_confirmacion || '') + '">Confirmada</span>' : ''}</td>
             <td class="text-end font-mono">${moneyAr(o.costo_insumos_neto)}</td>
             <td class="text-end font-mono">${moneyAr(o.costo_laboreos_neto)}</td>
             <td class="text-nowrap text-end">
+                ${!anulada && !confirmada ? `<button class="btn btn-outline-primary btn-sm py-0" onclick="editarOT(${o.id})">Editar</button>` : ''}
+                ${!anulada && !confirmada ? `<button class="btn btn-outline-dark btn-sm py-0" onclick="confirmarOT(${o.id}, '${esc(nro)}', true)">Confirmar</button>` : ''}
+                ${!anulada && confirmada ? `<button class="btn btn-outline-secondary btn-sm py-0" onclick="confirmarOT(${o.id}, '${esc(nro)}', false)">Reabrir</button>` : ''}
                 ${!anulada && /^\d+$/.test(nro) ? `<button class="btn btn-outline-success btn-sm py-0" onclick="irACostear(${nro})">Costear</button>` : ''}
-                ${!anulada ? `<button class="btn btn-outline-danger btn-sm py-0" onclick="anularOT(${o.id}, '${esc(nro)}')">Anular</button>` : ''}
+                ${!anulada && !confirmada ? `<button class="btn btn-outline-danger btn-sm py-0" onclick="anularOT(${o.id}, '${esc(nro)}')">Anular</button>` : ''}
             </td>
         </tr>`;
     }).join('');
+}
+
+async function editarOT(id) {
+    const res = await fetch(`/api/agro/ot/${id}`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(errMsg(d, 'No se pudo abrir la OT'));
+    mostrarTab('emitir');
+    document.getElementById('nroOT').value = d.nro_ot || '';
+    document.getElementById('fechaOT').value = (d.fecha || '').slice(0, 10);
+    document.getElementById('fechaAplic').value = (d.fecha_aplicacion || d.fecha || '').slice(0, 10);
+    document.getElementById('laborCultural').value = d.labor_cultural || '';
+    document.getElementById('contratista').value = d.contratista_nombre || '';
+    onContratistaInput();
+    if (!document.getElementById('contratistaInfo').textContent && d.contratista_cuit) {
+        document.getElementById('contratistaInfo').textContent = 'CUIT ' + d.contratista_cuit;
+    }
+    document.getElementById('observaciones').value = d.observaciones || '';
+    const selC = document.getElementById('selCampania');
+    if (d.campania_id && selC.querySelector(`option[value="${d.campania_id}"]`)) {
+        selC.value = String(d.campania_id);
+        await cargarPlanCampania();
+    }
+    const selTL = document.getElementById('tipoLabor');
+    const optTL = [...selTL.options].find(op => op.value && op.textContent.trim().toLowerCase() === String(d.tipo_labor || '').trim().toLowerCase());
+    selTL.value = optTL ? optTL.value : '';
+
+    document.getElementById('tablaDestinos').innerHTML = '';
+    for (const dest of (d.destinos || [])) await agregarDestino(dest);
+    if (!document.querySelector('#tablaDestinos tr')) await agregarDestino();
+
+    const tb = document.getElementById('tablaConsumos');
+    tb.innerHTML = '';
+    const has = totalHas();
+    for (const c of (d.consumos || [])) {
+        agregarLinea(c.tipo_item === 'laboreo' ? 'laboreo' : 'producto');
+        const tr = tb.lastElementChild;
+        const inp = tr.querySelector('.cons-item');
+        inp.value = c.nombre || '';
+        onItemChange(inp);
+        tr.dataset.itemId = c.item_id;
+        inp.classList.remove('is-invalid');
+        if (optTL && String(c.item_id) === optTL.value && !tb.querySelector('tr[data-auto="1"]')) tr.dataset.auto = '1';
+        const dosis = Number(c.dosis_por_ha || 0);
+        const cant = Number(c.cantidad || 0);
+        tr.querySelector('.cons-dosis').value = dosis;
+        const cantInp = tr.querySelector('.cons-cant');
+        cantInp.value = Math.round(cant * 1000) / 1000;
+        if (!(dosis > 0 && Math.abs(dosis * has - cant) < 0.001)) cantInp.dataset.manual = '1';
+    }
+    if (!tb.children.length) agregarLinea('producto');
+    recalcularLineas();
+
+    otEditId = id;
+    document.getElementById('bannerNro').textContent = 'OT ' + (d.nro_ot || '');
+    document.getElementById('bannerEdicion').classList.remove('d-none');
+    document.getElementById('btnEmitir').textContent = 'Guardar cambios de la OT';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function cancelarEdicion() {
+    location.reload();
+}
+
+async function confirmarOT(id, nro, confirmar) {
+    const txt = confirmar
+        ? `¿Confirmar la OT ${nro}? Queda cerrada y no se podrá editar ni anular salvo que la reabras.`
+        : `¿Reabrir la OT ${nro} para corregirla?`;
+    if (!confirm(txt)) return;
+    const res = await fetch(`/api/agro/ot/${id}/${confirmar ? 'confirmar' : 'reabrir'}`, { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(errMsg(d, 'No se pudo actualizar la OT'));
+    fetch('/api/agro/ot?limit=30').then(r => r.json()).then(renderHist).catch(() => {});
 }
 
 async function anularOT(id, nro) {
@@ -669,6 +820,7 @@ function renderLineas() {
     }
     let html = '';
     let actual = null;
+    let multiLote = false;
     for (const l of lineasCache) {
         if (l.nro_orden !== actual) {
             actual = l.nro_orden;
@@ -676,11 +828,15 @@ function renderLineas() {
             const usd = grupo.reduce((s, x) => s + Number(x.costo_usd || 0), 0);
             const pend = grupo.filter(x => !Number(x.costo_usd || 0) && !Number(x.costo_ars || 0)).length;
             const origen = l.ot_id ? '' : ' <span class="badge bg-light text-secondary border">Access</span>';
+            const lotesGrupo = {};
+            grupo.forEach(x => { lotesGrupo[(x.campo || '') + ' | ' + (x.lote || '')] = Number(x.cantidad_has || 0); });
+            multiLote = Object.keys(lotesGrupo).length > 1;
+            const hasGrupo = multiLote ? Object.values(lotesGrupo).reduce((s, h) => s + h, 0) : Number(l.cantidad_has || 0);
             html += `<tr class="ot-head"><td colspan="9">
                 <span class="font-mono fw-bold">OT ${esc(l.nro_orden)}</span>${origen}
                 <span class="ms-2">${fechaAr(l.fecha_orden)}</span>
-                <span class="ms-2 fw-semibold">${esc(l.campo || '')}${l.lote ? ' | ' + esc(l.lote) : ''}</span>
-                <span class="ms-2">${numAr(l.cantidad_has)} has</span>
+                <span class="ms-2 fw-semibold">${multiLote ? Object.keys(lotesGrupo).length + ' lotes' : esc(l.campo || '') + (l.lote ? ' | ' + esc(l.lote) : '')}</span>
+                <span class="ms-2">${numAr(hasGrupo)} has</span>
                 <span class="ms-2">${esc(l.cultivo || '')}</span>
                 <span class="ms-2 text-muted">Campaña ${esc(l.campania_codigo || '-')}</span>
                 <span class="float-end small">${pend ? `<span class="text-warning fw-bold">${pend} sin costo</span> | ` : ''}U$S ${moneyAr(usd)}</span>
@@ -690,9 +846,10 @@ function renderLineas() {
         const costeada = Number(l.costo_usd || 0) || Number(l.costo_ars || 0);
         const moneda = l.moneda_costo || (esLab ? 'ARS' : 'USD');
         const precio = Number(l.precio || 0) ? ((moneda === 'ARS' ? '$ ' : 'U$S ') + moneyAr(l.precio, 2)) : '';
-        const nombre = esLab
+        const nombre = (esLab
             ? `<span class="badge bg-warning-subtle text-warning-emphasis border me-1">Labor</span>${esc(l.laboreo || l.labor_cultural || '')}${l.contratista ? ` <span class="hint">| ${esc(l.contratista)}</span>` : ''}`
-            : `<span class="badge bg-primary-subtle text-primary-emphasis border me-1">Prod.</span>${esc(l.producto)}`;
+            : `<span class="badge bg-primary-subtle text-primary-emphasis border me-1">Prod.</span>${esc(l.producto)}`)
+            + (multiLote ? `<div class="hint">${esc(l.campo || '')}${l.lote ? ' | ' + esc(l.lote) : ''} | ${numAr(l.cantidad_has)} has</div>` : '');
         const origenTxt = costeada ? esc([l.proveedor, l.nro_remito].filter(Boolean).join(' | ') || l.origen_costo || '') : '';
         html += `<tr class="${costeada ? 'linea-costeada' : ''}">
             <td>${nombre}</td>

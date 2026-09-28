@@ -32,6 +32,7 @@ class EscalaAparceriaModel(BaseModel):
 
 
 class LoteAgroModel(BaseModel):
+    id: Optional[int] = None
     codigo: Optional[str] = ""
     nombre: str
     superficie_base: float = 0.0
@@ -52,6 +53,39 @@ class ContratoArrendamientoModel(BaseModel):
     observaciones: Optional[str] = ""
     escalas: Optional[List[EscalaAparceriaModel]] = None
     campania_id: Optional[int] = None
+
+
+def _sincronizar_lotes_campo(cur, campo_id: int, lotes: List["LoteAgroModel"]) -> None:
+    """Actualiza los lotes existentes, agrega los nuevos y da de baja (no borra) los quitados."""
+    cur.execute("SELECT id FROM lotes_agro WHERE campo_id=? AND COALESCE(baja,0)=0;", (campo_id,))
+    existentes = {int(r[0]) for r in cur.fetchall()}
+    enviados = set()
+    for i, lote in enumerate(lotes):
+        nombre = (lote.nombre or "").strip()
+        if not nombre:
+            continue
+        orden = lote.orden if lote.orden else i
+        if lote.id and int(lote.id) in existentes:
+            enviados.add(int(lote.id))
+            cur.execute(
+                """
+                UPDATE lotes_agro SET codigo=?, nombre=?, superficie_base=?, lat=?, lng=?, orden=?,
+                       geojson=CASE WHEN ?<>'' THEN ? ELSE geojson END
+                WHERE id=?;
+                """,
+                (lote.codigo or "", nombre, lote.superficie_base, lote.lat, lote.lng, orden,
+                 lote.geojson or "", lote.geojson or "", int(lote.id)),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO lotes_agro (campo_id, codigo, nombre, superficie_base, lat, lng, geojson, orden)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (campo_id, lote.codigo or "", nombre, lote.superficie_base, lote.lat, lote.lng, lote.geojson or "", orden),
+            )
+    for lote_id in existentes - enviados:
+        cur.execute("UPDATE lotes_agro SET baja=1 WHERE id=?;", (lote_id,))
 
 
 class CampoAgroModel(BaseModel):
@@ -133,6 +167,13 @@ class OtConsumoModel(BaseModel):
     cantidad: float = 0.0
 
 
+class OtDestinoModel(BaseModel):
+    campo_id: Optional[int] = None
+    lote_id: Optional[int] = None
+    superficie_has: float = 0.0
+    cultivo: Optional[str] = ""
+
+
 class OrdenTrabajoModel(BaseModel):
     fecha: str
     tipo_labor: str
@@ -148,6 +189,7 @@ class OrdenTrabajoModel(BaseModel):
     fecha_aplicacion: Optional[str] = ""
     labor_cultural: Optional[str] = ""
     consumos: Optional[List[OtConsumoModel]] = None
+    destinos: Optional[List[OtDestinoModel]] = None
 
 
 class CosteoLineaModel(BaseModel):
@@ -451,6 +493,8 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                     campo_id,
                 ),
             )
+            if data.lotes is not None:
+                _sincronizar_lotes_campo(cur, campo_id, data.lotes)
             if tipo == "arrendado" and data.sync_proveedor:
                 sincronizar_arrendador_proveedor(cur, data.dict(), empresa_id)
             if tipo == "arrendado" and data.contrato:
@@ -686,6 +730,9 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         opciones_costeo_linea,
         costear_linea_ot,
         anular_ot,
+        editar_ot,
+        confirmar_ot,
+        detalle_ot,
     )
 
     try:
@@ -915,7 +962,13 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         conn = get_db()
         cur = conn.cursor()
         q = """
-            SELECT o.*, c.nombre AS campo_nombre, l.nombre AS lote_nombre
+            SELECT o.*, c.nombre AS campo_nombre, l.nombre AS lote_nombre,
+                   (SELECT COUNT(*) FROM ot_destinos d WHERE d.ot_id = o.id) AS n_destinos,
+                   (SELECT GROUP_CONCAT(COALESCE(c2.nombre,'') || ' | ' || COALESCE(l2.nombre,''), '; ')
+                      FROM ot_destinos d2
+                      LEFT JOIN campos_agro c2 ON c2.id = d2.campo_id
+                      LEFT JOIN lotes_agro l2 ON l2.id = d2.lote_id
+                     WHERE d2.ot_id = o.id) AS destinos_txt
             FROM ordenes_trabajo o
             LEFT JOIN campos_agro c ON c.id = o.campo_id
             LEFT JOIN lotes_agro l ON l.id = o.lote_id
@@ -956,12 +1009,80 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                 nro_ot=data.nro_ot or None,
                 fecha_aplicacion=data.fecha_aplicacion or "",
                 labor_cultural=data.labor_cultural or "",
+                destinos=[d.dict() for d in (data.destinos or [])],
             )
             conn.commit()
         except Exception as e:
             conn.rollback()
             conn.close()
             raise HTTPException(status_code=400, detail=str(e))
+        conn.close()
+        return result
+
+    @app.get("/api/agro/ot/{ot_id:int}")
+    def api_ot_detalle(ot_id: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            data = detalle_ot(cur, empresa_id, ot_id)
+        except ValueError as e:
+            conn.close()
+            raise HTTPException(404, str(e))
+        conn.close()
+        return data
+
+    @app.put("/api/agro/ot/{ot_id:int}")
+    def api_ot_editar(ot_id: int, data: OrdenTrabajoModel):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            result = editar_ot(
+                cur, empresa_id, ot_id,
+                fecha=data.fecha,
+                tipo_labor=data.tipo_labor,
+                contratista_nombre=data.contratista_nombre or "",
+                contratista_cuit=data.contratista_cuit or "",
+                campania_id=data.campania_id,
+                campo_id=data.campo_id,
+                lote_id=data.lote_id,
+                superficie_has=data.superficie_has,
+                cultivo=data.cultivo or "",
+                observaciones=data.observaciones or "",
+                consumos=[c.dict() for c in (data.consumos or [])],
+                nro_ot=data.nro_ot or None,
+                fecha_aplicacion=data.fecha_aplicacion or "",
+                labor_cultural=data.labor_cultural or "",
+                destinos=[d.dict() for d in (data.destinos or [])],
+            )
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(status_code=400, detail=str(e))
+        conn.close()
+        return result
+
+    @app.post("/api/agro/ot/{ot_id:int}/confirmar")
+    def api_ot_confirmar(ot_id: int):
+        return _cambiar_confirmacion_ot(ot_id, True)
+
+    @app.post("/api/agro/ot/{ot_id:int}/reabrir")
+    def api_ot_reabrir(ot_id: int):
+        return _cambiar_confirmacion_ot(ot_id, False)
+
+    def _cambiar_confirmacion_ot(ot_id: int, confirmar: bool):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            result = confirmar_ot(cur, empresa_id, ot_id, confirmar)
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, str(e))
         conn.close()
         return result
 

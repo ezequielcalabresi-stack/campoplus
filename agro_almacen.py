@@ -163,6 +163,25 @@ def init_almacen_schema(cursor) -> None:
         cursor.execute("ALTER TABLE ordenes_trabajo ADD COLUMN fecha_aplicacion TEXT;")
     if "labor_cultural" not in cols_ot:
         cursor.execute("ALTER TABLE ordenes_trabajo ADD COLUMN labor_cultural TEXT;")
+    if "confirmada" not in cols_ot:
+        cursor.execute("ALTER TABLE ordenes_trabajo ADD COLUMN confirmada INTEGER DEFAULT 0;")
+    if "fecha_confirmacion" not in cols_ot:
+        cursor.execute("ALTER TABLE ordenes_trabajo ADD COLUMN fecha_confirmacion TEXT;")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ot_destinos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ot_id INTEGER NOT NULL,
+            orden INTEGER DEFAULT 0,
+            campo_id INTEGER,
+            lote_id INTEGER,
+            superficie_has REAL DEFAULT 0,
+            cultivo TEXT
+        );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ot_destinos_ot ON ot_destinos(ot_id);")
+    cursor.execute("PRAGMA table_info(ot_consumos);")
+    if "destino_id" not in {r[1] for r in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE ot_consumos ADD COLUMN destino_id INTEGER;")
     init_lineas_ot_schema(cursor)
     _aplicar_costos_usd_access(cursor)
 
@@ -1059,11 +1078,14 @@ def emitir_ot_consumiendo_almacen(
     nro_ot: Optional[str] = None,
     fecha_aplicacion: str = "",
     labor_cultural: str = "",
+    destinos: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Emite la OT: registra las líneas y la salida física del almacén, sin costo.
     El costo se asigna después con costear_linea_ot. No se bloquea por falta de stock.
     cada consumo: {item_id, cantidad?, dosis_por_ha?}
+    destinos: [{campo_id, lote_id, superficie_has, cultivo}]; la cantidad de cada
+    consumo se reparte entre los destinos en proporción a sus hectáreas.
     """
     consumos = consumos or []
     fecha = (fecha or datetime.now().strftime("%Y-%m-%d"))[:10]
@@ -1073,39 +1095,130 @@ def emitir_ot_consumiendo_almacen(
         raise ValueError(f"La OT Nº {nro} ya existe.")
     if not any(int(c.get("item_id") or 0) for c in consumos):
         raise ValueError("Agregá al menos un producto o labor.")
-
-    campania_codigo = ""
-    if campania_id:
-        cursor.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,))
-        r = cursor.fetchone()
-        campania_codigo = (r["codigo"] if r else "") or ""
-    campo_nombre = ""
-    if campo_id:
-        cursor.execute("SELECT nombre FROM campos_agro WHERE id=?;", (campo_id,))
-        r = cursor.fetchone()
-        campo_nombre = (r["nombre"] if r else "") or ""
-    lote_nombre = ""
-    if lote_id:
-        cursor.execute("SELECT nombre FROM lotes_agro WHERE id=?;", (lote_id,))
-        r = cursor.fetchone()
-        lote_nombre = (r["nombre"] if r else "") or ""
+    dests = _normalizar_destinos_ot(cursor, destinos, campo_id, lote_id, superficie_has, cultivo)
+    total_has = round(sum(d["superficie_has"] for d in dests), 4)
 
     cursor.execute(
         """
         INSERT INTO ordenes_trabajo
         (empresa_id, nro_ot, fecha, tipo_labor, contratista_cuit, contratista_nombre,
          campania_id, campo_id, lote_id, superficie_has, cultivo, estado, observaciones,
-         fecha_aplicacion, labor_cultural)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente de costeo', ?, ?, ?);
+         fecha_aplicacion, labor_cultural, confirmada)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente de costeo', ?, ?, ?, 0);
         """,
         (
             empresa_id, nro, fecha, tipo_labor or "",
             contratista_cuit or "", contratista_nombre or "",
-            campania_id, campo_id, lote_id, superficie_has, cultivo or "",
+            campania_id, dests[0]["campo_id"], dests[0]["lote_id"], total_has,
+            dests[0]["cultivo"] or cultivo or "",
             observaciones or "", fecha_aplic, labor_cultural or "",
         ),
     )
     ot_id = cursor.lastrowid
+    lineas, sin_stock = _crear_lineas_ot(
+        cursor, empresa_id, ot_id, nro,
+        fecha=fecha, fecha_aplic=fecha_aplic, tipo_labor=tipo_labor,
+        labor_cultural=labor_cultural, contratista_nombre=contratista_nombre,
+        campania_id=campania_id, destinos=dests, consumos=consumos,
+    )
+    msg = f"OT {nro} emitida con {lineas} línea(s)"
+    if len(dests) > 1:
+        msg += f" en {len(dests)} lotes"
+    msg += ". Queda pendiente de costeo."
+    if sin_stock:
+        msg += " Atención: algunos productos quedaron con stock negativo en el almacén."
+    return {
+        "status": "success",
+        "ot_id": ot_id,
+        "nro_ot": nro,
+        "lineas": lineas,
+        "sin_stock": sin_stock,
+        "message": msg,
+    }
+
+
+def _normalizar_destinos_ot(
+    cursor,
+    destinos: Optional[List[Dict[str, Any]]],
+    campo_id: Optional[int],
+    lote_id: Optional[int],
+    superficie_has: float,
+    cultivo: str,
+) -> List[Dict[str, Any]]:
+    lista: List[Dict[str, Any]] = []
+    for d in destinos or []:
+        cid = int(d.get("campo_id") or 0) or None
+        lid = int(d.get("lote_id") or 0) or None
+        has = float(d.get("superficie_has") or 0)
+        if not cid and not lid and has <= 0:
+            continue
+        if has < 0:
+            raise ValueError("Las hectáreas de un destino no pueden ser negativas.")
+        lista.append({
+            "campo_id": cid, "lote_id": lid, "superficie_has": has,
+            "cultivo": (d.get("cultivo") or cultivo or "").strip(),
+        })
+    if not lista:
+        lista.append({
+            "campo_id": int(campo_id or 0) or None, "lote_id": int(lote_id or 0) or None,
+            "superficie_has": float(superficie_has or 0), "cultivo": (cultivo or "").strip(),
+        })
+    vistos = set()
+    for d in lista:
+        if d["lote_id"]:
+            if d["lote_id"] in vistos:
+                raise ValueError("Hay un lote repetido en los destinos de la OT.")
+            vistos.add(d["lote_id"])
+        d["campo_nombre"] = ""
+        d["lote_nombre"] = ""
+        if d["campo_id"]:
+            cursor.execute("SELECT nombre FROM campos_agro WHERE id=?;", (d["campo_id"],))
+            r = cursor.fetchone()
+            d["campo_nombre"] = (r["nombre"] if r else "") or ""
+        if d["lote_id"]:
+            cursor.execute("SELECT nombre, campo_id FROM lotes_agro WHERE id=?;", (d["lote_id"],))
+            r = cursor.fetchone()
+            if r:
+                d["lote_nombre"] = r["nombre"] or ""
+                if not d["campo_id"] and r["campo_id"]:
+                    d["campo_id"] = int(r["campo_id"])
+                    cursor.execute("SELECT nombre FROM campos_agro WHERE id=?;", (d["campo_id"],))
+                    rc = cursor.fetchone()
+                    d["campo_nombre"] = (rc["nombre"] if rc else "") or ""
+    return lista
+
+
+def _crear_lineas_ot(
+    cursor,
+    empresa_id: int,
+    ot_id: int,
+    nro: str,
+    *,
+    fecha: str,
+    fecha_aplic: str,
+    tipo_labor: str,
+    labor_cultural: str,
+    contratista_nombre: str,
+    campania_id: Optional[int],
+    destinos: List[Dict[str, Any]],
+    consumos: List[Dict[str, Any]],
+):
+    """Graba destinos, salidas de almacén, ot_consumos y líneas de costos de una OT."""
+    campania_codigo = ""
+    if campania_id:
+        cursor.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,))
+        r = cursor.fetchone()
+        campania_codigo = (r["codigo"] if r else "") or ""
+    for i, d in enumerate(destinos):
+        cursor.execute(
+            """
+            INSERT INTO ot_destinos (ot_id, orden, campo_id, lote_id, superficie_has, cultivo)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            (ot_id, i, d["campo_id"], d["lote_id"], d["superficie_has"], d["cultivo"]),
+        )
+        d["id"] = cursor.lastrowid
+    total_has = sum(d["superficie_has"] for d in destinos)
     sin_stock = []
     lineas = 0
 
@@ -1135,74 +1248,216 @@ def emitir_ot_consumiendo_almacen(
                 )
         dosis = float(c.get("dosis_por_ha") or 0)
         cant = float(c.get("cantidad") or 0)
-        if cant <= 0 and dosis > 0 and superficie_has > 0:
-            cant = round(dosis * superficie_has, 6)
+        if cant <= 0 and dosis > 0 and total_has > 0:
+            cant = round(dosis * total_has, 6)
         if cant <= 0:
             continue
         tipo_item = item.get("tipo") or "producto"
-        stock = float(item.get("stock_cantidad") or 0)
-        nuevo_stock = round(stock - cant, 6)
-        if tipo_item != "laboreo" and nuevo_stock < -1e-6:
+        es_lab = tipo_item == "laboreo"
+
+        if total_has > 0:
+            partes = [round(cant * d["superficie_has"] / total_has, 6) for d in destinos]
+            partes[-1] = round(cant - sum(partes[:-1]), 6)
+        else:
+            partes = [cant] + [0.0] * (len(destinos) - 1)
+        stock_previo = float(item.get("stock_cantidad") or 0)
+        stock = stock_previo
+
+        for d, cant_d in zip(destinos, partes):
+            if cant_d <= 0:
+                continue
+            stock = round(stock - cant_d, 6)
+            cursor.execute(
+                "UPDATE almacen_items SET stock_cantidad=? WHERE id=?;",
+                (stock, item_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO almacen_movimientos
+                (empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, importe_neto,
+                 stock_resultante, costo_prom_resultante, campania_id, lote_id, ot_id, observaciones)
+                VALUES (?, ?, ?, 'egreso_ot', ?, 0, 0, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    empresa_id, item_id, fecha_aplic, cant_d,
+                    stock, float(item.get("costo_promedio_neto") or 0),
+                    campania_id, d["lote_id"], ot_id, f"Consumo OT {nro}",
+                ),
+            )
+            mov_id = cursor.lastrowid
+            cursor.execute(
+                """
+                INSERT INTO ot_consumos
+                (ot_id, item_id, tipo_item, dosis_por_ha, cantidad, unidad,
+                 costo_unitario_neto, costo_total_neto, movimiento_id, destino_id)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?);
+                """,
+                (ot_id, item_id, tipo_item, dosis, cant_d, item.get("unidad") or "", mov_id, d["id"]),
+            )
+            consumo_id = cursor.lastrowid
+            cursor.execute(
+                """
+                INSERT INTO margenes_access (
+                    empresa_id, campania_codigo, cultivo, nro_orden, campo, lote, cantidad_has,
+                    fecha_orden, laboreo, labor_cultural, contratista, producto, tipo, dosis_ha,
+                    cantidad_total, fecha_aplicacion, unidad, almacen_item_id, ot_id, ot_consumo_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+                """,
+                (
+                    empresa_id, campania_codigo, d["cultivo"] or "",
+                    int(nro) if nro.isdigit() else None,
+                    d["campo_nombre"], d["lote_nombre"], float(d["superficie_has"] or 0), fecha,
+                    (item.get("nombre") or "") if es_lab else "",
+                    (labor_cultural or tipo_labor or "") if es_lab else "",
+                    (contratista_nombre or "") if es_lab else "",
+                    "" if es_lab else (item.get("nombre") or ""),
+                    item.get("categoria") or "", dosis, cant_d, fecha_aplic,
+                    item.get("unidad") or "", item_id, ot_id, consumo_id,
+                ),
+            )
+            lineas += 1
+
+        if not es_lab and stock < -1e-6:
             sin_stock.append({
                 "nombre": item.get("nombre"),
-                "stock_previo": round(stock, 4),
+                "stock_previo": round(stock_previo, 4),
                 "pedido": round(cant, 4),
                 "unidad": item.get("unidad") or "",
             })
 
-        cursor.execute(
-            "UPDATE almacen_items SET stock_cantidad=? WHERE id=?;",
-            (nuevo_stock, item_id),
-        )
-        cursor.execute(
-            """
-            INSERT INTO almacen_movimientos
-            (empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, importe_neto,
-             stock_resultante, costo_prom_resultante, campania_id, lote_id, ot_id, observaciones)
-            VALUES (?, ?, ?, 'egreso_ot', ?, 0, 0, ?, ?, ?, ?, ?, ?);
-            """,
-            (
-                empresa_id, item_id, fecha_aplic, cant,
-                nuevo_stock, float(item.get("costo_promedio_neto") or 0),
-                campania_id, lote_id, ot_id, f"Consumo OT {nro}",
-            ),
-        )
-        mov_id = cursor.lastrowid
-        cursor.execute(
-            """
-            INSERT INTO ot_consumos
-            (ot_id, item_id, tipo_item, dosis_por_ha, cantidad, unidad,
-             costo_unitario_neto, costo_total_neto, movimiento_id)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?);
-            """,
-            (ot_id, item_id, tipo_item, dosis, cant, item.get("unidad") or "", mov_id),
-        )
-        consumo_id = cursor.lastrowid
-        es_lab = tipo_item == "laboreo"
-        cursor.execute(
-            """
-            INSERT INTO margenes_access (
-                empresa_id, campania_codigo, cultivo, nro_orden, campo, lote, cantidad_has,
-                fecha_orden, laboreo, labor_cultural, contratista, producto, tipo, dosis_ha,
-                cantidad_total, fecha_aplicacion, unidad, almacen_item_id, ot_id, ot_consumo_id
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
-            """,
-            (
-                empresa_id, campania_codigo, cultivo or "", int(nro) if nro.isdigit() else None,
-                campo_nombre, lote_nombre, float(superficie_has or 0), fecha,
-                (item.get("nombre") or "") if es_lab else "",
-                (labor_cultural or tipo_labor or "") if es_lab else "",
-                (contratista_nombre or "") if es_lab else "",
-                "" if es_lab else (item.get("nombre") or ""),
-                item.get("categoria") or "", dosis, cant, fecha_aplic,
-                item.get("unidad") or "", item_id, ot_id, consumo_id,
-            ),
-        )
-        lineas += 1
-
     if not lineas:
         raise ValueError("Ninguna línea tiene cantidad. Indicá dosis y hectáreas o la cantidad.")
-    msg = f"OT {nro} emitida con {lineas} línea(s). Queda pendiente de costeo."
+    return lineas, sin_stock
+
+
+def _revertir_lineas_ot(cursor, ot_id: int) -> Dict[Any, Dict[str, Any]]:
+    """Devuelve el stock y borra líneas, consumos y destinos de la OT.
+    Retorna el costeo por (ítem, campo, lote) (None si esa línea no estaba costeada)
+    y por ítem, para lotes que no existían antes de la edición."""
+    costeos: Dict[Any, Optional[Dict[str, Any]]] = {}
+    cursor.execute("SELECT * FROM margenes_access WHERE ot_id=? ORDER BY id;", (ot_id,))
+    for r in cursor.fetchall():
+        m = dict(r)
+        if not (float(m.get("costo_ars") or 0) or float(m.get("costo_usd") or 0) or m.get("fecha_costeo")):
+            costeos.setdefault((m.get("almacen_item_id"), m.get("campo") or "", m.get("lote") or ""), None)
+            continue
+        c = {
+            "precio": float(m.get("precio") or 0),
+            "moneda": m.get("moneda_costo") or "USD",
+            "tc": float(m.get("tc") or 0),
+            "origen": m.get("origen_costo") or "manual",
+            "mov_ingreso_id": m.get("mov_ingreso_id"),
+            "proveedor": m.get("proveedor") or "",
+            "nro_comprobante": m.get("nro_remito") or "",
+            "fecha_compra": m.get("fecha_compra") or "",
+        }
+        item = m.get("almacen_item_id")
+        costeos[(item, m.get("campo") or "", m.get("lote") or "")] = c
+        costeos.setdefault(item, c)
+    cursor.execute(
+        "SELECT id, item_id, cantidad FROM almacen_movimientos WHERE ot_id=? AND tipo_mov='egreso_ot';",
+        (ot_id,),
+    )
+    for m in cursor.fetchall():
+        cursor.execute(
+            "UPDATE almacen_items SET stock_cantidad=ROUND(COALESCE(stock_cantidad,0)+?, 6) WHERE id=?;",
+            (abs(float(m["cantidad"] or 0)), m["item_id"]),
+        )
+        cursor.execute("DELETE FROM almacen_movimientos WHERE id=?;", (m["id"],))
+    cursor.execute("DELETE FROM margenes_access WHERE ot_id=?;", (ot_id,))
+    cursor.execute("DELETE FROM ot_consumos WHERE ot_id=?;", (ot_id,))
+    cursor.execute("DELETE FROM ot_destinos WHERE ot_id=?;", (ot_id,))
+    return costeos
+
+
+def editar_ot(
+    cursor,
+    empresa_id: int,
+    ot_id: int,
+    *,
+    fecha: str,
+    tipo_labor: str,
+    contratista_nombre: str = "",
+    contratista_cuit: str = "",
+    campania_id: Optional[int] = None,
+    campo_id: Optional[int] = None,
+    lote_id: Optional[int] = None,
+    superficie_has: float = 0.0,
+    cultivo: str = "",
+    observaciones: str = "",
+    consumos: Optional[List[Dict[str, Any]]] = None,
+    nro_ot: Optional[str] = None,
+    fecha_aplicacion: str = "",
+    labor_cultural: str = "",
+    destinos: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Corrige una OT emitida y no confirmada: rehace stock y líneas, conservando el costeo."""
+    cursor.execute("SELECT * FROM ordenes_trabajo WHERE id=? AND empresa_id=?;", (ot_id, empresa_id))
+    ot = cursor.fetchone()
+    if not ot:
+        raise ValueError("OT no encontrada.")
+    ot = dict(ot)
+    if (ot.get("estado") or "") == "Anulada":
+        raise ValueError("La OT está anulada; no se puede editar.")
+    if int(ot.get("confirmada") or 0):
+        raise ValueError("La OT está confirmada. Reabrila para poder editarla.")
+    consumos = consumos or []
+    if not any(int(c.get("item_id") or 0) for c in consumos):
+        raise ValueError("Agregá al menos un producto o labor.")
+    nro_actual = str(ot.get("nro_ot") or "").strip()
+    nro = str(nro_ot or "").strip() or nro_actual
+    if nro != nro_actual and _nro_ot_en_uso(cursor, empresa_id, nro):
+        raise ValueError(f"La OT Nº {nro} ya existe.")
+    fecha = (fecha or ot.get("fecha") or datetime.now().strftime("%Y-%m-%d"))[:10]
+    fecha_aplic = (fecha_aplicacion or fecha)[:10]
+    dests = _normalizar_destinos_ot(cursor, destinos, campo_id, lote_id, superficie_has, cultivo)
+    total_has = round(sum(d["superficie_has"] for d in dests), 4)
+
+    costeos = _revertir_lineas_ot(cursor, ot_id)
+    cursor.execute(
+        """
+        UPDATE ordenes_trabajo
+        SET nro_ot=?, fecha=?, tipo_labor=?, contratista_cuit=?, contratista_nombre=?,
+            campania_id=?, campo_id=?, lote_id=?, superficie_has=?, cultivo=?,
+            observaciones=?, fecha_aplicacion=?, labor_cultural=?,
+            estado='Pendiente de costeo', costo_insumos_neto=0, costo_laboreos_neto=0, costo_total_neto=0
+        WHERE id=?;
+        """,
+        (
+            nro, fecha, tipo_labor or "", contratista_cuit or "", contratista_nombre or "",
+            campania_id, dests[0]["campo_id"], dests[0]["lote_id"], total_has,
+            dests[0]["cultivo"] or cultivo or "",
+            observaciones or "", fecha_aplic, labor_cultural or "", ot_id,
+        ),
+    )
+    lineas, sin_stock = _crear_lineas_ot(
+        cursor, empresa_id, ot_id, nro,
+        fecha=fecha, fecha_aplic=fecha_aplic, tipo_labor=tipo_labor,
+        labor_cultural=labor_cultural, contratista_nombre=contratista_nombre,
+        campania_id=campania_id, destinos=dests, consumos=consumos,
+    )
+    recosteadas = 0
+    if costeos:
+        cursor.execute("SELECT * FROM margenes_access WHERE ot_id=? ORDER BY id;", (ot_id,))
+        for r in cursor.fetchall():
+            m = dict(r)
+            item = m.get("almacen_item_id")
+            clave = (item, m.get("campo") or "", m.get("lote") or "")
+            c = costeos[clave] if clave in costeos else costeos.get(item)
+            if not c:
+                continue
+            try:
+                costear_linea_ot(cursor, empresa_id, int(m["id"]), **c)
+                recosteadas += 1
+            except ValueError:
+                pass
+    _recalcular_totales_ot(cursor, ot_id)
+    msg = f"OT {nro} actualizada con {lineas} línea(s)"
+    if len(dests) > 1:
+        msg += f" en {len(dests)} lotes"
+    msg += "."
+    if recosteadas:
+        msg += f" Se conservó el costeo de {recosteadas} línea(s)."
     if sin_stock:
         msg += " Atención: algunos productos quedaron con stock negativo en el almacén."
     return {
@@ -1213,6 +1468,67 @@ def emitir_ot_consumiendo_almacen(
         "sin_stock": sin_stock,
         "message": msg,
     }
+
+
+def confirmar_ot(cursor, empresa_id: int, ot_id: int, confirmar: bool = True) -> Dict[str, Any]:
+    cursor.execute("SELECT * FROM ordenes_trabajo WHERE id=? AND empresa_id=?;", (ot_id, empresa_id))
+    ot = cursor.fetchone()
+    if not ot:
+        raise ValueError("OT no encontrada.")
+    if (ot["estado"] or "") == "Anulada":
+        raise ValueError("La OT está anulada.")
+    cursor.execute(
+        "UPDATE ordenes_trabajo SET confirmada=?, fecha_confirmacion=? WHERE id=?;",
+        (
+            1 if confirmar else 0,
+            datetime.now().strftime("%Y-%m-%d %H:%M") if confirmar else None,
+            ot_id,
+        ),
+    )
+    accion = "confirmada" if confirmar else "reabierta para edición"
+    return {"status": "success", "message": f"OT {ot['nro_ot']} {accion}."}
+
+
+def detalle_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
+    """Cabecera, destinos y consumos (agrupados por ítem) para cargar la OT en el formulario."""
+    cursor.execute("SELECT * FROM ordenes_trabajo WHERE id=? AND empresa_id=?;", (ot_id, empresa_id))
+    ot = cursor.fetchone()
+    if not ot:
+        raise ValueError("OT no encontrada.")
+    data = dict(ot)
+    cursor.execute(
+        """
+        SELECT d.campo_id, d.lote_id, d.superficie_has, d.cultivo,
+               c.nombre AS campo_nombre, l.nombre AS lote_nombre
+        FROM ot_destinos d
+        LEFT JOIN campos_agro c ON c.id = d.campo_id
+        LEFT JOIN lotes_agro l ON l.id = d.lote_id
+        WHERE d.ot_id=? ORDER BY d.orden, d.id;
+        """,
+        (ot_id,),
+    )
+    destinos = [dict(r) for r in cursor.fetchall()]
+    if not destinos:
+        destinos = [{
+            "campo_id": data.get("campo_id"), "lote_id": data.get("lote_id"),
+            "superficie_has": data.get("superficie_has") or 0, "cultivo": data.get("cultivo") or "",
+        }]
+    cursor.execute(
+        """
+        SELECT oc.item_id, MAX(oc.tipo_item) AS tipo_item, MAX(oc.unidad) AS unidad,
+               MAX(oc.dosis_por_ha) AS dosis_por_ha, SUM(oc.cantidad) AS cantidad,
+               MAX(i.nombre) AS nombre, MIN(oc.id) AS orden
+        FROM ot_consumos oc
+        LEFT JOIN almacen_items i ON i.id = oc.item_id
+        WHERE oc.ot_id=?
+        GROUP BY oc.item_id
+        ORDER BY orden;
+        """,
+        (ot_id,),
+    )
+    data["destinos"] = destinos
+    data["consumos"] = [dict(r) for r in cursor.fetchall()]
+    return data
 
 
 def _recalcular_totales_ot(cursor, ot_id: int) -> None:
@@ -1564,6 +1880,8 @@ def anular_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
         raise ValueError("OT no encontrada.")
     if (ot["estado"] or "") == "Anulada":
         raise ValueError("La OT ya está anulada.")
+    if int(ot["confirmada"] or 0):
+        raise ValueError("La OT está confirmada. Reabrila antes de anularla.")
     cursor.execute(
         "SELECT id, item_id, cantidad FROM almacen_movimientos WHERE ot_id=? AND tipo_mov='egreso_ot';",
         (ot_id,),
@@ -1589,31 +1907,70 @@ def anular_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
 
 def costos_por_lote_campania(cursor, campania_id: int, empresa_id: int) -> List[Dict[str, Any]]:
     """Resumen de costos netos imputados por OT a cada lote de la campaña."""
-    cursor.execute(
-        """
-        SELECT
-            ot.lote_id,
-            l.nombre AS lote_nombre,
-            c.nombre AS campo_nombre,
-            COALESCE(SUM(ot.costo_insumos_neto),0) AS insumos,
-            COALESCE(SUM(ot.costo_laboreos_neto),0) AS laboreos,
-            COALESCE(SUM(ot.costo_total_neto),0) AS total,
-            COALESCE(SUM(ot.superficie_has),0) AS has_trabajadas
+    filtro = """
         FROM ordenes_trabajo ot
-        LEFT JOIN lotes_agro l ON l.id = ot.lote_id
-        LEFT JOIN campos_agro c ON c.id = ot.campo_id
+        LEFT JOIN ot_destinos d ON d.ot_id = ot.id
         WHERE ot.empresa_id = ? AND ot.campania_id = ?
           AND COALESCE(ot.estado,'') != 'Anulada'
-        GROUP BY ot.lote_id, l.nombre, c.nombre
-        ORDER BY c.nombre, l.nombre;
+    """
+    cursor.execute(
+        f"""
+        SELECT COALESCE(d.lote_id, ot.lote_id) AS lote_id,
+               COALESCE(d.campo_id, ot.campo_id) AS campo_id,
+               COALESCE(SUM(COALESCE(d.superficie_has, ot.superficie_has)),0) AS has_trabajadas
+        {filtro}
+        GROUP BY 1, 2;
         """,
         (empresa_id, campania_id),
     )
-    rows = []
+    grupos: Dict[Any, Dict[str, Any]] = {}
     for r in cursor.fetchall():
-        d = dict(r)
-        has = float(d.get("has_trabajadas") or 0)
-        total = float(d.get("total") or 0)
-        d["costo_por_ha"] = round(total / has, 2) if has > 0 else 0
-        rows.append(d)
+        grupos[(r["lote_id"], r["campo_id"])] = {
+            "lote_id": r["lote_id"], "campo_id": r["campo_id"],
+            "has_trabajadas": float(r["has_trabajadas"] or 0),
+            "insumos": 0.0, "laboreos": 0.0, "total": 0.0,
+        }
+    cursor.execute(
+        """
+        SELECT COALESCE(d.lote_id, ot.lote_id) AS lote_id,
+               COALESCE(d.campo_id, ot.campo_id) AS campo_id,
+               COALESCE(SUM(CASE WHEN TRIM(COALESCE(m.producto,'')) != '' THEN m.costo_usd END),0) AS insumos,
+               COALESCE(SUM(CASE WHEN TRIM(COALESCE(m.producto,'')) = '' THEN m.costo_ars END),0) AS laboreos,
+               COALESCE(SUM(m.costo_usd),0) AS total
+        FROM margenes_access m
+        JOIN ordenes_trabajo ot ON ot.id = m.ot_id
+        LEFT JOIN ot_consumos oc ON oc.id = m.ot_consumo_id
+        LEFT JOIN ot_destinos d ON d.id = oc.destino_id
+        WHERE ot.empresa_id = ? AND ot.campania_id = ?
+          AND COALESCE(ot.estado,'') != 'Anulada'
+        GROUP BY 1, 2;
+        """,
+        (empresa_id, campania_id),
+    )
+    for r in cursor.fetchall():
+        g = grupos.setdefault((r["lote_id"], r["campo_id"]), {
+            "lote_id": r["lote_id"], "campo_id": r["campo_id"], "has_trabajadas": 0.0,
+            "insumos": 0.0, "laboreos": 0.0, "total": 0.0,
+        })
+        g["insumos"] += float(r["insumos"] or 0)
+        g["laboreos"] += float(r["laboreos"] or 0)
+        g["total"] += float(r["total"] or 0)
+    rows = []
+    for g in grupos.values():
+        g["lote_nombre"] = ""
+        g["campo_nombre"] = ""
+        if g["lote_id"]:
+            cursor.execute("SELECT nombre FROM lotes_agro WHERE id=?;", (g["lote_id"],))
+            r = cursor.fetchone()
+            g["lote_nombre"] = (r["nombre"] if r else "") or ""
+        if g["campo_id"]:
+            cursor.execute("SELECT nombre FROM campos_agro WHERE id=?;", (g["campo_id"],))
+            r = cursor.fetchone()
+            g["campo_nombre"] = (r["nombre"] if r else "") or ""
+        for k in ("insumos", "laboreos", "total"):
+            g[k] = round(g[k], 2)
+        has = g["has_trabajadas"]
+        g["costo_por_ha"] = round(g["total"] / has, 2) if has > 0 else 0
+        rows.append(g)
+    rows.sort(key=lambda x: ((x["campo_nombre"] or "").lower(), (x["lote_nombre"] or "").lower()))
     return rows

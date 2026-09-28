@@ -799,6 +799,7 @@ function agregarFilaLote(data) {
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lat" value="${data?.lat??''}"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lng" value="${data?.lng??''}"></td>
         <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="quitarFilaLote(this)">×</button></td>`;
+    if (data?.id) tr.dataset.id = data.id;
     tr.addEventListener('focusin', () => resaltarLote(tr));
     tr.querySelectorAll('.lote-lat, .lote-lng, .lote-nom, .lote-cod').forEach(inp => {
         inp.addEventListener('change', () => refrescarMarcadoresLotes(false));
@@ -931,6 +932,7 @@ async function guardarCampo() {
         const lat = tr.querySelector('.lote-lat').value;
         const lng = tr.querySelector('.lote-lng').value;
         lotes.push({
+            id: tr.dataset.id ? parseInt(tr.dataset.id, 10) : null,
             codigo: tr.querySelector('.lote-cod').value.trim(),
             nombre: nom,
             superficie_base: parseFloat(tr.querySelector('.lote-has').value || 0),
@@ -980,8 +982,6 @@ async function guardarCampo() {
     const campoId = document.getElementById('campoId').value;
     const url = campoId ? `/api/agro/campos/${campoId}` : '/api/agro/campos';
     const method = campoId ? 'PUT' : 'POST';
-    // En PUT no reenviamos lotes (se editan aparte); para alta sí
-    if (campoId) delete payload.lotes;
     const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     const d = await res.json().catch(()=>({}));
     if (!res.ok) return alert(d.detail || 'Error al guardar');
