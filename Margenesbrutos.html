@@ -355,6 +355,7 @@
                             <tbody id="tbodyLotesNuevos"></tbody>
                         </table>
                     </div>
+                    <p class="small text-muted mb-0">La superficie total del campo es la suma de los lotes. Si cambiás las hectáreas de un lote, rigen desde la campaña activa en adelante; las campañas anteriores conservan la superficie que tenían.</p>
                     <p class="hint mb-0">Las has de lote pueden ajustarse por campaña después. Seleccioná una fila y hacé clic en el mapa de arriba para Lat/Lng.</p>
                 </div>
             </div>
@@ -795,7 +796,7 @@ function agregarFilaLote(data) {
     tr.innerHTML = `
         <td><input class="form-control form-control-sm lote-cod" value="${data?.codigo||''}" placeholder="L1"></td>
         <td><input class="form-control form-control-sm lote-nom" value="${data?.nombre||''}" placeholder="Lote 1"></td>
-        <td><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-has" value="${data?.superficie_base||0}"></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-has" value="${data?.superficie_base||0}" oninput="recalcularHasCampo()"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lat" value="${data?.lat??''}"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lng" value="${data?.lng??''}"></td>
         <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="quitarFilaLote(this)">×</button></td>`;
@@ -805,6 +806,24 @@ function agregarFilaLote(data) {
         inp.addEventListener('change', () => refrescarMarcadoresLotes(false));
     });
     document.getElementById('tbodyLotesNuevos').appendChild(tr);
+    recalcularHasCampo();
+}
+
+function sumaHasLotes() {
+    let total = 0;
+    document.querySelectorAll('#tbodyLotesNuevos tr').forEach(tr => {
+        if (!tr.querySelector('.lote-nom').value.trim()) return;
+        total += parseFloat(tr.querySelector('.lote-has').value || 0) || 0;
+    });
+    return Math.round(total * 100) / 100;
+}
+
+function recalcularHasCampo() {
+    const total = sumaHasLotes();
+    const inp = document.getElementById('campoHas');
+    inp.readOnly = total > 0;
+    inp.title = total > 0 ? 'Suma de las hectáreas de los lotes' : '';
+    if (total > 0) inp.value = total;
 }
 
 function quitarFilaLote(btn) {
@@ -812,6 +831,7 @@ function quitarFilaLote(btn) {
     if (loteFilaActiva === tr) loteFilaActiva = null;
     tr.remove();
     refrescarMarcadoresLotes(false);
+    recalcularHasCampo();
 }
 
 function iconoLote(activo, etiqueta) {
@@ -946,7 +966,7 @@ async function guardarCampo() {
     const payload = {
         tipo,
         nombre,
-        superficie_total: parseFloat(document.getElementById('campoHas').value || 0) || lotes.reduce((a,l)=>a+l.superficie_base,0),
+        superficie_total: sumaHasLotes() || parseFloat(document.getElementById('campoHas').value || 0),
         direccion_ref: document.getElementById('campoDir').value.trim(),
         lat: lat !== '' ? parseFloat(lat) : null,
         lng: lng !== '' ? parseFloat(lng) : null,
@@ -1002,6 +1022,7 @@ async function verCampo(id) {
     document.getElementById('campoLng').value = c.lng ?? '';
     document.getElementById('tbodyLotesNuevos').innerHTML = '';
     (c.lotes || []).forEach(l => agregarFilaLote(l));
+    recalcularHasCampo();
     if (c.tipo === 'arrendado') {
         document.getElementById('arrCuit').value = c.arrendador_cuit || '';
         document.getElementById('arrRazon').value = c.arrendador_razon || '';

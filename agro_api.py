@@ -55,10 +55,114 @@ class ContratoArrendamientoModel(BaseModel):
     campania_id: Optional[int] = None
 
 
+def _recalcular_superficie_campo(cur, campo_id: int) -> float:
+    """El total del campo es la suma de sus lotes activos (si tiene lotes con hectáreas)."""
+    cur.execute(
+        "SELECT COALESCE(SUM(superficie_base),0) AS t FROM lotes_agro WHERE campo_id=? AND COALESCE(baja,0)=0;",
+        (campo_id,),
+    )
+    total = round(float(cur.fetchone()[0] or 0), 4)
+    if total > 0:
+        cur.execute("UPDATE campos_agro SET superficie_total=? WHERE id=?;", (total, campo_id))
+    return total
+
+
+def _campania_activa_lote(cur, lote_id: int):
+    cur.execute(
+        """
+        SELECT a.id, a.codigo, c.empresa_id
+        FROM lotes_agro l
+        JOIN campos_agro c ON c.id = l.campo_id
+        JOIN campanias_agro a ON a.empresa_id = c.empresa_id AND COALESCE(a.activa,0) = 1
+        WHERE l.id = ?
+        LIMIT 1;
+        """,
+        (lote_id,),
+    )
+    return cur.fetchone()
+
+
+def _anio_campania(codigo: str) -> int:
+    m = re.match(r"^(\d{2})-(\d{2})$", normalizar_codigo_campania(codigo or ""))
+    return int(m.group(1)) if m else -1
+
+
+def _registrar_superficie_lote(cur, lote_id: int, anterior: float, nueva: float) -> None:
+    """Cambio de hectáreas de un lote: rige desde la campaña activa en adelante.
+    Las campañas anteriores quedan congeladas con la superficie que tenían."""
+    activa = _campania_activa_lote(cur, lote_id)
+    if not activa:
+        return
+    anio_act = _anio_campania(activa["codigo"])
+    cur.execute(
+        """
+        SELECT a.id, a.codigo,
+               (SELECT p.superficie FROM planificacion_lote p WHERE p.campania_id=a.id AND p.lote_id=?) AS sup_plan,
+               (SELECT s.superficie FROM lote_superficie_campania s WHERE s.campania_id=a.id AND s.lote_id=?) AS sup_camp
+        FROM campanias_agro a
+        WHERE a.empresa_id = ?;
+        """,
+        (lote_id, lote_id, activa["empresa_id"]),
+    )
+    for a in cur.fetchall():
+        anio = _anio_campania(a["codigo"])
+        if anio < 0:
+            continue
+        if a["id"] == activa["id"] or anio_act <= anio <= anio_act + 3:
+            cur.execute(
+                """
+                INSERT INTO lote_superficie_campania (lote_id, campania_id, superficie)
+                VALUES (?, ?, ?)
+                ON CONFLICT(lote_id, campania_id) DO UPDATE SET superficie=excluded.superficie;
+                """,
+                (lote_id, a["id"], nueva),
+            )
+            cur.execute(
+                "UPDATE planificacion_lote SET superficie=? WHERE campania_id=? AND lote_id=?;",
+                (nueva, a["id"], lote_id),
+            )
+        elif anio < anio_act and a["sup_camp"] is None and a["sup_plan"] is not None:
+            congelada = float(a["sup_plan"] or 0) or float(anterior or 0)
+            cur.execute(
+                "INSERT INTO lote_superficie_campania (lote_id, campania_id, superficie) VALUES (?, ?, ?);",
+                (lote_id, a["id"], congelada),
+            )
+
+
+def _aplicar_superficie_campania(cur, lote_id: int, campania_id: int, superficie: float) -> None:
+    """Hectáreas de un lote en una campaña. Si es la campaña activa, pasan a ser las
+    hectáreas actuales del lote y se recalcula el total del campo."""
+    superficie = float(superficie or 0)
+    if superficie <= 0:
+        return
+    cur.execute(
+        """
+        INSERT INTO lote_superficie_campania (lote_id, campania_id, superficie)
+        VALUES (?, ?, ?)
+        ON CONFLICT(lote_id, campania_id) DO UPDATE SET superficie=excluded.superficie;
+        """,
+        (lote_id, campania_id, superficie),
+    )
+    activa = _campania_activa_lote(cur, lote_id)
+    if not activa or int(activa["id"]) != int(campania_id):
+        return
+    cur.execute("SELECT campo_id, superficie_base FROM lotes_agro WHERE id=?;", (lote_id,))
+    row = cur.fetchone()
+    if not row:
+        return
+    anterior = float(row["superficie_base"] or 0)
+    if abs(superficie - anterior) <= 1e-6:
+        return
+    _registrar_superficie_lote(cur, lote_id, anterior, superficie)
+    cur.execute("UPDATE lotes_agro SET superficie_base=? WHERE id=?;", (superficie, lote_id))
+    _recalcular_superficie_campo(cur, int(row["campo_id"]))
+
+
 def _sincronizar_lotes_campo(cur, campo_id: int, lotes: List["LoteAgroModel"]) -> None:
     """Actualiza los lotes existentes, agrega los nuevos y da de baja (no borra) los quitados."""
-    cur.execute("SELECT id FROM lotes_agro WHERE campo_id=? AND COALESCE(baja,0)=0;", (campo_id,))
-    existentes = {int(r[0]) for r in cur.fetchall()}
+    cur.execute("SELECT id, superficie_base FROM lotes_agro WHERE campo_id=? AND COALESCE(baja,0)=0;", (campo_id,))
+    sup_previa = {int(r[0]): float(r[1] or 0) for r in cur.fetchall()}
+    existentes = set(sup_previa)
     enviados = set()
     for i, lote in enumerate(lotes):
         nombre = (lote.nombre or "").strip()
@@ -67,6 +171,9 @@ def _sincronizar_lotes_campo(cur, campo_id: int, lotes: List["LoteAgroModel"]) -
         orden = lote.orden if lote.orden else i
         if lote.id and int(lote.id) in existentes:
             enviados.add(int(lote.id))
+            nueva = float(lote.superficie_base or 0)
+            if abs(nueva - sup_previa[int(lote.id)]) > 1e-6:
+                _registrar_superficie_lote(cur, int(lote.id), sup_previa[int(lote.id)], nueva)
             cur.execute(
                 """
                 UPDATE lotes_agro SET codigo=?, nombre=?, superficie_base=?, lat=?, lng=?, orden=?,
@@ -453,6 +560,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                             lote.lat, lote.lng, lote.geojson or "", lote.orden if lote.orden else i,
                         ),
                     )
+                _recalcular_superficie_campo(cur, campo_id)
             if tipo == "arrendado" and data.sync_proveedor:
                 sincronizar_arrendador_proveedor(cur, data.dict(), empresa_id)
             if tipo == "arrendado" and data.contrato:
@@ -495,6 +603,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             )
             if data.lotes is not None:
                 _sincronizar_lotes_campo(cur, campo_id, data.lotes)
+            _recalcular_superficie_campo(cur, campo_id)
             if tipo == "arrendado" and data.sync_proveedor:
                 sincronizar_arrendador_proveedor(cur, data.dict(), empresa_id)
             if tipo == "arrendado" and data.contrato:
@@ -540,12 +649,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             ),
         )
         lid = cur.lastrowid
-        cur.execute(
-            "SELECT COALESCE(SUM(superficie_base),0) AS t FROM lotes_agro WHERE campo_id=? AND COALESCE(baja,0)=0;",
-            (campo_id,),
-        )
-        total = float(cur.fetchone()["t"] or 0)
-        cur.execute("UPDATE campos_agro SET superficie_total=? WHERE id=?;", (total, campo_id))
+        total = _recalcular_superficie_campo(cur, campo_id)
         conn.commit()
         conn.close()
         return {"status": "success", "id": lid, "superficie_total_campo": total}
@@ -554,12 +658,15 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
     def api_agro_lote_actualizar(lote_id: int, data: LoteAgroModel):
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT campo_id FROM lotes_agro WHERE id=?;", (lote_id,))
+        cur.execute("SELECT campo_id, superficie_base FROM lotes_agro WHERE id=?;", (lote_id,))
         row = cur.fetchone()
         if not row:
             conn.close()
             raise HTTPException(status_code=404, detail="Lote no encontrado")
         campo_id = row["campo_id"]
+        anterior = float(row["superficie_base"] or 0)
+        if abs(float(data.superficie_base or 0) - anterior) > 1e-6:
+            _registrar_superficie_lote(cur, lote_id, anterior, float(data.superficie_base or 0))
         cur.execute(
             """
             UPDATE lotes_agro SET codigo=?, nombre=?, superficie_base=?, lat=?, lng=?, geojson=?, orden=?
@@ -570,12 +677,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                 data.lat, data.lng, data.geojson or "", data.orden, lote_id,
             ),
         )
-        cur.execute(
-            "SELECT COALESCE(SUM(superficie_base),0) AS t FROM lotes_agro WHERE campo_id=? AND COALESCE(baja,0)=0;",
-            (campo_id,),
-        )
-        total = float(cur.fetchone()["t"] or 0)
-        cur.execute("UPDATE campos_agro SET superficie_total=? WHERE id=?;", (total, campo_id))
+        total = _recalcular_superficie_campo(cur, campo_id)
         conn.commit()
         conn.close()
         return {"status": "success", "superficie_total_campo": total}
@@ -584,13 +686,10 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
     def api_agro_lote_sup_campania(lote_id: int, campania_id: int, superficie: float):
         conn = get_db()
         cur = conn.cursor()
+        _aplicar_superficie_campania(cur, lote_id, campania_id, superficie)
         cur.execute(
-            """
-            INSERT INTO lote_superficie_campania (lote_id, campania_id, superficie)
-            VALUES (?, ?, ?)
-            ON CONFLICT(lote_id, campania_id) DO UPDATE SET superficie=excluded.superficie;
-            """,
-            (lote_id, campania_id, superficie),
+            "UPDATE planificacion_lote SET superficie=? WHERE campania_id=? AND lote_id=?;",
+            (superficie, campania_id, lote_id),
         )
         conn.commit()
         conn.close()
@@ -708,6 +807,8 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                     it.superficie, it.modificado_manual, it.notas or "",
                 ),
             )
+            if it.superficie:
+                _aplicar_superficie_campania(cur, it.lote_id, campania_id, it.superficie)
         conn.commit()
         conn.close()
         return {"status": "success", "guardados": len(data.items)}
