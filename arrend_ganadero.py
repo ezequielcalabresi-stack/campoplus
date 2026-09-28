@@ -168,6 +168,12 @@ def indice_vigente(cursor, empresa_id: int, codigo: str = "MAG", fecha: str = ""
     return {"codigo": codigo, "fecha": r[0], "valor": float(r[1] or 0)}
 
 
+def dias_promedio(calculo_precio: str, defecto: int = 30) -> int:
+    """'promedio 7 dias anteriores al dia de pago' -> 7."""
+    m = re.search(r"(\d{1,3})\s*d[ií]as?", calculo_precio or "", re.I)
+    return int(m.group(1)) if m and int(m.group(1)) > 0 else defecto
+
+
 def indice_promedio(cursor, empresa_id: int, codigo: str, fecha_pago: str, dias: int = 30) -> Dict[str, Any]:
     fin = _iso(fecha_pago) or date.today().isoformat()
     ini = (date.fromisoformat(fin) - timedelta(days=dias)).isoformat()
@@ -182,7 +188,7 @@ def indice_promedio(cursor, empresa_id: int, codigo: str, fecha_pago: str, dias:
     if n:
         return {"valor": round(float(avg), 4), "cantidad": int(n), "desde": ini, "hasta": fin, "criterio": f"Promedio de {n} valor(es) cargados entre {ini} y {fin}"}
     v = indice_vigente(cursor, empresa_id, codigo, fin)
-    return {"valor": v["valor"], "cantidad": 0, "desde": ini, "hasta": fin, "criterio": f"Sin valores en los 30 días previos: último cargado ({v['fecha']})"}
+    return {"valor": v["valor"], "cantidad": 0, "desde": ini, "hasta": fin, "criterio": f"Sin valores en los {dias} días previos: último cargado ({v['fecha']})"}
 
 
 def guardar_indice(cursor, empresa_id: int, codigo: str, fecha: str, valor: float, usuario: str = "") -> Dict[str, Any]:
@@ -414,7 +420,7 @@ def detalle_contrato(cursor, empresa_id: int, contrato_id: int) -> Dict[str, Any
 def _cuota(cursor, empresa_id: int, cuota_id: int) -> Dict[str, Any]:
     cursor.execute(
         """
-        SELECT q.*, c.arrendador_cuit, c.arrendador_nombre, c.campo_nombre, c.indice_codigo
+        SELECT q.*, c.arrendador_cuit, c.arrendador_nombre, c.campo_nombre, c.indice_codigo, c.calculo_precio
         FROM gan_contrato_cuotas q JOIN gan_contratos c ON c.id = q.contrato_id
         WHERE q.id = ? AND COALESCE(c.empresa_id,1) = ?;
         """,
@@ -670,7 +676,9 @@ def register_arrend_ganadero_routes(app, get_db, get_empresa_activa_id) -> None:
         def fn(cur, eid):
             q = _cuota(cur, eid, cuota_id)
             fecha = _iso(fecha_pago) or q["fecha_pago"]
-            return {"cuota": q, "promedio": indice_promedio(cur, eid, q.get("indice_codigo") or "MAG", fecha)}
+            return {"cuota": q, "promedio": indice_promedio(
+                cur, eid, q.get("indice_codigo") or "MAG", fecha, dias_promedio(q.get("calculo_precio") or "")
+            )}
         return _con(fn)
 
     @app.post("/api/ganaderia/contratos/cuotas/{cuota_id}/liquidar")

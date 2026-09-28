@@ -8457,6 +8457,72 @@ def _corregir_campanias_margenes_una_vez() -> None:
 _corregir_campanias_margenes_una_vez()
 
 
+def _importar_contratos_ganaderos_una_vez() -> None:
+    """Alta de los contratos ganaderos de datos/contratos_ganaderos_import.json.
+    Solo agrega: si ya existe un contrato del mismo campo, arrendador y fecha, lo saltea.
+    Las cuotas anteriores a 'pagadas_hasta' quedan como pagadas fuera de Campo+."""
+    import json
+
+    ruta = os.path.join(BASE_DIR, "datos", "contratos_ganaderos_import.json")
+    if not os.path.exists(DB_PATH) or not os.path.exists(ruta):
+        return
+    flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
+    os.makedirs(flag_dir, exist_ok=True)
+    flag = os.path.join(flag_dir, ".gan_contratos_v1")
+    if os.path.exists(flag):
+        return
+    with open(ruta, encoding="utf-8") as fh:
+        datos = json.load(fh)
+    from arrend_ganadero import guardar_contrato, init_arrend_ganadero_schema
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.cursor()
+        init_arrend_ganadero_schema(cur)
+        creados = 0
+        for c in datos.get("contratos") or []:
+            campo = cur.execute(
+                "SELECT id, nombre, lat, lng, empresa_id FROM campos_agro WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?)) AND COALESCE(baja,0)=0 LIMIT 1;",
+                (c.get("campo_nombre") or "",),
+            ).fetchone()
+            empresa_id = int(campo["empresa_id"] or 1) if campo else 1
+            nombre_campo = campo["nombre"] if campo else c.get("campo_nombre")
+            existe = cur.execute(
+                """
+                SELECT 1 FROM gan_contratos
+                WHERE COALESCE(empresa_id,1)=? AND LOWER(TRIM(campo_nombre))=LOWER(TRIM(?)) AND fecha_contrato=?
+                  AND (arrendador_cuit=? AND ?<>'' OR LOWER(TRIM(arrendador_nombre))=LOWER(TRIM(?)))
+                LIMIT 1;
+                """,
+                (empresa_id, nombre_campo, c.get("fecha_contrato"), c.get("arrendador_cuit") or "",
+                 c.get("arrendador_cuit") or "", c.get("arrendador_nombre") or ""),
+            ).fetchone()
+            if existe:
+                continue
+            data = dict(c)
+            data["pagadas_hasta"] = datos.get("pagadas_hasta") or ""
+            data["campo_nombre"] = nombre_campo
+            if campo:
+                data["campo_id"] = campo["id"]
+                data["lat"], data["lng"] = campo["lat"], campo["lng"]
+            guardar_contrato(cur, empresa_id, data)
+            creados += 1
+        conn.commit()
+        print(f"[ganaderia] contratos importados: {creados}")
+    except Exception as exc:
+        conn.rollback()
+        print(f"[ganaderia] no se pudieron importar contratos: {exc}")
+        return
+    finally:
+        conn.close()
+    with open(flag, "w", encoding="utf-8") as fh:
+        fh.write("ok")
+
+
+_importar_contratos_ganaderos_una_vez()
+
+
 def _indices_cuit_normalizado() -> None:
     """Las cuentas corrientes se cruzan con el padrón por REPLACE(cuit,'-','');
     sin estos índices cada cruce recorre todo el padrón por cada movimiento."""

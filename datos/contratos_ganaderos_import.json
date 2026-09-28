@@ -1,0 +1,205 @@
+{
+ "pagadas_hasta": "2026-09-28",
+ "contratos": [
+  {
+   "tipo": "Ganadero",
+   "anios": [
+    {
+     "nro_anio": 1,
+     "kg_ha": 80.0
+    },
+    {
+     "nro_anio": 2,
+     "kg_ha": 82.0
+    },
+    {
+     "nro_anio": 3,
+     "kg_ha": 84.0
+    },
+    {
+     "nro_anio": 4,
+     "kg_ha": 86.0
+    },
+    {
+     "nro_anio": 5,
+     "kg_ha": 88.0
+    },
+    {
+     "nro_anio": 6,
+     "kg_ha": 90.0
+    }
+   ],
+   "fecha_contrato": "2021-10-01",
+   "dia_pago": 5,
+   "fecha_fin": "2027-10-31",
+   "arrendador_nombre": "Vila Perez Juan Manuel",
+   "indice_codigo": "MAG",
+   "arrendador_cuit": "20929152280",
+   "calculo_precio": "Promedio 30 días anteriores al día de pago",
+   "campo_nombre": "La Mensajera",
+   "renspa": "",
+   "forma_pago": "Trimestral",
+   "hectareas": 167.5
+  },
+  {
+   "tipo": "Ganadero",
+   "anios": [
+    {
+     "nro_anio": 1,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 2,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 3,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 4,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 5,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 6,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 7,
+     "kg_ha": 90.0
+    }
+   ],
+   "fecha_contrato": "2020-10-15",
+   "dia_pago": 5,
+   "fecha_fin": "2027-10-14",
+   "arrendador_nombre": "Isabel Gil Chenaut",
+   "indice_codigo": "MAG",
+   "arrendador_cuit": "23134167084",
+   "calculo_precio": "Promedio 7 días anteriores al día de pago",
+   "campo_nombre": "Sta Julia",
+   "renspa": "",
+   "forma_pago": "Bimestral",
+   "hectareas": 75.0
+  },
+  {
+   "tipo": "Ganadero",
+   "anios": [
+    {
+     "nro_anio": 1,
+     "kg_ha": 85.0
+    },
+    {
+     "nro_anio": 2,
+     "kg_ha": 85.0
+    },
+    {
+     "nro_anio": 3,
+     "kg_ha": 85.0
+    },
+    {
+     "nro_anio": 4,
+     "kg_ha": 85.0
+    },
+    {
+     "nro_anio": 5,
+     "kg_ha": 85.0
+    },
+    {
+     "nro_anio": 6,
+     "kg_ha": 85.0
+    },
+    {
+     "nro_anio": 7,
+     "kg_ha": 85.0
+    }
+   ],
+   "fecha_contrato": "2020-10-15",
+   "dia_pago": 5,
+   "fecha_fin": "2027-10-14",
+   "arrendador_nombre": "Ana Rillo Ganaderia (S/P)",
+   "indice_codigo": "MAG",
+   "arrendador_cuit": "",
+   "calculo_precio": "Promedio 7 días anteriores al día de pago",
+   "campo_nombre": "Sta Julia",
+   "renspa": "",
+   "forma_pago": "Bimestral",
+   "hectareas": 40.0
+  },
+  {
+   "tipo": "Ganadero",
+   "anios": [
+    {
+     "nro_anio": 1,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 2,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 3,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 4,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 5,
+     "kg_ha": 90.0
+    }
+   ],
+   "fecha_contrato": "2025-01-01",
+   "dia_pago": 5,
+   "fecha_fin": "2029-12-31",
+   "arrendador_nombre": "Agroines S.A.",
+   "indice_codigo": "MAG",
+   "arrendador_cuit": "33716076089",
+   "calculo_precio": "Promedio 30 días anteriores al día de pago",
+   "campo_nombre": "La Dormilona",
+   "renspa": "",
+   "forma_pago": "Trimestral",
+   "hectareas": 150.0
+  },
+  {
+   "tipo": "Ganadero",
+   "anios": [
+    {
+     "nro_anio": 1,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 2,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 3,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 4,
+     "kg_ha": 90.0
+    },
+    {
+     "nro_anio": 5,
+     "kg_ha": 90.0
+    }
+   ],
+   "fecha_contrato": "2025-10-01",
+   "dia_pago": 5,
+   "fecha_fin": "2030-09-30",
+   "arrendador_nombre": "Edfe S.A.",
+   "indice_codigo": "MAG",
+   "arrendador_cuit": "30714708518",
+   "calculo_precio": "Promedio 30 días anteriores al día de pago",
+   "campo_nombre": "San Andres",
+   "renspa": "",
+   "forma_pago": "Trimestral",
+   "hectareas": 168.0
+  }
+ ]
+}
