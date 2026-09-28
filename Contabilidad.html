@@ -27,6 +27,13 @@
             </div>
         </div>
 
+        <div class="flex gap-1 mb-4 border-b border-slate-200">
+            <button type="button" id="tabDiario" onclick="mostrarSolapa('diario')" class="px-4 py-2 text-sm font-bold rounded-t-md border border-b-0 border-slate-300 bg-white text-slate-800">Libro diario</button>
+            <button type="button" id="tabCorte" onclick="mostrarSolapa('corte')" class="px-4 py-2 text-sm font-semibold rounded-t-md text-slate-500">Corte parcial</button>
+            <button type="button" id="tabRatios" onclick="mostrarSolapa('ratios')" class="px-4 py-2 text-sm font-semibold rounded-t-md text-slate-500">Ratios</button>
+        </div>
+
+        <div id="panelDiario">
         <!-- VISUALIZADOR EN TIEMPO REAL DE ASIENTOS CONTABLES -->
         <div class="flex flex-wrap gap-3 items-end mb-4">
             <div>
@@ -67,9 +74,10 @@
                 </table>
             </div>
         </div>
+        </div>
 
         <!-- CORTE PARCIAL RT 54 -->
-        <div class="border rounded-lg p-5 bg-slate-50">
+        <div id="panelCorte" class="hidden border rounded-lg p-5 bg-slate-50">
             <div class="flex flex-wrap justify-between gap-3 items-end mb-3">
                 <div>
                     <h3 class="text-md font-bold text-slate-800">Corte parcial de estados contables</h3>
@@ -85,6 +93,111 @@
             </div>
             <p id="corteEstado" class="text-xs text-slate-500 mb-3">Elegí la fecha y armá el corte.</p>
             <div id="corteCuerpo" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+        </div>
+
+        <div id="panelRatios" class="hidden">
+            <p id="ratiosMotivo" class="text-sm text-slate-600 mb-3">Cargando ratios...</p>
+            <div id="ratiosCards" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 mb-4"></div>
+            <h3 class="text-sm font-bold text-slate-800 mb-1">Serie desde el momento 0</h3>
+            <p id="ratiosMomento" class="text-xs text-slate-500 mb-2">El momento 0 es el primer ejercicio de la serie. La variación se mide contra ese ejercicio.</p>
+            <div class="overflow-x-auto border rounded mb-6">
+                <table class="w-full text-xs text-left">
+                    <thead class="bg-slate-100 uppercase text-slate-600">
+                        <tr>
+                            <th class="p-2">Ejercicio</th>
+                            <th class="p-2">Origen</th>
+                            <th class="p-2 text-right">Liquidez</th>
+                            <th class="p-2 text-right">Endeudamiento</th>
+                            <th class="p-2 text-right">ROA</th>
+                            <th class="p-2 text-right">ROE</th>
+                            <th class="p-2 text-right">Margen</th>
+                            <th class="p-2 text-right">vs momento 0 (ROE)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaSerie"></tbody>
+                </table>
+            </div>
+
+            <div class="border rounded-lg p-4 bg-slate-50">
+                <h3 class="font-bold text-slate-800 mb-1">Cargar EECC de un ejercicio</h3>
+                <p class="text-xs text-slate-500 mb-3">Para ejercicios que no están en el libro. El patrimonio es el neto sin el resultado del ejercicio, igual que en el corte. Si dejás el resultado vacío, se calcula como ingresos menos gastos.</p>
+                <form id="formEecc" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs" onsubmit="return guardarEecc(event)">
+                    <input type="hidden" id="eeccId" value="">
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Ejercicio</label>
+                        <input id="eeccEj" required class="mt-1 w-full border rounded p-2" placeholder="2022/2023">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Fecha de cierre</label>
+                        <input id="eeccFecha" type="date" class="mt-1 w-full border rounded p-2">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Activo corriente</label>
+                        <input id="eeccAc" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Activo no corriente</label>
+                        <input id="eeccAnc" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Pasivo corriente</label>
+                        <input id="eeccPc" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Pasivo no corriente</label>
+                        <input id="eeccPnc" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Patrimonio (sin resultado)</label>
+                        <input id="eeccPn" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Existencias</label>
+                        <input id="eeccEx" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0" title="Para la prueba ácida">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Ingresos</label>
+                        <input id="eeccIng" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Gastos</label>
+                        <input id="eeccGas" class="mt-1 w-full border rounded p-2 text-right font-mono" value="0">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-500 uppercase">Resultado</label>
+                        <input id="eeccRes" class="mt-1 w-full border rounded p-2 text-right font-mono" placeholder="Vacío = ingresos − gastos">
+                    </div>
+                    <div class="flex items-end">
+                        <label class="flex items-center gap-2 border rounded px-2 py-2 bg-white">
+                            <input id="eeccCerrado" type="checkbox" checked> Ejercicio cerrado
+                        </label>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="font-bold text-slate-500 uppercase">Notas</label>
+                        <input id="eeccNotas" class="mt-1 w-full border rounded p-2" placeholder="Balance firmado, ajuste, etc.">
+                    </div>
+                    <div class="md:col-span-4 flex flex-wrap gap-2">
+                        <button class="bg-[#1a4332] text-white px-4 py-2 rounded font-bold">Guardar EECC</button>
+                        <button type="button" onclick="completarDesdeLibro()" class="bg-slate-800 text-white px-4 py-2 rounded font-bold">Completar desde el libro</button>
+                        <button type="button" onclick="limpiarEecc()" class="bg-slate-200 text-slate-700 px-3 py-2 rounded font-bold">Limpiar</button>
+                    </div>
+                </form>
+                <div class="overflow-x-auto border rounded mt-4 bg-white">
+                    <table class="w-full text-xs">
+                        <thead class="bg-slate-100 uppercase text-slate-600">
+                            <tr>
+                                <th class="p-2 text-left">Ejercicio</th>
+                                <th class="p-2 text-left">Cierre</th>
+                                <th class="p-2 text-right">Activo</th>
+                                <th class="p-2 text-right">Pasivo</th>
+                                <th class="p-2 text-right">Resultado</th>
+                                <th class="p-2">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaEecc"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -249,6 +362,190 @@
                 estado.innerText = 'No se pudo armar el corte.';
                 cuerpo.innerHTML = '';
             }
+        }
+
+        function mostrarSolapa(cual) {
+            ['diario', 'corte', 'ratios'].forEach(nombre => {
+                const panel = document.getElementById('panel' + nombre.charAt(0).toUpperCase() + nombre.slice(1));
+                const tab = document.getElementById('tab' + nombre.charAt(0).toUpperCase() + nombre.slice(1));
+                const on = nombre === cual;
+                if (panel) panel.classList.toggle('hidden', !on);
+                if (tab) tab.className = on
+                    ? 'px-4 py-2 text-sm font-bold rounded-t-md border border-b-0 border-slate-300 bg-white text-slate-800'
+                    : 'px-4 py-2 text-sm font-semibold rounded-t-md text-slate-500';
+            });
+            if (cual === 'ratios') cargarRatios();
+        }
+
+        function numCampo(id) {
+            const s = String(document.getElementById(id).value || '').trim().replace(/\$/g, '').replace(/\s/g, '');
+            if (!s) return 0;
+            const n = s.indexOf(',') >= 0 ? s.replace(/\./g, '').replace(',', '.') : s;
+            const v = parseFloat(n);
+            return isNaN(v) ? 0 : v;
+        }
+
+        function fmtRatio(r) {
+            if (!r || r.valor == null) return '—';
+            if (r.unidad === 'pesos') return pesos(r.valor);
+            if (r.unidad === 'tanto') return (r.valor * 100).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+            return Number(r.valor).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function ratioDe(item, codigo) {
+            return (item.ratios || []).find(r => r.codigo === codigo);
+        }
+
+        let _eeccCache = [];
+
+        async function cargarRatios() {
+            const motivo = document.getElementById('ratiosMotivo');
+            try {
+                const res = await fetch('/api/contabilidad/ratios');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Error');
+                const base = data.base || {};
+                motivo.textContent = (data.base_motivo || '') + (base.ejercicio ? ' Ejercicio ' + base.ejercicio + '.' : '');
+                document.getElementById('ratiosMomento').textContent = data.momento_0
+                    ? 'Momento 0: ejercicio ' + data.momento_0 + '. La variación se mide contra ese primer estado.'
+                    : 'Cargá el EECC más viejo para fijar el momento 0.';
+                document.getElementById('ratiosCards').innerHTML = (base.ratios || []).map(r => `
+                    <div class="border rounded-lg p-3 bg-white" title="${r.formula}">
+                        <div class="text-[10px] font-bold uppercase text-slate-500">${r.grupo}</div>
+                        <div class="text-xs font-semibold text-slate-700">${r.nombre}</div>
+                        <div class="text-lg font-extrabold text-slate-900 font-mono">${fmtRatio(r)}</div>
+                    </div>`).join('') || '<p class="text-sm text-slate-400 col-span-full">Sin cifras para calcular.</p>';
+                const serie = data.serie || [];
+                document.getElementById('tablaSerie').innerHTML = serie.map(s => {
+                    const roe = ratioDe(s, 'roe');
+                    const delta = s.vs_momento_0 && s.vs_momento_0.roe;
+                    const deltaTxt = delta == null ? '—' : ((delta > 0 ? '+' : '') + (delta * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' pp');
+                    return `<tr class="border-t">
+                        <td class="p-2 font-semibold">${s.ejercicio || ''}${s.cerrado ? '' : ' · parcial'}</td>
+                        <td class="p-2 text-slate-500">${s.origen || ''}</td>
+                        <td class="p-2 text-right font-mono">${fmtRatio(ratioDe(s, 'liquidez_corriente'))}</td>
+                        <td class="p-2 text-right font-mono">${fmtRatio(ratioDe(s, 'endeudamiento'))}</td>
+                        <td class="p-2 text-right font-mono">${fmtRatio(ratioDe(s, 'roa'))}</td>
+                        <td class="p-2 text-right font-mono">${fmtRatio(roe)}</td>
+                        <td class="p-2 text-right font-mono">${fmtRatio(ratioDe(s, 'margen'))}</td>
+                        <td class="p-2 text-right font-mono">${deltaTxt}</td>
+                    </tr>`;
+                }).join('') || '<tr><td colspan="8" class="p-4 text-center text-slate-400">Sin serie. Cargá un ejercicio.</td></tr>';
+                _eeccCache = data.cargados || [];
+                pintarEecc();
+            } catch (e) {
+                console.error(e);
+                motivo.textContent = 'No se pudieron calcular los ratios.';
+            }
+        }
+
+        function pintarEecc() {
+            const tb = document.getElementById('tablaEecc');
+            tb.innerHTML = _eeccCache.map(e => {
+                const t = e.totales || {};
+                return `<tr class="border-t">
+                    <td class="p-2 font-semibold">${e.ejercicio}</td>
+                    <td class="p-2">${(e.fecha_cierre || '').split('-').reverse().join('/')}</td>
+                    <td class="p-2 text-right font-mono">${pesos(t.activo)}</td>
+                    <td class="p-2 text-right font-mono">${pesos(t.pasivo)}</td>
+                    <td class="p-2 text-right font-mono">${pesos(t.resultado_periodo)}</td>
+                    <td class="p-2 whitespace-nowrap">
+                        <button type="button" class="text-blue-700 font-bold" onclick="editarEecc(${e.id})">Editar</button>
+                        <button type="button" class="text-rose-600 font-bold ml-2" onclick="borrarEecc(${e.id})">Borrar</button>
+                    </td>
+                </tr>`;
+            }).join('') || '<tr><td colspan="6" class="p-4 text-center text-slate-400">Todavía no hay EECC cargados.</td></tr>';
+        }
+
+        function limpiarEecc() {
+            document.getElementById('eeccId').value = '';
+            ['eeccEj', 'eeccFecha', 'eeccNotas', 'eeccRes'].forEach(id => document.getElementById(id).value = '');
+            ['eeccAc', 'eeccAnc', 'eeccPc', 'eeccPnc', 'eeccPn', 'eeccEx', 'eeccIng', 'eeccGas'].forEach(id => document.getElementById(id).value = '0');
+            document.getElementById('eeccCerrado').checked = true;
+        }
+
+        function editarEecc(id) {
+            const e = _eeccCache.find(x => Number(x.id) === Number(id));
+            if (!e) return;
+            const t = e.totales || {};
+            document.getElementById('eeccId').value = e.id;
+            document.getElementById('eeccEj').value = e.ejercicio || '';
+            document.getElementById('eeccFecha').value = (e.fecha_cierre || '').slice(0, 10);
+            document.getElementById('eeccAc').value = t.activo_corriente || 0;
+            document.getElementById('eeccAnc').value = t.activo_no_corriente || 0;
+            document.getElementById('eeccPc').value = t.pasivo_corriente || 0;
+            document.getElementById('eeccPnc').value = t.pasivo_no_corriente || 0;
+            document.getElementById('eeccPn').value = t.patrimonio || 0;
+            document.getElementById('eeccEx').value = t.existencias || 0;
+            document.getElementById('eeccIng').value = t.ingresos || 0;
+            document.getElementById('eeccGas').value = t.gastos || 0;
+            document.getElementById('eeccRes').value = t.resultado_periodo || 0;
+            document.getElementById('eeccNotas').value = e.notas || '';
+            document.getElementById('eeccCerrado').checked = !!Number(e.cerrado);
+        }
+
+        async function completarDesdeLibro() {
+            let ej = document.getElementById('eeccEj').value.trim();
+            if (!ej) ej = prompt('Ejercicio a tomar del libro (ej. 2024/2025):', '') || '';
+            if (!ej) return;
+            const anio = parseInt(ej.split('/').pop(), 10);
+            if (!anio) { alert('El ejercicio tiene que ser del tipo 2024/2025.'); return; }
+            const fecha = anio + '-06-30';
+            const res = await fetch('/api/contabilidad/corte?fecha=' + fecha);
+            const data = await res.json();
+            if (!res.ok) { alert(data.detail || 'No se pudo leer el libro'); return; }
+            const t = data.totales || {};
+            document.getElementById('eeccEj').value = ej;
+            document.getElementById('eeccFecha').value = fecha;
+            document.getElementById('eeccAc').value = t.activo_corriente || 0;
+            document.getElementById('eeccAnc').value = t.activo_no_corriente || 0;
+            document.getElementById('eeccPc').value = t.pasivo_corriente || 0;
+            document.getElementById('eeccPnc').value = t.pasivo_no_corriente || 0;
+            document.getElementById('eeccPn').value = t.patrimonio || 0;
+            document.getElementById('eeccIng').value = t.ingresos || 0;
+            document.getElementById('eeccGas').value = t.gastos || 0;
+            document.getElementById('eeccRes').value = t.resultado_periodo || 0;
+            document.getElementById('eeccCerrado').checked = true;
+        }
+
+        async function guardarEecc(ev) {
+            ev.preventDefault();
+            const id = document.getElementById('eeccId').value;
+            const resTxt = document.getElementById('eeccRes').value.trim();
+            const body = {
+                ejercicio: document.getElementById('eeccEj').value.trim(),
+                fecha_cierre: document.getElementById('eeccFecha').value,
+                cerrado: document.getElementById('eeccCerrado').checked ? 1 : 0,
+                activo_corriente: numCampo('eeccAc'),
+                activo_no_corriente: numCampo('eeccAnc'),
+                pasivo_corriente: numCampo('eeccPc'),
+                pasivo_no_corriente: numCampo('eeccPnc'),
+                patrimonio: numCampo('eeccPn'),
+                existencias: numCampo('eeccEx'),
+                ingresos: numCampo('eeccIng'),
+                gastos: numCampo('eeccGas'),
+                resultado: resTxt === '' ? null : numCampo('eeccRes'),
+                notas: document.getElementById('eeccNotas').value.trim(),
+                origen: 'manual',
+            };
+            const res = await fetch(id ? '/api/contabilidad/eecc/' + id : '/api/contabilidad/eecc', {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'No se pudo guardar'); return false; }
+            limpiarEecc();
+            await cargarRatios();
+            return false;
+        }
+
+        async function borrarEecc(id) {
+            if (!confirm('¿Borrar este EECC?')) return;
+            const res = await fetch('/api/contabilidad/eecc/' + id, { method: 'DELETE' });
+            if (!res.ok) { alert('No se pudo borrar'); return; }
+            if (document.getElementById('eeccId').value === String(id)) limpiarEecc();
+            await cargarRatios();
         }
 
         window.onload = async function() {

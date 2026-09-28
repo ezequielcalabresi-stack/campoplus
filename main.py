@@ -8110,6 +8110,8 @@ from actividades_api import register_actividades_routes
 register_actividades_routes(app, get_db, get_empresa_activa_id)
 from liquidaciones_api import register_liquidaciones_routes
 register_liquidaciones_routes(app, get_db, get_empresa_activa_id)
+from ratios_api import register_ratios_routes
+register_ratios_routes(app, get_db, get_empresa_activa_id)
 
 # Audit schema antes de SaaS (usuarios_sistema)
 try:
