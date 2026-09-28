@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Arrendamientos ganaderos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        .tab-btn.active { background:#0f172a; color:#fff; }
+        .num { text-align:right; font-family: ui-monospace, monospace; white-space: nowrap; }
+        .est { color:#94a3b8; font-style: italic; }
+        #mapaLotes { height: 340px; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-7xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Arrendamientos ganaderos <span class="text-sm font-normal text-rose-700">kg de carne | Índice MAG</span></h1>
+            <p class="text-xs text-slate-500 mt-1">Contratos pactados en kg de carne por hectárea. Cada cuota se liquida en pesos con el índice a la fecha de pago y queda en la cuenta corriente del arrendador para pagarla por OP.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 items-start">
+            <a href="Ganaderia.html" class="bg-rose-700 text-white px-3 py-2 rounded-md text-sm font-bold">Ganadería</a>
+            <a href="financiero.html" class="bg-blue-700 text-white px-3 py-2 rounded-md text-sm font-bold">Financiero</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
+        </div>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-3 mb-4">
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 md:col-span-2 flex flex-wrap items-end gap-3">
+            <div>
+                <span class="block text-[10px] font-bold uppercase text-amber-800">Índice Sugerido de Alquiler Ganadero (MAG)</span>
+                <span id="lblMag" class="text-2xl font-extrabold text-amber-900 font-mono">-</span>
+                <span id="lblMagFecha" class="text-xs text-amber-700 ml-1"></span>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Fecha</label>
+                <input type="date" id="magFecha" class="rounded-md border border-slate-300 p-1.5 text-sm">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Valor $/kg</label>
+                <input type="text" id="magValor" inputmode="decimal" class="w-28 rounded-md border border-slate-300 p-1.5 text-sm text-right font-mono" placeholder="4.249,438">
+            </div>
+            <button onclick="guardarMag()" class="bg-amber-600 text-white px-3 py-1.5 rounded-md text-sm font-bold">Cargar valor</button>
+            <button onclick="toggleHistMag()" class="text-amber-800 underline text-xs">Historial</button>
+        </div>
+        <div id="kpis" class="bg-slate-50 border rounded-lg p-3 text-sm"></div>
+    </div>
+    <div id="histMag" class="hidden mb-4 border rounded-lg p-3 bg-amber-50/40 max-h-56 overflow-auto text-sm"></div>
+
+    <div class="flex flex-wrap gap-1 mb-4 border-b pb-2">
+        <button class="tab-btn active px-3 py-1.5 rounded text-sm font-semibold" data-tab="lista" onclick="showTab('lista')">Contratos</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="alta" onclick="nuevoContrato()">Alta de contrato</button>
+        <button class="tab-btn px-3 py-1.5 rounded text-sm font-semibold text-slate-600" data-tab="cc" onclick="showTab('cc')">Cuenta corriente</button>
+    </div>
+
+    <!-- LISTA -->
+    <section id="tab-lista" class="tab-panel">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-800 text-white text-xs uppercase">
+                    <tr>
+                        <th class="p-2 text-left">Campo</th>
+                        <th class="p-2 text-left">Arrendador</th>
+                        <th class="p-2 num">Has</th>
+                        <th class="p-2 text-left">Vigencia</th>
+                        <th class="p-2 text-left">Pago</th>
+                        <th class="p-2 text-left">Próximo pago</th>
+                        <th class="p-2 num">Kg cuota</th>
+                        <th class="p-2 num">Estimado $</th>
+                        <th class="p-2 text-left">Estado</th>
+                        <th class="p-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="tbContratos"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- ALTA -->
+    <section id="tab-alta" class="tab-panel hidden">
+        <input type="hidden" id="cId">
+        <div class="grid md:grid-cols-4 gap-3 text-sm">
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Tipo de contrato</label>
+                <select id="cTipo" class="w-full rounded-md border p-2">
+                    <option>Ganadero</option>
+                    <option>Pastoreo</option>
+                    <option>Capitalización</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Fecha contrato</label>
+                <input type="date" id="cFecha" class="w-full rounded-md border p-2" onchange="ajustarAnios()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Fecha finalización</label>
+                <input type="date" id="cFin" class="w-full rounded-md border p-2" onchange="ajustarAnios()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Estado</label>
+                <select id="cEstado" class="w-full rounded-md border p-2">
+                    <option>Vigente</option>
+                    <option>Finalizado</option>
+                    <option>Rescindido</option>
+                </select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Arrendador (proveedor)</label>
+                <input type="text" id="cArrendador" list="dlProveedores" class="w-full rounded-md border p-2" placeholder="Buscar por nombre o CUIT" onchange="resolverArrendador()">
+                <datalist id="dlProveedores"></datalist>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">CUIT arrendador</label>
+                <input type="text" id="cCuit" class="w-full rounded-md border p-2 font-mono" placeholder="20929152280" onchange="resolverCuit()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Nro RENSPA SENASA</label>
+                <input type="text" id="cRenspa" class="w-full rounded-md border p-2 font-mono">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Campo</label>
+                <input type="text" id="cCampo" list="dlCampos" class="w-full rounded-md border p-2" placeholder="La Mensajera" onchange="onCampoChange()">
+                <datalist id="dlCampos"></datalist>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Hectáreas</label>
+                <input type="text" id="cHas" inputmode="decimal" class="w-full rounded-md border p-2 text-right font-mono" oninput="recalcAnios()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Forma de pago</label>
+                <select id="cForma" class="w-full rounded-md border p-2" onchange="previewCronograma()">
+                    <option>Trimestral</option>
+                    <option>Mensual</option>
+                    <option>Bimestral</option>
+                    <option>Cuatrimestral</option>
+                    <option>Semestral</option>
+                    <option>Anual</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Día de pago (de cada mes)</label>
+                <input type="number" id="cDia" min="1" max="28" value="5" class="w-full rounded-md border p-2" onchange="previewCronograma()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Datos precio</label>
+                <select id="cIndice" class="w-full rounded-md border p-2">
+                    <option value="MAG">Índice sugerido de alquiler ganadero (MAG)</option>
+                </select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Cálculo de precio</label>
+                <input type="text" id="cCalculo" class="w-full rounded-md border p-2" value="Promedio 30 días anteriores al día de pago">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Cuotas anteriores a esta fecha</label>
+                <input type="date" id="cPagadasHasta" class="w-full rounded-md border p-2" title="Se marcan como pagadas (históricas, fuera de Campo+)">
+                <span class="text-[10px] text-slate-400">quedan como pagadas (histórico)</span>
+            </div>
+
+            <div class="md:col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Lotes</label>
+                <input type="text" id="cLotes" class="w-full rounded-md border p-2" placeholder="Seleccionalos en el mapa o escribilos separados por coma">
+                <div class="flex gap-2 mt-2">
+                    <input type="text" id="buscarLugar" class="flex-1 rounded-md border p-1.5 text-xs" placeholder="Buscar en el mapa (localidad, paraje, campo)">
+                    <button type="button" onclick="buscarEnMapa()" class="bg-slate-700 text-white px-2 py-1 rounded text-xs font-bold">Buscar</button>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">Clic en un lote para sumarlo o quitarlo. Clic en el mapa para marcar la ubicación del campo.</p>
+                <p id="lblUbic" class="text-[10px] text-slate-500"></p>
+            </div>
+            <div class="md:col-span-2">
+                <div id="mapaLotes" class="rounded-md border"></div>
+            </div>
+
+            <div class="md:col-span-4">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Observaciones</label>
+                <input type="text" id="cObs" class="w-full rounded-md border p-2">
+            </div>
+        </div>
+
+        <div class="mt-5 border rounded-lg p-3 bg-rose-50/40">
+            <div class="flex flex-wrap items-end gap-3 mb-2">
+                <h3 class="font-bold text-rose-900">Kg de carne por hectárea y por año</h3>
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-slate-500">Kg/ha año 1</label>
+                    <input type="text" id="kgBase" inputmode="decimal" class="w-20 rounded-md border p-1.5 text-right font-mono" value="80">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-slate-500">Aumento anual kg/ha</label>
+                    <input type="text" id="kgInc" inputmode="decimal" class="w-20 rounded-md border p-1.5 text-right font-mono" value="2">
+                </div>
+                <button type="button" onclick="completarKg()" class="bg-rose-700 text-white px-3 py-1.5 rounded text-xs font-bold">Completar años</button>
+            </div>
+            <table class="text-sm">
+                <thead class="text-xs uppercase text-slate-500">
+                    <tr><th class="p-1 text-left">Año</th><th class="p-1 num">Kg/ha</th><th class="p-1 num">Total kg año</th><th class="p-1 num">Kg por cuota</th></tr>
+                </thead>
+                <tbody id="tbAnios"></tbody>
+            </table>
+        </div>
+
+        <div class="flex gap-2 mt-4">
+            <button onclick="guardarContrato()" class="bg-emerald-700 text-white px-4 py-2 rounded-md font-bold">Guardar contrato</button>
+            <button onclick="previewCronograma(true)" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md font-bold">Ver cronograma</button>
+        </div>
+        <div id="previewBox" class="mt-4 hidden overflow-x-auto"></div>
+    </section>
+
+    <!-- CUENTA CORRIENTE -->
+    <section id="tab-cc" class="tab-panel hidden">
+        <div class="flex flex-wrap items-end gap-3 mb-3">
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Contrato</label>
+                <select id="selContrato" class="rounded-md border p-2 min-w-[320px]" onchange="cargarCC()"></select>
+            </div>
+            <button onclick="window.print()" class="bg-slate-800 text-white px-3 py-2 rounded-md text-sm font-bold">Imprimir</button>
+        </div>
+        <div id="ccCabecera" class="mb-3"></div>
+        <div id="ccCuerpo"></div>
+    </section>
+</div>
+
+<!-- Modal liquidación -->
+<div id="modalLiq" class="hidden fixed inset-0 bg-black/40 z-[2000] flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-xl p-5">
+        <div class="flex justify-between items-start mb-3">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800">Liquidar cuota</h3>
+                <p id="liqTitulo" class="text-xs text-slate-500"></p>
+            </div>
+            <button onclick="cerrarLiq()" class="text-slate-400 text-xl leading-none">&times;</button>
+        </div>
+        <input type="hidden" id="liqId">
+        <div class="grid grid-cols-2 gap-3 text-sm">
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Fecha de pago</label>
+                <input type="date" id="liqFecha" class="w-full rounded-md border p-2" onchange="sugerirIndice()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Kg carne</label>
+                <input type="text" id="liqKg" inputmode="decimal" class="w-full rounded-md border p-2 text-right font-mono" oninput="recalcLiq()">
+            </div>
+            <div class="col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Índice de arrendamiento $/kg</label>
+                <div class="flex gap-2">
+                    <input type="text" id="liqIndice" inputmode="decimal" class="flex-1 rounded-md border p-2 text-right font-mono" oninput="recalcLiq()">
+                    <button type="button" onclick="sugerirIndice(true)" class="bg-amber-600 text-white px-2 rounded text-xs font-bold">Usar sugerido</button>
+                </div>
+                <p id="liqSugerido" class="text-[10px] text-amber-700 mt-1"></p>
+            </div>
+            <div class="col-span-2 bg-slate-50 rounded p-2 flex justify-between font-bold">
+                <span>Importe (kg x índice)</span><span id="liqImporte" class="font-mono">$ 0,00</span>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Ret. Ganancias</label>
+                <input type="text" id="liqRetG" inputmode="decimal" class="w-full rounded-md border p-2 text-right font-mono" oninput="recalcLiq()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Ret. IIBB</label>
+                <input type="text" id="liqRetI" inputmode="decimal" class="w-full rounded-md border p-2 text-right font-mono" oninput="recalcLiq()">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Otros descuentos</label>
+                <input type="text" id="liqOtros" inputmode="decimal" class="w-full rounded-md border p-2 text-right font-mono" oninput="recalcLiq()">
+            </div>
+            <div class="flex flex-col justify-end">
+                <div class="bg-emerald-50 border border-emerald-200 rounded p-2 flex justify-between font-bold text-emerald-900">
+                    <span>Total a pagar</span><span id="liqTotal" class="font-mono">$ 0,00</span>
+                </div>
+            </div>
+            <div class="col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500">Observaciones</label>
+                <input type="text" id="liqObs" class="w-full rounded-md border p-2">
+            </div>
+            <label class="col-span-2 flex items-start gap-2 text-xs">
+                <input type="checkbox" id="liqCC" checked class="mt-0.5">
+                <span>Cargar en la cuenta corriente del arrendador (importe menos otros descuentos, vence en la fecha de pago). Las retenciones de Ganancias e IIBB se practican en la Orden de Pago; acá quedan como referencia.</span>
+            </label>
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+            <button onclick="cerrarLiq()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-md font-bold">Cancelar</button>
+            <button onclick="confirmarLiq()" class="bg-emerald-700 text-white px-4 py-2 rounded-md font-bold">Liquidar</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let contratos = [];
+let proveedores = [];
+let campos = [];
+let mag = { valor: 0, fecha: '' };
+let mapa = null, capaLotes = null, marcador = null;
+let ubic = { lat: null, lng: null };
+let cuotasCache = [];
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function parseNum(v) {
+    if (v == null || v === '') return 0;
+    let s = String(v).trim().replace(/\$/g, '').replace(/\s/g, '');
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    else if ((s.match(/\./g) || []).length > 1) s = s.replace(/\./g, '');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+}
+const fmt = (n, d = 2) => Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtKg = n => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+function fmtF(iso) {
+    if (!iso) return '';
+    const p = String(iso).slice(0, 10).split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+}
+function errMsg(d, def) {
+    const x = d && d.detail;
+    if (!x) return def;
+    if (Array.isArray(x)) return x.map(e => e.msg || JSON.stringify(e)).join('\n');
+    return String(x);
+}
+async function api(url, opts = {}) {
+    const r = await fetch(url, opts);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(errMsg(d, 'Error ' + r.status));
+    return d;
+}
+const cuotasPorAnio = () => ({ Mensual: 12, Bimestral: 6, Trimestral: 4, Cuatrimestral: 3, Semestral: 2, Anual: 1 }[document.getElementById('cForma').value] || 4);
+
+function showTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
+    if (name === 'alta') setTimeout(initMapa, 50);
+    if (name === 'cc') cargarCC();
+}
+
+// ------------------------------------------------ índice MAG
+async function cargarMag() {
+    const d = await api('/api/indices/MAG');
+    mag = d.vigente || mag;
+    document.getElementById('lblMag').textContent = '$ ' + fmt(mag.valor, 3);
+    document.getElementById('lblMagFecha').textContent = mag.fecha ? 'desde ' + fmtF(mag.fecha) : '';
+    document.getElementById('histMag').innerHTML = '<table class="w-full"><thead class="text-xs uppercase text-slate-500"><tr><th class="text-left p-1">Fecha</th><th class="num p-1">Valor</th><th class="text-left p-1">Usuario</th><th></th></tr></thead><tbody>' +
+        (d.historial || []).map(h => `<tr class="border-t"><td class="p-1">${fmtF(h.fecha)}</td><td class="num p-1">${fmt(h.valor, 3)}</td><td class="p-1 text-xs text-slate-500">${esc(h.usuario || '')}</td>
+            <td class="p-1 text-right"><button class="text-rose-600 text-xs" onclick="borrarMag(${h.id})">Borrar</button></td></tr>`).join('') + '</tbody></table>';
+}
+function toggleHistMag() { document.getElementById('histMag').classList.toggle('hidden'); }
+async function guardarMag() {
+    const valor = parseNum(document.getElementById('magValor').value);
+    const fecha = document.getElementById('magFecha').value;
+    if (!valor) { alert('Indicá el valor del índice.'); return; }
+    try {
+        await api('/api/indices/MAG', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor, fecha }) });
+        document.getElementById('magValor').value = '';
+        await cargarMag();
+        await cargarContratos();
+    } catch (e) { alert(e.message); }
+}
+async function borrarMag(id) {
+    if (!confirm('¿Borrar este valor del índice?')) return;
+    await api('/api/indices/MAG/' + id, { method: 'DELETE' });
+    await cargarMag();
+}
+
+// ------------------------------------------------ lista
+async function cargarContratos() {
+    const d = await api('/api/ganaderia/contratos');
+    contratos = d.contratos || [];
+    if (d.indice) mag = d.indice;
+    const tb = document.getElementById('tbContratos');
+    tb.innerHTML = contratos.map(c => {
+        const est = (c.proximo_kg || 0) * (mag.valor || 0);
+        return `<tr class="border-b hover:bg-slate-50">
+            <td class="p-2 font-semibold">${esc(c.campo_nombre)}<div class="text-[10px] text-slate-400">${esc(c.tipo)}${c.renspa ? ' | RENSPA ' + esc(c.renspa) : ''}</div></td>
+            <td class="p-2">${esc(c.arrendador_nombre || '')}<div class="text-[10px] text-slate-400 font-mono">${esc(c.arrendador_cuit || '')}</div></td>
+            <td class="p-2 num">${fmtKg(c.hectareas)}</td>
+            <td class="p-2 text-xs">${fmtF(c.fecha_contrato)} al ${fmtF(c.fecha_fin)}</td>
+            <td class="p-2 text-xs">${esc(c.forma_pago)} | día ${c.dia_pago}</td>
+            <td class="p-2">${fmtF(c.proximo_pago) || '-'}</td>
+            <td class="p-2 num">${c.proximo_kg ? fmtKg(c.proximo_kg) : '-'}</td>
+            <td class="p-2 num">${est ? '$ ' + fmt(est) : '-'}</td>
+            <td class="p-2 text-xs"><span class="px-2 py-0.5 rounded-full ${c.estado === 'Vigente' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}">${esc(c.estado)}</span></td>
+            <td class="p-2 text-right whitespace-nowrap">
+                <button class="bg-slate-800 text-white px-2 py-1 rounded text-xs font-bold" onclick="verCC(${c.id})">Cta cte</button>
+                <button class="bg-slate-200 px-2 py-1 rounded text-xs font-bold" onclick="editarContrato(${c.id})">Editar</button>
+            </td></tr>`;
+    }).join('') || '<tr><td colspan="10" class="p-4 text-center text-slate-400">Sin contratos ganaderos cargados.</td></tr>';
+
+    const vig = contratos.filter(c => c.estado === 'Vigente');
+    const has = vig.reduce((a, c) => a + Number(c.hectareas || 0), 0);
+    const kgPend = vig.reduce((a, c) => a + Number(c.kg_pendientes || 0), 0);
+    document.getElementById('kpis').innerHTML = `
+        <div class="flex justify-between"><span>Contratos vigentes</span><b>${vig.length}</b></div>
+        <div class="flex justify-between"><span>Hectáreas</span><b>${fmtKg(has)}</b></div>
+        <div class="flex justify-between"><span>Kg a liquidar</span><b>${fmtKg(kgPend)}</b></div>
+        <div class="flex justify-between"><span>Estimado a MAG vigente</span><b>$ ${fmt(kgPend * (mag.valor || 0))}</b></div>`;
+
+    const sel = document.getElementById('selContrato');
+    const prev = sel.value;
+    sel.innerHTML = contratos.map(c => `<option value="${c.id}">${esc(c.campo_nombre)} | ${esc(c.arrendador_nombre || c.arrendador_cuit || '')}</option>`).join('');
+    if (prev && contratos.some(c => String(c.id) === prev)) sel.value = prev;
+}
+
+// ------------------------------------------------ alta / edición
+function limpiarForm() {
+    ['cId', 'cArrendador', 'cCuit', 'cRenspa', 'cCampo', 'cHas', 'cLotes', 'cObs', 'cFecha', 'cFin', 'cPagadasHasta'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('cTipo').value = 'Ganadero';
+    document.getElementById('cEstado').value = 'Vigente';
+    document.getElementById('cForma').value = 'Trimestral';
+    document.getElementById('cDia').value = 5;
+    document.getElementById('cCalculo').value = 'Promedio 30 días anteriores al día de pago';
+    document.getElementById('cPagadasHasta').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('tbAnios').innerHTML = '';
+    document.getElementById('previewBox').classList.add('hidden');
+    ubic = { lat: null, lng: null };
+    document.getElementById('lblUbic').textContent = '';
+}
+function nuevoContrato() {
+    limpiarForm();
+    showTab('alta');
+}
+async function editarContrato(id) {
+    const d = await api('/api/ganaderia/contratos/' + id);
+    const c = d.contrato;
+    limpiarForm();
+    document.getElementById('cId').value = c.id;
+    document.getElementById('cTipo').value = c.tipo || 'Ganadero';
+    document.getElementById('cEstado').value = c.estado || 'Vigente';
+    document.getElementById('cFecha').value = c.fecha_contrato || '';
+    document.getElementById('cFin').value = c.fecha_fin || '';
+    document.getElementById('cArrendador').value = c.arrendador_nombre || '';
+    document.getElementById('cCuit').value = c.arrendador_cuit || '';
+    document.getElementById('cRenspa').value = c.renspa || '';
+    document.getElementById('cCampo').value = c.campo_nombre || '';
+    document.getElementById('cHas').value = fmtKg(c.hectareas);
+    document.getElementById('cForma').value = c.forma_pago || 'Trimestral';
+    document.getElementById('cDia').value = c.dia_pago || 5;
+    document.getElementById('cCalculo').value = c.calculo_precio || '';
+    document.getElementById('cLotes').value = c.lotes || '';
+    document.getElementById('cObs').value = c.observaciones || '';
+    document.getElementById('cPagadasHasta').value = '';
+    ubic = { lat: c.lat, lng: c.lng };
+    renderAnios(d.anios.map(a => a.kg_ha));
+    showTab('alta');
+    setTimeout(() => { onCampoChange(); if (ubic.lat) ponerMarcador(ubic.lat, ubic.lng, true); }, 120);
+}
+function nAnios() {
+    const a = document.getElementById('cFecha').value, b = document.getElementById('cFin').value;
+    if (!a || !b || b <= a) return 0;
+    return Math.max(1, Math.round((new Date(b) - new Date(a)) / 86400000 / 365.25));
+}
+function kgActuales() {
+    return [...document.querySelectorAll('#tbAnios input')].map(i => parseNum(i.value));
+}
+function renderAnios(valores) {
+    const n = nAnios();
+    const tb = document.getElementById('tbAnios');
+    let html = '';
+    for (let i = 0; i < n; i++) {
+        html += `<tr><td class="p-1 font-semibold">Año ${i + 1}</td>
+            <td class="p-1"><input type="text" inputmode="decimal" class="w-20 rounded border p-1 text-right font-mono" value="${valores[i] != null ? fmtKg(valores[i]) : ''}" oninput="recalcAnios()"></td>
+            <td class="p-1 num" data-tot></td><td class="p-1 num" data-cuota></td></tr>`;
+    }
+    tb.innerHTML = html || '<tr><td colspan="4" class="p-2 text-slate-400 text-xs">Indicá fecha de contrato y de finalización.</td></tr>';
+    recalcAnios();
+}
+function ajustarAnios() { renderAnios(kgActuales()); }
+function recalcAnios() {
+    const has = parseNum(document.getElementById('cHas').value);
+    const n = cuotasPorAnio();
+    document.querySelectorAll('#tbAnios tr').forEach(tr => {
+        const inp = tr.querySelector('input');
+        if (!inp) return;
+        const tot = has * parseNum(inp.value);
+        tr.querySelector('[data-tot]').textContent = fmtKg(tot);
+        tr.querySelector('[data-cuota]').textContent = fmtKg(tot / n);
+    });
+}
+function completarKg() {
+    const base = parseNum(document.getElementById('kgBase').value);
+    const inc = parseNum(document.getElementById('kgInc').value);
+    const n = nAnios();
+    if (!n) { alert('Primero indicá las fechas del contrato.'); return; }
+    renderAnios(Array.from({ length: n }, (_, i) => base + inc * i));
+}
+function payload() {
+    return {
+        tipo: document.getElementById('cTipo').value,
+        estado: document.getElementById('cEstado').value,
+        fecha_contrato: document.getElementById('cFecha').value,
+        fecha_fin: document.getElementById('cFin').value,
+        arrendador_nombre: document.getElementById('cArrendador').value.trim(),
+        arrendador_cuit: document.getElementById('cCuit').value.replace(/\D/g, ''),
+        renspa: document.getElementById('cRenspa').value.trim(),
+        campo_nombre: document.getElementById('cCampo').value.trim(),
+        campo_id: (campos.find(c => c.nombre === document.getElementById('cCampo').value.trim()) || {}).id || null,
+        hectareas: parseNum(document.getElementById('cHas').value),
+        forma_pago: document.getElementById('cForma').value,
+        dia_pago: parseInt(document.getElementById('cDia').value || '5', 10),
+        indice_codigo: document.getElementById('cIndice').value,
+        calculo_precio: document.getElementById('cCalculo').value,
+        lotes: document.getElementById('cLotes').value.trim(),
+        observaciones: document.getElementById('cObs').value.trim(),
+        pagadas_hasta: document.getElementById('cPagadasHasta').value,
+        lat: ubic.lat, lng: ubic.lng,
+        anios: kgActuales().map((kg, i) => ({ nro_anio: i + 1, kg_ha: kg })),
+    };
+}
+async function previewCronograma(mostrar) {
+    recalcAnios();
+    const box = document.getElementById('previewBox');
+    if (!mostrar && box.classList.contains('hidden')) return;
+    const p = payload();
+    const d = await api('/api/ganaderia/contratos/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+    const hist = p.pagadas_hasta;
+    box.innerHTML = `<table class="w-full text-sm"><thead class="bg-slate-100 text-xs uppercase"><tr>
+        <th class="p-1 text-left">Año</th><th class="p-1 text-left">Cuota</th><th class="p-1 text-left">Período</th><th class="p-1 text-left">Fecha pago</th>
+        <th class="p-1 num">Kg carne</th><th class="p-1 num">Estimado a MAG $ ${fmt(mag.valor, 3)}</th><th class="p-1 text-left">Estado al guardar</th></tr></thead><tbody>` +
+        (d.cuotas || []).map(c => `<tr class="border-t"><td class="p-1">${c.nro_anio}</td><td class="p-1">${c.nro_cuota}</td><td class="p-1">${esc(c.periodo)}</td>
+            <td class="p-1">${fmtF(c.fecha_pago)}</td><td class="p-1 num">${fmtKg(c.kg)}</td><td class="p-1 num">${fmt(c.kg * mag.valor)}</td>
+            <td class="p-1 text-xs">${hist && c.fecha_pago < hist ? 'Pagada (histórica)' : 'Pendiente'}</td></tr>`).join('') + '</tbody></table>';
+    box.classList.remove('hidden');
+}
+async function guardarContrato() {
+    const p = payload();
+    if (!p.anios.length || p.anios.some(a => !a.kg_ha)) {
+        if (!confirm('Hay años sin kg/ha cargados. ¿Guardar igual?')) return;
+    }
+    const id = document.getElementById('cId').value;
+    try {
+        const d = await api('/api/ganaderia/contratos' + (id ? '/' + id : ''), {
+            method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p),
+        });
+        await cargarContratos();
+        verCC(d.id);
+    } catch (e) { alert(e.message); }
+}
+
+// ------------------------------------------------ proveedores / campos
+function resolverArrendador() {
+    const v = document.getElementById('cArrendador').value.trim();
+    const dig = v.replace(/\D/g, '');
+    const p = proveedores.find(x => x.nombre === v) || (dig.length === 11 && proveedores.find(x => x.cuit.replace(/\D/g, '') === dig));
+    if (p) {
+        document.getElementById('cArrendador').value = p.nombre;
+        document.getElementById('cCuit').value = p.cuit.replace(/\D/g, '');
+    }
+}
+function resolverCuit() {
+    const dig = document.getElementById('cCuit').value.replace(/\D/g, '');
+    const p = proveedores.find(x => x.cuit.replace(/\D/g, '') === dig);
+    if (p && !document.getElementById('cArrendador').value) document.getElementById('cArrendador').value = p.nombre;
+}
+async function onCampoChange() {
+    const nombre = document.getElementById('cCampo').value.trim();
+    const c = campos.find(x => x.nombre === nombre);
+    if (!mapa) return;
+    if (capaLotes) { capaLotes.remove(); capaLotes = null; }
+    if (!c) return;
+    const d = await api('/api/agro/campos/' + c.id).catch(() => null);
+    if (!d) return;
+    if (!document.getElementById('cHas').value && d.superficie_total) {
+        document.getElementById('cHas').value = fmtKg(d.superficie_total);
+        recalcAnios();
+    }
+    const feats = [];
+    (d.lotes || []).forEach(l => {
+        if (!l.geojson) return;
+        try {
+            const g = typeof l.geojson === 'string' ? JSON.parse(l.geojson) : l.geojson;
+            const f = g.type === 'Feature' ? g : { type: 'Feature', geometry: g.geometry || g };
+            f.properties = Object.assign({}, f.properties, { nombre: l.nombre, sup: l.superficie_base });
+            feats.push(f);
+        } catch (e) { /* geojson inválido */ }
+    });
+    const elegidos = () => document.getElementById('cLotes').value.split(',').map(s => s.trim()).filter(Boolean);
+    const estilo = f => ({ color: elegidos().includes(f.properties.nombre) ? '#e11d48' : '#facc15', weight: 2, fillOpacity: elegidos().includes(f.properties.nombre) ? 0.45 : 0.15 });
+    if (feats.length) {
+        capaLotes = L.geoJSON({ type: 'FeatureCollection', features: feats }, {
+            style: estilo,
+            onEachFeature: (f, layer) => {
+                layer.bindTooltip(`${f.properties.nombre}${f.properties.sup ? ' | ' + fmtKg(f.properties.sup) + ' ha' : ''}`);
+                layer.on('click', ev => {
+                    L.DomEvent.stopPropagation(ev);
+                    const lista = elegidos();
+                    const i = lista.indexOf(f.properties.nombre);
+                    if (i >= 0) lista.splice(i, 1); else lista.push(f.properties.nombre);
+                    document.getElementById('cLotes').value = lista.join(', ');
+                    capaLotes.setStyle(estilo);
+                });
+            },
+        }).addTo(mapa);
+        mapa.fitBounds(capaLotes.getBounds(), { maxZoom: 15 });
+    } else if (d.lat && d.lng) {
+        mapa.setView([d.lat, d.lng], 13);
+    }
+}
+function initMapa() {
+    if (mapa) { mapa.invalidateSize(); return; }
+    mapa = L.map('mapaLotes', { maxZoom: 19 }).setView([-36.5, -60.5], 6);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' }).addTo(mapa);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.9 }).addTo(mapa);
+    mapa.on('click', e => ponerMarcador(e.latlng.lat, e.latlng.lng));
+    if (ubic.lat) ponerMarcador(ubic.lat, ubic.lng, true);
+    onCampoChange();
+}
+function ponerMarcador(lat, lng, centrar) {
+    ubic = { lat: Number(Number(lat).toFixed(6)), lng: Number(Number(lng).toFixed(6)) };
+    document.getElementById('lblUbic').textContent = `Ubicación: ${ubic.lat}, ${ubic.lng}`;
+    if (!mapa) return;
+    if (marcador) marcador.setLatLng([lat, lng]); else marcador = L.marker([lat, lng]).addTo(mapa);
+    if (centrar) mapa.setView([lat, lng], 13);
+}
+async function buscarEnMapa() {
+    const q = document.getElementById('buscarLugar').value.trim();
+    if (!q) return;
+    try {
+        const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ar&q=' + encodeURIComponent(q));
+        const d = await r.json();
+        if (!d.length) { alert('No se encontró ese lugar.'); return; }
+        mapa.setView([parseFloat(d[0].lat), parseFloat(d[0].lon)], 13);
+    } catch (e) { alert('No se pudo buscar en el mapa.'); }
+}
+
+// ------------------------------------------------ cuenta corriente
+function verCC(id) {
+    showTab('cc');
+    document.getElementById('selContrato').value = String(id);
+    cargarCC();
+}
+async function cargarCC() {
+    const id = document.getElementById('selContrato').value;
+    const cab = document.getElementById('ccCabecera'), cuerpo = document.getElementById('ccCuerpo');
+    if (!id) { cab.innerHTML = '<p class="text-slate-400">Sin contratos.</p>'; cuerpo.innerHTML = ''; return; }
+    const d = await api('/api/ganaderia/contratos/' + id);
+    const c = d.contrato;
+    cuotasCache = d.cuotas || [];
+    cab.innerHTML = `<div class="grid md:grid-cols-4 gap-2 text-sm bg-slate-50 border rounded-lg p-3">
+        <div><span class="text-[10px] uppercase text-slate-500 block">Campo</span><b>${esc(c.campo_nombre)}</b>${c.lotes ? '<div class="text-xs text-slate-500">Lotes: ' + esc(c.lotes) + '</div>' : ''}</div>
+        <div><span class="text-[10px] uppercase text-slate-500 block">Arrendador</span><b>${esc(c.arrendador_nombre || '')}</b><div class="text-xs font-mono text-slate-500">${esc(c.arrendador_cuit || '')}</div></div>
+        <div><span class="text-[10px] uppercase text-slate-500 block">Contrato</span>${esc(c.tipo)} | ${fmtF(c.fecha_contrato)} al ${fmtF(c.fecha_fin)}<div class="text-xs text-slate-500">${fmtKg(c.hectareas)} ha | ${esc(c.forma_pago)} | día ${c.dia_pago}${c.renspa ? ' | RENSPA ' + esc(c.renspa) : ''}</div></div>
+        <div><span class="text-[10px] uppercase text-slate-500 block">Precio</span>${esc(c.indice_codigo)} | ${esc(c.calculo_precio || '')}<div class="text-xs text-amber-700">Vigente: $ ${fmt(d.indice.valor, 3)}</div></div>
+    </div>`;
+    let html = '';
+    d.anios.forEach(a => {
+        const qs = d.cuotas.filter(q => q.nro_anio === a.nro_anio);
+        const t = { kg: 0, imp: 0, rg: 0, ri: 0, ot: 0, tot: 0 };
+        const filas = qs.map(q => {
+            const liq = q.estado !== 'Pendiente' && Number(q.importe) > 0;
+            const imp = liq ? Number(q.importe) : Number(q.importe_estimado || 0);
+            t.kg += Number(q.kg || 0);
+            if (liq) { t.imp += imp; t.rg += +q.ret_gcias; t.ri += +q.ret_iibb; t.ot += +q.otros; t.tot += +q.total_pagar; }
+            const badge = {
+                Pendiente: 'bg-amber-100 text-amber-800', Liquidada: 'bg-blue-100 text-blue-800', Pagada: 'bg-emerald-100 text-emerald-800',
+            }[q.estado] || 'bg-slate-100';
+            const ccEst = q.cc_id ? `<div class="text-[10px] text-slate-500">Cta cte: ${esc(q.cc_estado || 'Pendiente')}</div>` : '';
+            return `<tr class="border-t ${q.estado === 'Pendiente' ? '' : 'bg-slate-50/60'}">
+                <td class="p-1.5">${esc(q.periodo)}</td>
+                <td class="p-1.5 num">${fmtKg(q.kg)}</td>
+                <td class="p-1.5 num">${liq ? fmt(q.indice, 3) : (q.estado === 'Pendiente' ? '<span class="est">' + fmt(d.indice.valor, 3) + '</span>' : '')}</td>
+                <td class="p-1.5">${fmtF(q.fecha_pago)}</td>
+                <td class="p-1.5 num">${liq ? fmt(imp) : (imp ? '<span class="est">' + fmt(imp) + '</span>' : '')}</td>
+                <td class="p-1.5 num">${liq ? fmt(q.ret_gcias) : ''}</td>
+                <td class="p-1.5 num">${liq ? fmt(q.ret_iibb) : ''}</td>
+                <td class="p-1.5 num">${liq ? fmt(q.otros) : ''}</td>
+                <td class="p-1.5 num font-bold">${liq ? fmt(q.total_pagar) : ''}</td>
+                <td class="p-1.5 text-xs"><span class="px-2 py-0.5 rounded-full ${badge}">${esc(q.estado)}</span>${ccEst}</td>
+                <td class="p-1.5 text-right whitespace-nowrap">
+                    <button class="bg-emerald-700 text-white px-2 py-0.5 rounded text-xs font-bold" onclick="abrirLiq(${q.id})">${q.estado === 'Pendiente' ? 'Liquidar' : 'Editar'}</button>
+                    ${q.estado !== 'Pendiente' ? `<button class="bg-slate-200 px-2 py-0.5 rounded text-xs" onclick="anularLiq(${q.id})">Anular</button>` : ''}
+                </td></tr>`;
+        }).join('');
+        html += `<div class="mb-5 border rounded-lg overflow-hidden">
+            <div class="bg-rose-900 text-white px-3 py-2 text-sm flex flex-wrap gap-4">
+                <b>Año ${a.nro_anio}</b><span>Kg carne/ha: <b>${fmtKg(a.kg_ha)}</b></span><span>Hectáreas: <b>${fmtKg(c.hectareas)}</b></span><span>Total kg año: <b>${fmtKg(a.kg_total)}</b></span>
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-sm">
+                <thead class="bg-slate-100 text-[11px] uppercase text-slate-600"><tr>
+                    <th class="p-1.5 text-left">Período</th><th class="p-1.5 num">Kg carne</th><th class="p-1.5 num">Índice arrend.</th><th class="p-1.5 text-left">Fecha</th>
+                    <th class="p-1.5 num">Importe</th><th class="p-1.5 num">Ret Gcias</th><th class="p-1.5 num">Ret IIBB</th><th class="p-1.5 num">Otros</th>
+                    <th class="p-1.5 num">Total a pagar</th><th class="p-1.5 text-left">Estado</th><th></th></tr></thead>
+                <tbody>${filas}</tbody>
+                <tfoot class="bg-slate-50 font-bold border-t-2"><tr>
+                    <td class="p-1.5">Total</td><td class="p-1.5 num">${fmtKg(t.kg)}</td><td></td><td></td>
+                    <td class="p-1.5 num">${fmt(t.imp)}</td><td class="p-1.5 num">${fmt(t.rg)}</td><td class="p-1.5 num">${fmt(t.ri)}</td><td class="p-1.5 num">${fmt(t.ot)}</td>
+                    <td class="p-1.5 num">${fmt(t.tot)}</td><td colspan="2"></td></tr></tfoot>
+            </table></div></div>`;
+    });
+    cuerpo.innerHTML = html || '<p class="text-slate-400">El contrato no tiene cuotas generadas.</p>';
+}
+
+// ------------------------------------------------ liquidación
+function abrirLiq(cuotaId) {
+    const q = cuotasCache.find(x => x.id === cuotaId);
+    if (!q) return;
+    document.getElementById('liqId').value = q.id;
+    document.getElementById('liqTitulo').textContent = `Año ${q.nro_anio} | Cuota ${q.nro_cuota} | ${q.periodo}`;
+    document.getElementById('liqFecha').value = q.fecha_pago;
+    document.getElementById('liqKg').value = fmtKg(q.kg);
+    document.getElementById('liqIndice').value = Number(q.indice) > 0 ? fmt(q.indice, 3) : '';
+    document.getElementById('liqRetG').value = Number(q.ret_gcias) ? fmt(q.ret_gcias) : '';
+    document.getElementById('liqRetI').value = Number(q.ret_iibb) ? fmt(q.ret_iibb) : '';
+    document.getElementById('liqOtros').value = Number(q.otros) ? fmt(q.otros) : '';
+    document.getElementById('liqObs').value = q.observaciones || '';
+    document.getElementById('liqCC').checked = q.estado === 'Pendiente' ? true : !!q.cc_id;
+    document.getElementById('liqSugerido').textContent = '';
+    document.getElementById('modalLiq').classList.remove('hidden');
+    sugerirIndice(!(Number(q.indice) > 0));
+    recalcLiq();
+}
+function cerrarLiq() { document.getElementById('modalLiq').classList.add('hidden'); }
+async function sugerirIndice(aplicar) {
+    const id = document.getElementById('liqId').value;
+    const f = document.getElementById('liqFecha').value;
+    const d = await api(`/api/ganaderia/contratos/cuotas/${id}/sugerido?fecha_pago=${encodeURIComponent(f)}`).catch(() => null);
+    if (!d) return;
+    const p = d.promedio;
+    document.getElementById('liqSugerido').textContent = `Sugerido $ ${fmt(p.valor, 3)} | ${p.criterio}`;
+    if (aplicar === true) {
+        document.getElementById('liqIndice').value = fmt(p.valor, 3);
+        recalcLiq();
+    }
+}
+function recalcLiq() {
+    const imp = parseNum(document.getElementById('liqKg').value) * parseNum(document.getElementById('liqIndice').value);
+    const tot = imp - parseNum(document.getElementById('liqRetG').value) - parseNum(document.getElementById('liqRetI').value) - parseNum(document.getElementById('liqOtros').value);
+    document.getElementById('liqImporte').textContent = '$ ' + fmt(imp);
+    document.getElementById('liqTotal').textContent = '$ ' + fmt(tot);
+}
+async function confirmarLiq() {
+    const id = document.getElementById('liqId').value;
+    const body = {
+        fecha_pago: document.getElementById('liqFecha').value,
+        kg: parseNum(document.getElementById('liqKg').value),
+        indice: parseNum(document.getElementById('liqIndice').value),
+        ret_gcias: parseNum(document.getElementById('liqRetG').value),
+        ret_iibb: parseNum(document.getElementById('liqRetI').value),
+        otros: parseNum(document.getElementById('liqOtros').value),
+        observaciones: document.getElementById('liqObs').value,
+        cargar_cc: document.getElementById('liqCC').checked,
+    };
+    try {
+        await api(`/api/ganaderia/contratos/cuotas/${id}/liquidar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        cerrarLiq();
+        await cargarCC();
+        cargarContratos();
+    } catch (e) { alert(e.message); }
+}
+async function anularLiq(id) {
+    if (!confirm('¿Anular la liquidación? Si se cargó en la cuenta corriente, se quita ese renglón (solo si no tiene pagos).')) return;
+    try {
+        await api(`/api/ganaderia/contratos/cuotas/${id}/anular`, { method: 'POST' });
+        await cargarCC();
+        cargarContratos();
+    } catch (e) { alert(e.message); }
+}
+
+// ------------------------------------------------ init
+(async function init() {
+    document.getElementById('magFecha').value = new Date().toISOString().slice(0, 10);
+    const [provs, cps] = await Promise.all([
+        fetch('/api/entidades?rol=proveedor').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/agro/campos').then(r => r.ok ? r.json() : []).catch(() => []),
+    ]);
+    proveedores = (provs || []).map(p => ({ cuit: p.cuit || '', nombre: (p.razon_social || p.nombre_fantasia || '').trim() }))
+        .filter(p => p.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    document.getElementById('dlProveedores').innerHTML = proveedores.map(p => `<option value="${esc(p.nombre)}">CUIT ${esc(p.cuit)}</option>`).join('');
+    campos = cps || [];
+    document.getElementById('dlCampos').innerHTML = campos.map(c => `<option value="${esc(c.nombre)}">${esc(c.tipo || '')}</option>`).join('');
+    await cargarMag();
+    await cargarContratos();
+    const qId = new URLSearchParams(location.search).get('contrato');
+    if (qId) verCC(qId);
+})();
+</script>
+</body>
+</html>

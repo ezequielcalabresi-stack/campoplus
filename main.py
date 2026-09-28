@@ -7291,6 +7291,14 @@ def api_flujo_proyectado(
     except Exception:
         pass
 
+    # Arrendamientos ganaderos: cuotas sin liquidar = kg carne x índice MAG
+    try:
+        from arrend_ganadero import indice_vigente as _mag_vigente, lineas_ff_ganadero
+        mag_ff = pizarra_carne if pizarra_carne > 0 else _mag_vigente(cur, empresa_id, "MAG")["valor"]
+        lineas.extend(lineas_ff_ganadero(cur, empresa_id, desde, hasta, mag_ff))
+    except Exception as _exc_gan:
+        print(f"AVISO financiero alquiler ganadero: {_exc_gan}")
+
     # Facturas CC Campo+ (Access + live): vto automático 30 días, fechas DD/MM, etc.
     fact_cc = _lineas_facturas_cc_financiero(cur, empresa_id, desde, hasta)
     lineas = _merge_facturas_cc(lineas, fact_cc)
@@ -8108,6 +8116,8 @@ register_agro_routes(app, get_db, get_empresa_activa_id)
 register_audit_routes(app, get_db, get_empresa_activa_id)
 from ganaderia_api import register_ganaderia_routes
 register_ganaderia_routes(app, get_db, get_empresa_activa_id)
+from arrend_ganadero import register_arrend_ganadero_routes
+register_arrend_ganadero_routes(app, get_db, get_empresa_activa_id)
 from porcino_api import register_porcino_routes
 register_porcino_routes(app, get_db, get_empresa_activa_id)
 from aviar_api import register_aviar_routes

@@ -121,6 +121,13 @@
                    class="w-32 rounded-md border border-slate-300 p-2 font-bold text-right font-mono"
                    onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this)" value="560.000,00">
         </div>
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-500" title="Índice Sugerido de Alquiler Ganadero (MAG), $/kg carne">Índice MAG $/kg</label>
+            <input type="text" id="paramMag" inputmode="decimal"
+                   class="w-28 rounded-md border border-slate-300 p-2 font-bold text-right font-mono"
+                   onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this, 3); guardarMag()" value="4.249,438">
+            <span id="lblMagFecha" class="block text-[9px] text-slate-400"></span>
+        </div>
         <label class="flex items-center gap-2 px-2 py-2 border rounded-md bg-slate-50 cursor-pointer select-none">
             <input type="checkbox" id="chkDisp" checked class="rounded border-slate-400">
             <span class="font-semibold text-slate-700">Disponibilidades a hoy<br><span class="font-normal text-[10px] text-slate-500">(saldos, caja, FCI, plazos fijos)</span></span>
@@ -325,9 +332,41 @@ function onMoneyFocus(el) {
     el.select();
 }
 
-function onMoneyBlur(el) {
+function onMoneyBlur(el, dec = 2) {
     const n = parseMoney(el.value);
-    el.value = formatMoney(n, 2);
+    el.value = formatMoney(n, dec);
+}
+
+let magGuardado = 0;
+async function cargarMag() {
+    try {
+        const r = await fetch('/api/indices/MAG');
+        if (!r.ok) return;
+        const d = await r.json();
+        const v = d.vigente || {};
+        if (v.valor) {
+            magGuardado = Number(v.valor);
+            document.getElementById('paramMag').value = formatMoney(magGuardado, 3);
+            document.getElementById('lblMagFecha').textContent = 'vigente desde ' + fmtFecha(v.fecha);
+        }
+    } catch (e) { console.warn('MAG', e); }
+}
+
+async function guardarMag() {
+    const v = parseMoney(document.getElementById('paramMag').value);
+    if (!v || Math.abs(v - magGuardado) < 0.0005) return;
+    if (!confirm('¿Guardar ' + formatMoney(v, 3) + ' como Índice MAG vigente desde hoy?')) {
+        document.getElementById('paramMag').value = formatMoney(magGuardado, 3);
+        return;
+    }
+    const r = await fetch('/api/indices/MAG', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valor: v }),
+    });
+    if (!r.ok) { alert('No se pudo guardar el índice MAG.'); return; }
+    await cargarMag();
+    cargarProyeccion();
 }
 
 function fmtFecha(iso) {
@@ -419,6 +458,7 @@ async function cargarProyeccion() {
         hasta: document.getElementById('fechaHasta').value,
         tc: String(parseMoney(document.getElementById('paramDolar').value)),
         pizarra_soja: String(parseMoney(document.getElementById('paramSoja').value)),
+        pizarra_carne: String(parseMoney(document.getElementById('paramMag').value)),
         incluir_disponibilidades: document.getElementById('chkDisp').checked ? 'true' : 'false',
     });
     try {
@@ -640,7 +680,7 @@ async function eliminarGasto(id) {
 
 initFechas();
 limpiarFormGasto();
-cargarProyeccion();
+cargarMag().then(cargarProyeccion);
 </script>
 </body>
 </html>
