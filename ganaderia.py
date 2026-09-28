@@ -8,6 +8,8 @@ diagnóstico de preñez, partos, lecturas de manga, producción lechera.
 """
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -73,14 +75,100 @@ ANIMAL_EXTRA_COLS = (
     ("dep_leche", "REAL"),
 )
 
-# Nomenclatura de registro usada por la Asociación Argentina de Angus
-CATEGORIAS_AAA = (
+# Condición de pedigree común a las asociaciones de carne (el criterio Angus).
+CATEGORIAS_REGISTRO = (
     ("PP", "Puro de Pedigree"),
     ("PC", "Puro Controlado"),
-    ("SR", "Sin registro AAA / comercial"),
+    ("SR", "Sin registro / comercial"),
+)
+CATEGORIAS_AAA = CATEGORIAS_REGISTRO
+
+# Razas de carne con asociación de criadores reconocida en Argentina.
+# Brangus y Limangus van antes que Angus al matchear por texto.
+RAZAS_CARNE = (
+    {
+        "nombre": "Angus",
+        "asociacion": "Asociación Argentina de Angus",
+        "sigla": "AAA",
+        "composicion": "Británica",
+        "colores": ("Negro", "Colorado"),
+        "alias": ("angus negro", "angus colorado"),
+    },
+    {
+        "nombre": "Hereford",
+        "asociacion": "Asociación Argentina Criadores de Hereford",
+        "sigla": "AACH",
+        "composicion": "Británica · astado o mocho",
+        "colores": ("Colorado cara blanca",),
+        "alias": ("hereford mocho", "hereford astado", "polled hereford"),
+    },
+    {
+        "nombre": "Shorthorn",
+        "asociacion": "Asociación Argentina de Criadores de Shorthorn",
+        "sigla": "AACS",
+        "composicion": "Británica",
+        "colores": ("Colorado", "Overo", "Blanco"),
+        "alias": (),
+    },
+    {
+        "nombre": "Brangus",
+        "asociacion": "Asociación Argentina de Brangus",
+        "sigla": "AAB",
+        "composicion": "5/8 Angus × 3/8 Brahman",
+        "colores": ("Negro", "Colorado"),
+        "alias": (),
+    },
+    {
+        "nombre": "Braford",
+        "asociacion": "Asociación Braford Argentina",
+        "sigla": "ABA",
+        "composicion": "5/8 Hereford × 3/8 Brahman",
+        "colores": ("Colorado cara blanca",),
+        "alias": ("bradford", "bradfor", "brafor"),
+    },
+    {
+        "nombre": "Limangus",
+        "asociacion": "Asociación Argentina de Limangus",
+        "sigla": "AAL",
+        "composicion": "5/8 Angus × 3/8 Limousin",
+        "colores": ("Negro", "Colorado"),
+        "alias": (),
+    },
+    {
+        "nombre": "Limousin",
+        "asociacion": "Asociación Argentina de Criadores de Limousin",
+        "sigla": "AACL",
+        "composicion": "Continental",
+        "colores": ("Colorado",),
+        "alias": (),
+    },
+    {
+        "nombre": "Charolais",
+        "asociacion": "Asociación Argentina de Charolais",
+        "sigla": "AAC",
+        "composicion": "Continental",
+        "colores": ("Blanco",),
+        "alias": ("charoles", "charolés"),
+    },
+    {
+        "nombre": "Brahman",
+        "asociacion": "Asociación Argentina de Criadores de Brahman",
+        "sigla": "AACB",
+        "composicion": "Cebú",
+        "colores": ("Gris", "Colorado"),
+        "alias": ("cebú", "cebu"),
+    },
+    {
+        "nombre": "Simmental",
+        "asociacion": "Asociación Argentina de Criadores de Simmental",
+        "sigla": "AAS",
+        "composicion": "Continental",
+        "colores": ("Overo colorado",),
+        "alias": ("fleckvieh",),
+    },
 )
 
-COLORES_ANGUS = ("Negro", "Colorado")
+COLORES_ANGUS = next(r["colores"] for r in RAZAS_CARNE if r["nombre"] == "Angus")
 
 # Razas típicas de tambo (no deben figurar en stock de carne)
 RAZAS_LECHERAS = (
@@ -93,6 +181,70 @@ RAZAS_LECHERAS = (
     "brown swiss",
     "swedish red",
 )
+
+
+def _fold_raza(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return " ".join(s.lower().split())
+
+
+def perfil_raza(raza: Optional[str]) -> Optional[dict]:
+    """Asociación, sigla y colores de una raza de carne reconocida. None si es comercial u otra."""
+    key = _fold_raza(raza or "")
+    if not key:
+        return None
+    ranked = sorted(RAZAS_CARNE, key=lambda r: -len(r["nombre"]))
+    for item in ranked:
+        tokens = [_fold_raza(item["nombre"])] + [_fold_raza(a) for a in item.get("alias") or ()]
+        for tok in tokens:
+            if not tok:
+                continue
+            if re.search(r"(?<![a-z])" + re.escape(tok) + r"(?![a-z])", key):
+                return item
+    return None
+
+
+def canonizar_raza(raza: Optional[str]) -> Optional[str]:
+    """Deja el nombre de asociación (Braford, no Bradford) cuando el texto es la raza o un alias."""
+    raw = (raza or "").strip()
+    if not raw:
+        return None
+    key = _fold_raza(raw)
+    for item in RAZAS_CARNE:
+        nombres = [_fold_raza(item["nombre"])] + [_fold_raza(a) for a in item.get("alias") or ()]
+        if key in nombres:
+            return item["nombre"]
+    return raw
+
+
+def _bloque_registro(animal: dict) -> dict:
+    """Datos de pedigree de la asociación que corresponde a la raza del animal."""
+    perfil = perfil_raza(animal.get("raza"))
+    cat = (animal.get("categoria_aaa") or "").strip().upper()
+    return {
+        "categorias": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_REGISTRO],
+        "colores": list(perfil["colores"]) if perfil else list(COLORES_ANGUS),
+        "registro": animal.get("registro_aaa"),
+        "categoria": cat or None,
+        "categoria_nombre": next((n for c, n in CATEGORIAS_REGISTRO if c == cat), None),
+        "color_capa": animal.get("color_capa") or animal.get("color"),
+        "criador": animal.get("criador_aaa"),
+        "prefijo": animal.get("prefijo_cabana"),
+        "fecha_registro": animal.get("fecha_registro_aaa"),
+        "deps": {
+            "pn": animal.get("dep_pn"),
+            "pd": animal.get("dep_pd"),
+            "pf": animal.get("dep_pf"),
+            "leche": animal.get("dep_leche"),
+        },
+        "raza": (perfil or {}).get("nombre") or animal.get("raza"),
+        "asociacion": (perfil or {}).get("asociacion"),
+        "sigla": (perfil or {}).get("sigla"),
+        "composicion": (perfil or {}).get("composicion"),
+        "es_registrable": perfil is not None,
+        "es_angus": bool(perfil and perfil["nombre"] == "Angus"),
+    }
 
 
 def es_raza_lechera(raza: Optional[str]) -> bool:
@@ -736,7 +888,7 @@ def _aplicar_campos_geneticos(cur, animal_id: int, data: dict) -> None:
 def crear_animal(conn, empresa_id: int, data: dict, usuario: str = "") -> int:
     cur = conn.cursor()
     ahora = _now()
-    raza = (data.get("raza") or "").strip() or None
+    raza = canonizar_raza(data.get("raza"))
     es_tambo = 1 if data.get("es_tambo") else 0
     sistema = data.get("sistema_actual") or "cria"
     if es_raza_lechera(raza) or sistema == "tambo":
@@ -859,6 +1011,8 @@ def actualizar_animal(conn, empresa_id: int, animal_id: int, data: dict) -> None
             v = data[k]
             if k in ("caravana_visual", "caravana_electronica", "senasa_id", "nombre", "raza", "origen", "color", "observaciones"):
                 v = (v or "").strip() or None
+            if k == "raza":
+                v = canonizar_raza(v)
             if k == "es_tambo":
                 v = 1 if v else 0
             vals.append(v)
@@ -1347,27 +1501,7 @@ def ficha_animal(conn, empresa_id: int, animal_id: int) -> Optional[dict]:
             "padre": padre,
             "crias": crias,
             "pedigree": _armar_pedigree(conn, empresa_id, animal, profundidad=3),
-            "aaa": {
-                "categorias": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_AAA],
-                "colores": list(COLORES_ANGUS),
-                "registro": animal.get("registro_aaa"),
-                "categoria": animal.get("categoria_aaa"),
-                "categoria_nombre": next(
-                    (n for c, n in CATEGORIAS_AAA if c == (animal.get("categoria_aaa") or "")),
-                    None,
-                ),
-                "color_capa": animal.get("color_capa") or animal.get("color"),
-                "criador": animal.get("criador_aaa"),
-                "prefijo": animal.get("prefijo_cabana"),
-                "fecha_registro": animal.get("fecha_registro_aaa"),
-                "deps": {
-                    "pn": animal.get("dep_pn"),
-                    "pd": animal.get("dep_pd"),
-                    "pf": animal.get("dep_pf"),
-                    "leche": animal.get("dep_leche"),
-                },
-                "es_angus": "angus" in (animal.get("raza") or "").lower(),
-            },
+            "aaa": _bloque_registro(animal),
         },
         "resumen_repro": {
             "estado_repro": animal.get("estado_repro"),

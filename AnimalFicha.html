@@ -113,7 +113,7 @@
         <div id="aaaBanner" class="hidden mb-4 rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 to-stone-50 p-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                    <p class="text-[11px] font-bold uppercase tracking-wide text-amber-800">Asociación Argentina de Angus</p>
+                    <p id="aaaAsoc" class="text-[11px] font-bold uppercase tracking-wide text-amber-800">Asociación Argentina de Angus</p>
                     <h2 class="text-lg font-extrabold text-stone-900" id="aaaTitulo">—</h2>
                     <p class="text-xs text-stone-600" id="aaaSub">Trazabilidad genética del animal</p>
                 </div>
@@ -285,7 +285,7 @@ function render() {
         kv('SENASA', esc(a.senasa_id)),
         kv('Nombre', esc(a.nombre)),
         kv('Raza', esc(a.raza)),
-        kv('AAA', esc((a.categoria_aaa || '') + (a.registro_aaa ? ' · ' + a.registro_aaa : ''))),
+        kv((g.aaa && g.aaa.sigla) || 'Registro', esc((a.categoria_aaa || '') + (a.registro_aaa ? ' · ' + a.registro_aaa : ''))),
         kv('Nacimiento', esc(a.fecha_nacimiento)),
     ].join('');
 
@@ -371,19 +371,22 @@ function render() {
         </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin crías cargadas</td></tr>';
 
     const aaa = g.aaa || {};
-    const showAaa = aaa.es_angus || aaa.categoria || aaa.registro;
+    const sigla = aaa.sigla || 'Registro';
+    const showAaa = aaa.es_registrable || aaa.categoria || aaa.registro;
     const banner = document.getElementById('aaaBanner');
     banner.classList.toggle('hidden', !showAaa);
     if (showAaa) {
+        document.getElementById('aaaAsoc').textContent = aaa.asociacion || 'Registro de asociación';
         document.getElementById('aaaTitulo').textContent =
             (aaa.prefijo ? aaa.prefijo + ' · ' : '') + (a.caravana_visual || a.nombre || ('#' + a.id));
         document.getElementById('aaaSub').textContent =
             (aaa.categoria_nombre || aaa.categoria || 'Sin categoría') +
+            (aaa.composicion ? ' · ' + aaa.composicion : '') +
             (aaa.color_capa ? ' · ' + aaa.color_capa : '') +
             (aaa.criador ? ' · Criador: ' + aaa.criador : '');
         document.getElementById('aaaBadge').textContent = aaa.categoria || 'SR';
         document.getElementById('aaaBox').innerHTML = [
-            kv('Registro AAA', esc(aaa.registro)),
+            kv('Registro ' + sigla, esc(aaa.registro)),
             kv('Categoría', esc((aaa.categoria || '') + (aaa.categoria_nombre ? ' · ' + aaa.categoria_nombre : ''))),
             kv('Color', esc(aaa.color_capa)),
             kv('Prefijo', esc(aaa.prefijo)),

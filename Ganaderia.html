@@ -52,14 +52,13 @@
                 <option value="ciclo_completo">Ciclo completo</option>
             </select>
             <select id="filtroAaa" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
-                <option value="">Registro AAA</option>
+                <option value="">Condición de registro</option>
                 <option value="PP">PP · Puro de Pedigree</option>
                 <option value="PC">PC · Puro Controlado</option>
                 <option value="SR">SR · Sin registro</option>
             </select>
             <select id="filtroRaza" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
                 <option value="">Todas las razas</option>
-                <option value="Angus">Angus</option>
             </select>
             <select id="filtroRodeo" class="border rounded px-2 py-1.5 text-sm" onchange="cargarAnimales()">
                 <option value="">Todos los rodeos</option>
@@ -109,7 +108,8 @@
             </div>
             <div>
                 <label class="text-xs font-bold text-slate-600">Raza</label>
-                <input id="a_raza" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Angus, Hereford...">
+                <select id="a_raza" class="mt-1 w-full border rounded p-2 text-sm" onchange="aplicarRaza()"></select>
+                <input id="a_raza_otra" class="mt-1 w-full border rounded p-2 text-sm hidden" placeholder="Otra raza...">
             </div>
             <div>
                 <label class="text-xs font-bold text-slate-600">Nacimiento</label>
@@ -143,11 +143,11 @@
             </div>
 
             <div class="md:col-span-3 border-t pt-3 mt-1">
-                <h3 class="text-sm font-bold text-rose-900 mb-1">Genética · Asociación Argentina de Angus (AAA)</h3>
-                <p class="text-[11px] text-slate-500 mb-3">Para rodeos Angus: categoría PP/PC, nº de registro, criador y DEPs básicos.</p>
+                <h3 id="genTitulo" class="text-sm font-bold text-rose-900 mb-1">Genética · Asociación Argentina de Angus (AAA)</h3>
+                <p id="genNota" class="text-[11px] text-slate-500 mb-3">PP, PC y sin registro: la misma condición de pedigree que usa Angus, aplicada a la asociación de la raza.</p>
             </div>
             <div>
-                <label class="text-xs font-bold text-slate-600">Categoría AAA</label>
+                <label id="lblCat" class="text-xs font-bold text-slate-600">Categoría AAA</label>
                 <select id="a_cat_aaa" class="mt-1 w-full border rounded p-2 text-sm">
                     <option value=""> - </option>
                     <option value="PP">PP · Puro de Pedigree</option>
@@ -156,15 +156,13 @@
                 </select>
             </div>
             <div>
-                <label class="text-xs font-bold text-slate-600">Nº registro AAA</label>
+                <label id="lblReg" class="text-xs font-bold text-slate-600">Nº registro AAA</label>
                 <input id="a_reg_aaa" class="mt-1 w-full border rounded p-2 text-sm font-mono">
             </div>
             <div>
                 <label class="text-xs font-bold text-slate-600">Color de capa</label>
                 <select id="a_color_capa" class="mt-1 w-full border rounded p-2 text-sm">
                     <option value=""> - </option>
-                    <option>Negro</option>
-                    <option>Colorado</option>
                 </select>
             </div>
             <div>
@@ -172,11 +170,11 @@
                 <input id="a_prefijo" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Ej. LA SIESTA">
             </div>
             <div>
-                <label class="text-xs font-bold text-slate-600">Criador AAA</label>
+                <label id="lblCriador" class="text-xs font-bold text-slate-600">Criador AAA</label>
                 <input id="a_criador" class="mt-1 w-full border rounded p-2 text-sm">
             </div>
             <div>
-                <label class="text-xs font-bold text-slate-600">Fecha registro AAA</label>
+                <label id="lblFecha" class="text-xs font-bold text-slate-600">Fecha registro AAA</label>
                 <input id="a_fecha_reg" type="date" class="mt-1 w-full border rounded p-2 text-sm">
             </div>
             <div>
@@ -449,6 +447,34 @@ function showTab(name) {
     document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
 }
 
+function razaElegida() {
+    const sel = document.getElementById('a_raza').value;
+    if (sel === '__otra') return document.getElementById('a_raza_otra').value.trim();
+    return sel;
+}
+
+function aplicarRaza() {
+    const sel = document.getElementById('a_raza').value;
+    document.getElementById('a_raza_otra').classList.toggle('hidden', sel !== '__otra');
+    const perfil = (window._razas || []).find(r => r.nombre === sel);
+    const sigla = perfil ? perfil.sigla : '';
+    document.getElementById('genTitulo').textContent = perfil
+        ? `Genética · ${perfil.asociacion} (${sigla})`
+        : 'Genética · raza sin asociación cargada';
+    document.getElementById('genNota').textContent = perfil
+        ? `${perfil.composicion}. PP = Puro de Pedigree, PC = Puro Controlado, SR = comercial: el mismo criterio de pedigree que Angus.`
+        : 'PP, PC y sin registro: la misma condición de pedigree que usa Angus.';
+    document.getElementById('lblCat').textContent = sigla ? `Categoría ${sigla}` : 'Categoría de registro';
+    document.getElementById('lblReg').textContent = sigla ? `Nº registro ${sigla}` : 'Nº de registro';
+    document.getElementById('lblCriador').textContent = sigla ? `Criador ${sigla}` : 'Criador';
+    document.getElementById('lblFecha').textContent = sigla ? `Fecha registro ${sigla}` : 'Fecha de registro';
+    const col = document.getElementById('a_color_capa');
+    const keep = col.value;
+    const colores = perfil ? perfil.colores : [];
+    col.innerHTML = '<option value=""> - </option>' + colores.map(c => `<option>${c}</option>`).join('');
+    if ([...col.options].some(o => o.value === keep)) col.value = keep;
+}
+
 function rodeosGanaderia(rows) {
     return (rows || []).filter(r => String(r.sistema || '').toLowerCase() !== 'tambo');
 }
@@ -473,6 +499,22 @@ async function boot() {
     (meta.tipos_evento || []).forEach(t => {
         const o = document.createElement('option'); o.value = t; o.textContent = t; hTipo.appendChild(o);
     });
+    window._razas = meta.razas_carne || [];
+    const selRaza = document.getElementById('a_raza');
+    const filRaza = document.getElementById('filtroRaza');
+    window._razas.forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.nombre;
+        o.textContent = r.nombre;
+        selRaza.appendChild(o);
+        filRaza.appendChild(o.cloneNode(true));
+    });
+    const otra = document.createElement('option');
+    otra.value = '__otra';
+    otra.textContent = 'Otra';
+    selRaza.appendChild(otra);
+    if ([...selRaza.options].some(o => o.value === 'Angus')) selRaza.value = 'Angus';
+    aplicarRaza();
     await Promise.all([cargarResumen(), cargarAnimales(), cargarRodeosTabla(), cargarHistorial()]);
     toggleEventoFields();
     const qs = new URLSearchParams(location.search);
@@ -570,7 +612,7 @@ async function guardarAnimal(ev) {
         caravana_electronica: document.getElementById('a_eid').value.trim(),
         senasa_id: document.getElementById('a_senasa').value.trim(),
         sexo: document.getElementById('a_sexo').value,
-        raza: document.getElementById('a_raza').value.trim() || 'Angus',
+        raza: razaElegida() || 'Angus',
         fecha_nacimiento: document.getElementById('a_nac').value,
         sistema_actual: document.getElementById('a_sistema').value,
         categoria_id: Number(document.getElementById('a_categoria').value) || null,

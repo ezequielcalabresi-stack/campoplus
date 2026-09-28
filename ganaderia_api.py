@@ -8,8 +8,9 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ganaderia import (
-    CATEGORIAS_AAA,
+    CATEGORIAS_REGISTRO,
     COLORES_ANGUS,
+    RAZAS_CARNE,
     SISTEMAS,
     TIPOS_EVENTO,
     actualizar_animal,
@@ -220,8 +221,19 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
         return {
             "sistemas": list(SISTEMAS),
             "tipos_evento": list(TIPOS_EVENTO),
-            "categorias_aaa": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_AAA],
+            "categorias_aaa": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_REGISTRO],
+            "categorias_registro": [{"codigo": c, "nombre": n} for c, n in CATEGORIAS_REGISTRO],
             "colores_angus": list(COLORES_ANGUS),
+            "razas_carne": [
+                {
+                    "nombre": r["nombre"],
+                    "asociacion": r["asociacion"],
+                    "sigla": r["sigla"],
+                    "composicion": r["composicion"],
+                    "colores": list(r["colores"]),
+                }
+                for r in RAZAS_CARNE
+            ],
         }
 
     @app.get("/api/ganaderia/resumen")
