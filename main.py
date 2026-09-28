@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
@@ -1751,6 +1751,8 @@ class OrdenPagoModel(BaseModel):
     # True = solo aplica retenciones en CC (sin transferencia/cheque/efectivo).
     # Las facturas quedan Pendiente hasta cargar el pago real después.
     alicuota_iibb: Optional[float] = None  # decimal (0.0175) o % (1.75)
+    # Ids de cta cte tildados en la OP. None = cliente viejo (aplica FIFO por monto).
+    comprobantes_ids: Optional[List[int]] = None
 
 class AjustarCuentaModel(BaseModel):
     es_cuenta_ajuste: int
@@ -5801,6 +5803,16 @@ def eliminar_movimiento_cuenta_corriente(id_mov: int):
 
         cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (id_mov,))
 
+        revertidas = 0
+        _init_op_comprobantes(cursor)
+        if tipo_comp == "Orden de Pago" and nro_comp:
+            try:
+                emp_mov = int(mov["empresa_id"] or 1)
+            except (KeyError, IndexError, TypeError, ValueError):
+                emp_mov = 1
+            revertidas = _revertir_comprobantes_op(cursor, str(nro_comp), emp_mov)
+        cursor.execute("DELETE FROM op_comprobantes_aplicados WHERE cc_id = ?;", (id_mov,))
+
         if asiento_id:
             try:
                 from motor_contable import eliminar_asiento
@@ -5819,6 +5831,8 @@ def eliminar_movimiento_cuenta_corriente(id_mov: int):
 
         conn.commit()
         mensaje = "Movimiento eliminado. Las demás líneas de la cuenta quedan intactas."
+        if revertidas:
+            mensaje += f" {revertidas} comprobante(s) que cancelaba esta OP volvieron a Pendiente."
     else:
         conn.rollback()
         mensaje = "Movimiento no encontrado."
@@ -6470,18 +6484,20 @@ def consultar_padron_clientes(q: str = ""):
 
 
 @app.get("/api/comprobantes_pendientes/{cuit}")
-def obtener_comprobantes_pendientes(cuit: str):
+def obtener_comprobantes_pendientes(cuit: str, incluir_pagados: bool = False):
     """Facturas / ND / cargos pendientes de un proveedor para armar la OP.
 
-    Solo incluye estado Pendiente (o vacío). Nunca reinyecta facturas ya Pagadas:
-    eso inflaba el neto de la OP con histórico cancelado.
+    Por defecto solo estado Pendiente (o vacío): reinyectar Pagadas inflaba el neto
+    de la OP con histórico cancelado. Con incluir_pagados=true devuelve además las
+    últimas marcadas Pagado (marcado_pagado=1) para elegirlas a mano, p. ej. después
+    de borrar una OP que las había cancelado.
     """
     empresa_id = get_empresa_activa_id()
     conn = get_db()
     cursor = conn.cursor()
     cuit_clean = "".join(filter(str.isdigit, str(cuit)))
     placeholders = ",".join("?" for _ in _TIPOS_PAGO)
-    cursor.execute(f"""
+    base_sql = f"""
         SELECT id,
                fecha,
                tipo_comprobante,
@@ -6495,12 +6511,87 @@ def obtener_comprobantes_pendientes(cuit: str):
           AND COALESCE(empresa_id, 1) = ?
           AND COALESCE(debe, 0) > 0.01
           AND COALESCE(tipo_comprobante, '') NOT IN ({placeholders})
-          AND UPPER(TRIM(COALESCE(estado, 'Pendiente'))) IN ('PENDIENTE', '')
-        ORDER BY fecha ASC, id ASC;
-    """, (cuit_clean, empresa_id, *_TIPOS_PAGO))
+    """
+    cursor.execute(
+        base_sql + " AND UPPER(TRIM(COALESCE(estado, 'Pendiente'))) IN ('PENDIENTE', '') ORDER BY fecha ASC, id ASC;",
+        (cuit_clean, empresa_id, *_TIPOS_PAGO),
+    )
     rows = [dict(r) for r in cursor.fetchall()]
+    if incluir_pagados:
+        cursor.execute(
+            base_sql + " AND UPPER(TRIM(COALESCE(estado, ''))) = 'PAGADO' ORDER BY id DESC LIMIT 80;",
+            (cuit_clean, empresa_id, *_TIPOS_PAGO),
+        )
+        pagados = [dict(r, marcado_pagado=1) for r in cursor.fetchall()]
+        pagados.sort(key=lambda r: (_fecha_iso_contable(str(r.get("fecha") or "")), r["id"]))
+        rows.extend(pagados)
     conn.close()
     return rows
+
+
+def _init_op_comprobantes(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS op_comprobantes_aplicados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            nro_orden TEXT NOT NULL,
+            cc_id INTEGER NOT NULL,
+            estado_anterior TEXT DEFAULT 'Pendiente',
+            fecha TEXT
+        );
+        """
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_comp_nro ON op_comprobantes_aplicados(nro_orden);")
+
+
+def _revertir_comprobantes_op(cursor, nro_orden: str, empresa_id: int) -> int:
+    """Devuelve a su estado anterior las facturas que canceló la OP. Retorna cuántas."""
+    if not nro_orden:
+        return 0
+    _init_op_comprobantes(cursor)
+    cursor.execute(
+        "SELECT cc_id, estado_anterior FROM op_comprobantes_aplicados WHERE nro_orden = ? AND COALESCE(empresa_id,1) = ?;",
+        (nro_orden, empresa_id),
+    )
+    n = 0
+    for r in cursor.fetchall():
+        cursor.execute(
+            "UPDATE cuentas_corrientes SET estado = ? WHERE id = ? AND UPPER(COALESCE(estado,'')) = 'PAGADO';",
+            (r["estado_anterior"] or "Pendiente", r["cc_id"]),
+        )
+        n += cursor.rowcount
+    cursor.execute(
+        "DELETE FROM op_comprobantes_aplicados WHERE nro_orden = ? AND COALESCE(empresa_id,1) = ?;",
+        (nro_orden, empresa_id),
+    )
+    return n
+
+
+@app.post("/api/cuentas_corrientes/{id_mov}/estado")
+def cambiar_estado_comprobante_cc(id_mov: int, data: dict = Body(...)):
+    """Pendiente <-> Pagado a mano para facturas/ND (p. ej. tras borrar una OP)."""
+    nuevo = str(data.get("estado") or "").strip().capitalize()
+    if nuevo not in ("Pendiente", "Pagado"):
+        raise HTTPException(status_code=400, detail="Estado permitido: Pendiente o Pagado.")
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, tipo_comprobante, debe FROM cuentas_corrientes WHERE id = ? AND COALESCE(empresa_id,1) = ?;",
+        (id_mov, empresa_id),
+    )
+    mov = cursor.fetchone()
+    if not mov:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado.")
+    if float(mov["debe"] or 0) < 0.01 or (mov["tipo_comprobante"] or "") in _TIPOS_PAGO:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Solo se puede cambiar el estado de facturas / notas de débito.")
+    cursor.execute("UPDATE cuentas_corrientes SET estado = ? WHERE id = ?;", (nuevo, id_mov))
+    conn.commit()
+    conn.close()
+    return {"status": "success", "estado": nuevo}
 
 
 def _saldo_cuenta_bancaria(cursor, cuenta_id: int, cta_nro: str, hasta: str) -> float:
@@ -8047,7 +8138,27 @@ def emitir_orden_pago(data: OrdenPagoModel):
         """, (data.cuit, cert_iibb_nro, data.fecha, data.fecha, ret_iibb, ret_iibb, data.usuario_registro, empresa_id))
 
     # Marcar facturas como Pagado solo cuando hay pago efectivo (no en solo-retenciones)
+    _init_op_comprobantes(cursor)
     restante = 0.0 if solo_ret else float(total_op or 0)
+    ids_sel = [int(x) for x in (data.comprobantes_ids or []) if str(x).lstrip("-").isdigit()]
+    if data.comprobantes_ids is not None:
+        restante = 0.0
+        if not solo_ret and ids_sel:
+            ph_ids = ",".join("?" for _ in ids_sel)
+            cursor.execute(
+                f"""
+                SELECT id, COALESCE(estado, 'Pendiente') AS estado FROM cuentas_corrientes
+                WHERE id IN ({ph_ids}) AND REPLACE(entidad_id, '-', '') = ? AND COALESCE(empresa_id, 1) = ?
+                  AND COALESCE(debe, 0) > 0.01;
+                """,
+                (*ids_sel, cuit_clean, empresa_id),
+            )
+            for row in cursor.fetchall():
+                cursor.execute("UPDATE cuentas_corrientes SET estado = 'Pagado' WHERE id = ?;", (row["id"],))
+                cursor.execute(
+                    "INSERT INTO op_comprobantes_aplicados (empresa_id, nro_orden, cc_id, estado_anterior, fecha) VALUES (?, ?, ?, ?, ?);",
+                    (empresa_id, nro_op, row["id"], "Pendiente", data.fecha),
+                )
     if restante > 0.01:
         placeholders = ",".join("?" for _ in _TIPOS_PAGO)
         cursor.execute(f"""
@@ -8067,6 +8178,10 @@ def emitir_orden_pago(data: OrdenPagoModel):
             cursor.execute(
                 "UPDATE cuentas_corrientes SET estado = 'Pagado' WHERE id = ?;",
                 (row["id"],),
+            )
+            cursor.execute(
+                "INSERT INTO op_comprobantes_aplicados (empresa_id, nro_orden, cc_id, estado_anterior, fecha) VALUES (?, ?, ?, 'Pendiente', ?);",
+                (empresa_id, nro_op, row["id"], data.fecha),
             )
             restante -= monto
 

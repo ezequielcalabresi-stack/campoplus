@@ -173,6 +173,9 @@
                     <button type="button" class="btn btn-outline-primary btn-sm fw-bold" onclick="cargarComprobantes(cuitActual)" title="Vuelve a traer todos los pendientes de cta cte">
                         Recargar lista
                     </button>
+                    <button type="button" class="btn btn-outline-warning btn-sm fw-bold" onclick="agregarComprobantesPagados()" title="Trae facturas / ND que figuran como pagadas (por ejemplo, si se borró la OP que las canceló) para elegirlas a mano">
+                        + Agregar facturas marcadas como pagadas
+                    </button>
                 </div>
             </div>
             <div class="table-responsive mb-4">
@@ -786,30 +789,63 @@
             try {
                 const res = await fetch(`/api/comprobantes_pendientes/${cuit}`);
                 if (!res.ok) throw new Error("Error en respuesta API");
-                comprobantesCache = await res.json();
-                renderComprobantesVista(true);
+                comprobantesCache = (await res.json()).map(c => ({ ...c, _sel: true }));
+                renderComprobantesVista();
             } catch (e) {
                 console.error("Error al cargar comprobantes:", e);
                 document.getElementById('tablaComprobantes').innerHTML = `<tr><td colspan="7" class="text-center py-3 text-muted">No se pudieron cargar los comprobantes.</td></tr>`;
             }
         }
 
+        async function agregarComprobantesPagados() {
+            if (!cuitActual) return alert('Seleccioná primero el proveedor.');
+            try {
+                const res = await fetch(`/api/comprobantes_pendientes/${cuitActual}?incluir_pagados=true`);
+                if (!res.ok) throw new Error('Error en respuesta API');
+                const ya = new Set(comprobantesCache.map(c => c.id));
+                const nuevos = (await res.json()).filter(c => c.marcado_pagado && !ya.has(c.id)).map(c => ({ ...c, _sel: false }));
+                if (!nuevos.length) return alert('No hay facturas marcadas como pagadas para agregar.');
+                comprobantesCache = comprobantesCache.concat(nuevos);
+                renderComprobantesVista();
+                alert(`Se agregaron ${nuevos.length} factura(s) marcadas como pagadas, sin tildar.\nTildá solo las que realmente vas a cancelar con esta OP.`);
+            } catch (e) {
+                console.error('Error al traer pagadas:', e);
+                alert('No se pudieron traer las facturas marcadas como pagadas.');
+            }
+        }
+
+        function onChkComprobante(chk) {
+            const c = comprobantesCache[parseInt(chk.getAttribute('data-idx'), 10)];
+            if (c) c._sel = chk.checked;
+            recalcularTotales();
+        }
+
+        function idsComprobantesSeleccionados() {
+            const ids = [];
+            document.querySelectorAll('.chk-comprobante:checked').forEach(chk => {
+                const c = comprobantesCache[parseInt(chk.getAttribute('data-idx'), 10)];
+                if (c && c.id) ids.push(c.id);
+            });
+            return ids;
+        }
+
         /** Dibuja la lista de esta OP. No llama DELETE ni toca cta cte. */
-        function renderComprobantesVista(marcarTodos) {
+        function renderComprobantesVista() {
             const tb = document.getElementById('tablaComprobantes');
             if (!comprobantesCache.length) {
-                tb.innerHTML = `<tr><td colspan="7" class="text-center py-3 text-muted">Sin comprobantes en esta vista de OP. Usá Recargar lista si necesitás ver pendientes de cta cte.</td></tr>`;
+                tb.innerHTML = `<tr><td colspan="7" class="text-center py-3 text-muted">Sin comprobantes en esta vista de OP. Usá Recargar lista si necesitás ver pendientes de cta cte, o "Agregar facturas marcadas como pagadas" si se borró una OP.</td></tr>`;
                 recalcularTotales();
                 return;
             }
             let html = '';
             comprobantesCache.forEach((c, idx) => {
-                const checked = marcarTodos === false ? '' : 'checked';
+                const checked = c._sel === false ? '' : 'checked';
+                const badge = c.marcado_pagado ? ' <span class="badge bg-warning text-dark">Figura pagada</span>' : '';
                 html += `
-                    <tr>
-                        <td class="text-center"><input type="checkbox" class="form-check-input chk-comprobante" data-idx="${idx}" onchange="recalcularTotales()" ${checked}></td>
+                    <tr${c.marcado_pagado ? ' class="table-warning"' : ''}>
+                        <td class="text-center"><input type="checkbox" class="form-check-input chk-comprobante" data-idx="${idx}" onchange="onChkComprobante(this)" ${checked}></td>
                         <td class="font-monospace">${fmtFechaComp(c.fecha)}</td>
-                        <td class="fw-bold">${c.tipo_comprobante || 'Factura'} ${c.nro_comprobante ? '- ' + c.nro_comprobante : ''}</td>
+                        <td class="fw-bold">${c.tipo_comprobante || 'Factura'} ${c.nro_comprobante ? '- ' + c.nro_comprobante : ''}${badge}</td>
                         <td class="text-end font-monospace">$ ${parseFloat(c.neto || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
                         <td class="text-end font-monospace">$ ${parseFloat(c.iva || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
                         <td class="text-end font-monospace fw-bold text-primary">$ ${parseFloat(c.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
@@ -1001,6 +1037,7 @@
                 solo_retenciones: soloRetenciones,
                 base_imponible: baseImp,
                 alicuota_iibb: alicuotaArbaActual,
+                comprobantes_ids: idsComprobantesSeleccionados(),
                 observaciones: proveedorEsSP
                     ? "OP proveedor S/P (sin retenciones)"
                     : (soloRetenciones ? "OP solo retenciones (pago pendiente)" : "Emisión de OP con certificados"),

@@ -497,6 +497,7 @@
                 ${lineaOrigen('Haber', m.haber ? money(m.haber) : '')}
                 ${lineaOrigen('Neto / IVA', (m.neto || m.iva) ? (money(m.neto) + ' / ' + money(m.iva)) : '')}
                 ${lineaOrigen('Estado', m.estado)}
+                ${botonEstadoFactura(m)}
                 ${lineaOrigen('Registró', m.usuario_registro)}
                 ${lineaOrigen('Motivo', m.observaciones)}
                 ${m.id_access ? lineaOrigen('Id histórico', m.id_access) : ''}
@@ -510,6 +511,34 @@
             const foot = document.getElementById('origenFooter');
             if (foot) foot.style.display = esRet ? 'flex' : 'none';
             new bootstrap.Modal(document.getElementById('modalOrigen')).show();
+        }
+
+        function botonEstadoFactura(m) {
+            const tipoUp = String(m.tipo_comprobante || '').toUpperCase();
+            const esPago = /PAGO|RETEN|RET |PERCEP|TRANSFER|CHEQUE|MOVIMIENTO|CAJA/.test(tipoUp + ' ');
+            if (!(Number(m.debe) > 0.01) || esPago) return '';
+            const est = String(m.estado || '').trim().toUpperCase();
+            if (est === 'PAGADO') {
+                return `<div class="mb-2"><button type="button" class="btn btn-sm btn-outline-warning fw-bold" onclick="cambiarEstadoFactura(${m.id}, 'Pendiente')">Volver a Pendiente</button>
+                    <span class="small text-muted ms-1">para poder aplicarla de nuevo en una Orden de Pago</span></div>`;
+            }
+            if (est === 'PENDIENTE' || est === '') {
+                return `<div class="mb-2"><button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="cambiarEstadoFactura(${m.id}, 'Pagado')">Marcar como pagada</button></div>`;
+            }
+            return '';
+        }
+
+        async function cambiarEstadoFactura(id, estado) {
+            if (!confirm(`¿Cambiar el estado del comprobante a ${estado}? No modifica importes ni el saldo.`)) return;
+            const res = await fetch(`/api/cuentas_corrientes/${id}/estado`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ estado }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(d.detail || 'No se pudo cambiar el estado.');
+            bootstrap.Modal.getInstance(document.getElementById('modalOrigen'))?.hide();
+            inicializar();
         }
 
         function moneyFmt(n) {
