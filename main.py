@@ -7567,18 +7567,18 @@ def dashboard_kpis(request: Request):
     cursor.execute("""
         SELECT COALESCE(SUM(s.saldo), 0.0) AS total
         FROM (
-            SELECT COALESCE(SUM(cc.debe - cc.haber), 0.0) AS saldo
+            SELECT REPLACE(cc.entidad_id, '-', '') AS cuit,
+                   COALESCE(SUM(cc.debe - cc.haber), 0.0) AS saldo
             FROM cuentas_corrientes cc
             WHERE COALESCE(cc.empresa_id, 1) = ?
-              AND EXISTS (
-                  SELECT 1 FROM entidades e
-                  WHERE REPLACE(e.cuit, '-', '') = REPLACE(cc.entidad_id, '-', '')
-                    AND COALESCE(e.es_cuenta_ajuste, 0) = 0
-                    AND COALESCE(e.es_cuenta_bancaria, 0) = 0
-              )
             GROUP BY REPLACE(cc.entidad_id, '-', '')
             HAVING ROUND(saldo, 2) >= 0.01
-        ) s;
+        ) s
+        WHERE s.cuit IN (
+            SELECT REPLACE(e.cuit, '-', '') FROM entidades e
+            WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0
+              AND COALESCE(e.es_cuenta_bancaria, 0) = 0
+        );
     """, (empresa_id,))
     compromisos = float(cursor.fetchone()["total"] or 0)
 
@@ -8275,6 +8275,38 @@ def _completar_padron_access_una_vez() -> None:
 
 
 _completar_padron_access_una_vez()
+
+
+def _indices_cuit_normalizado() -> None:
+    """Las cuentas corrientes se cruzan con el padrón por REPLACE(cuit,'-','');
+    sin estos índices cada cruce recorre todo el padrón por cada movimiento."""
+    bases = [DB_PATH]
+    data = os.environ.get("CAMPO_DATA_DIR", "").strip()
+    if data:
+        for sub in ("bases_empresas", "datos_clientes"):
+            for dirpath, _dirs, files in os.walk(os.path.join(data, sub)):
+                bases += [os.path.join(dirpath, f) for f in files if f.endswith(".db")]
+    for ruta in bases:
+        if not os.path.isfile(ruta):
+            continue
+        try:
+            conn = sqlite3.connect(ruta)
+            tablas = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';")}
+            if "cuentas_corrientes" in tablas:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_cc_entidad_norm ON cuentas_corrientes(REPLACE(entidad_id, '-', ''));"
+                )
+            if "entidades" in tablas:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_entidades_cuit_norm ON entidades(REPLACE(cuit, '-', ''));"
+                )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as exc:
+            print(f"[indices] {ruta}: {exc}")
+
+
+_indices_cuit_normalizado()
 
 
 @app.get("/")
