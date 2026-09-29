@@ -1086,9 +1086,30 @@ def asegurar_schema_participaciones(cursor) -> None:
             "CREATE INDEX IF NOT EXISTS idx_campo_part ON campo_participaciones(empresa_id, campo_id, campania_id);"
         )
         cambios = True
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='socios_agro';")
+    if not cursor.fetchone():
+        cursor.execute(
+            """
+            CREATE TABLE socios_agro (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                nombre TEXT NOT NULL,
+                cuit TEXT DEFAULT '',
+                contacto TEXT DEFAULT '',
+                telefono TEXT DEFAULT '',
+                email TEXT DEFAULT '',
+                observaciones TEXT DEFAULT '',
+                activo INTEGER DEFAULT 1
+            );
+            """
+        )
+        cambios = True
     for tabla, columnas in (
+        ("campo_participaciones", (("socio_id", "INTEGER"), ("aporta_labores", "INTEGER DEFAULT 1"),
+                                   ("aporta_insumos", "INTEGER DEFAULT 1"))),
         ("ot_destinos", (("participacion_pct", "REAL DEFAULT 100"), ("socios_txt", "TEXT DEFAULT ''"))),
-        ("ot_consumos", (("aporte_pct", "REAL DEFAULT 100"), ("participacion_pct", "REAL DEFAULT 100"))),
+        ("ot_consumos", (("aporte_pct", "REAL DEFAULT 100"), ("participacion_pct", "REAL DEFAULT 100"),
+                         ("aporta", "TEXT DEFAULT ''"))),
     ):
         existentes = {r[1] for r in cursor.execute(f"PRAGMA table_info({tabla});").fetchall()}
         if not existentes:
@@ -1126,7 +1147,9 @@ def participacion_campo(cursor, empresa_id: int, campo_id: Optional[int], campan
         return vacio
     cursor.execute(
         """
-        SELECT socio_nombre, socio_cuit, porcentaje FROM campo_participaciones
+        SELECT socio_id, socio_nombre, socio_cuit, porcentaje,
+               COALESCE(aporta_labores, 1) AS aporta_labores, COALESCE(aporta_insumos, 1) AS aporta_insumos
+        FROM campo_participaciones
         WHERE empresa_id=? AND campo_id=? AND campania_id=?
           AND TRIM(COALESCE(socio_nombre,'')) != '' AND COALESCE(porcentaje,0) > 0
         ORDER BY id;
@@ -1139,6 +1162,8 @@ def participacion_campo(cursor, empresa_id: int, campo_id: Optional[int], campan
         "pct_empresa": round(100.0 - pct_socios, 4),
         "socios": socios,
         "socios_txt": "; ".join(f"{s['socio_nombre']} {float(s['porcentaje']):g}%" for s in socios),
+        "aporta_labores": any(int(s["aporta_labores"]) for s in socios),
+        "aporta_insumos": any(int(s["aporta_insumos"]) for s in socios),
         "campania_id_origen": int(origen["campania_id"]),
         "campania_codigo_origen": origen["codigo"] or "",
     }
@@ -1147,9 +1172,24 @@ def participacion_campo(cursor, empresa_id: int, campo_id: Optional[int], campan
 def guardar_participacion_campo(
     cursor, empresa_id: int, campo_id: int, campania_id: int, socios: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
+    # Quien guarda sin indicar la modalidad (ej. el modal de Margenes) conserva la anterior del socio.
+    previos = {
+        (s["socio_nombre"] or "").strip().lower(): s
+        for s in participacion_campo(cursor, empresa_id, campo_id, campania_id)["socios"]
+    }
     limpios = []
     for s in socios or []:
+        socio_id = int(s.get("socio_id") or 0) or None
         nombre = (s.get("socio_nombre") or "").strip()
+        cuit = (s.get("socio_cuit") or "").strip()
+        if not socio_id and nombre:
+            socio_id = previos.get(nombre.lower(), {}).get("socio_id")
+        if socio_id:
+            cursor.execute("SELECT nombre, cuit FROM socios_agro WHERE id=? AND empresa_id=?;", (socio_id, empresa_id))
+            reg = cursor.fetchone()
+            if not reg:
+                raise ValueError("Socio inexistente.")
+            nombre, cuit = reg["nombre"].strip(), (reg["cuit"] or "").strip()
         pct = float(s.get("porcentaje") or 0)
         if not nombre and pct <= 0:
             continue
@@ -1157,7 +1197,13 @@ def guardar_participacion_campo(
             raise ValueError("Indicá el nombre de cada sociedad participante.")
         if pct <= 0 or pct >= 100:
             raise ValueError(f"El % de {nombre} tiene que estar entre 0 y 100.")
-        limpios.append({"socio_nombre": nombre, "socio_cuit": (s.get("socio_cuit") or "").strip(), "porcentaje": pct})
+        prev = previos.get(nombre.lower(), {})
+        flags = {}
+        for k in ("aporta_labores", "aporta_insumos"):
+            v = s.get(k)
+            flags[k] = int(prev.get(k, 1)) if v is None else (1 if v else 0)
+        limpios.append({"socio_id": socio_id or prev.get("socio_id"), "socio_nombre": nombre,
+                        "socio_cuit": cuit, "porcentaje": pct, **flags})
     total = sum(s["porcentaje"] for s in limpios)
     if total >= 100:
         raise ValueError("La suma de los socios tiene que dejar un % para la empresa.")
@@ -1165,15 +1211,101 @@ def guardar_participacion_campo(
         "DELETE FROM campo_participaciones WHERE empresa_id=? AND campo_id=? AND campania_id=?;",
         (empresa_id, campo_id, campania_id),
     )
-    for s in limpios or [{"socio_nombre": "", "socio_cuit": "", "porcentaje": 0}]:
+    vacio = {"socio_id": None, "socio_nombre": "", "socio_cuit": "", "porcentaje": 0,
+             "aporta_labores": 1, "aporta_insumos": 1}
+    for s in limpios or [vacio]:
         cursor.execute(
             """
-            INSERT INTO campo_participaciones (empresa_id, campo_id, campania_id, socio_nombre, socio_cuit, porcentaje)
-            VALUES (?, ?, ?, ?, ?, ?);
+            INSERT INTO campo_participaciones (empresa_id, campo_id, campania_id, socio_id, socio_nombre,
+                                               socio_cuit, porcentaje, aporta_labores, aporta_insumos)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
-            (empresa_id, campo_id, campania_id, s["socio_nombre"], s["socio_cuit"], s["porcentaje"]),
+            (empresa_id, campo_id, campania_id, s["socio_id"], s["socio_nombre"], s["socio_cuit"],
+             s["porcentaje"], s["aporta_labores"], s["aporta_insumos"]),
         )
     return participacion_campo(cursor, empresa_id, campo_id, campania_id)
+
+
+def listar_socios_agro(cursor, empresa_id: int, incluir_inactivos: bool = False) -> List[Dict[str, Any]]:
+    cursor.execute(
+        f"""
+        SELECT s.*,
+               (SELECT COUNT(DISTINCT p.campo_id) FROM campo_participaciones p
+                WHERE p.empresa_id = s.empresa_id AND (p.socio_id = s.id
+                      OR (p.socio_id IS NULL AND LOWER(TRIM(p.socio_nombre)) = LOWER(TRIM(s.nombre))))) AS campos
+        FROM socios_agro s
+        WHERE s.empresa_id = ? {'' if incluir_inactivos else 'AND COALESCE(s.activo, 1) = 1'}
+        ORDER BY s.nombre COLLATE NOCASE;
+        """,
+        (empresa_id,),
+    )
+    return [dict(r) for r in cursor.fetchall()]
+
+
+def guardar_socio_agro(cursor, empresa_id: int, data: Dict[str, Any], socio_id: Optional[int] = None) -> Dict[str, Any]:
+    nombre = (data.get("nombre") or "").strip()
+    if not nombre:
+        raise ValueError("El nombre del socio es obligatorio.")
+    cursor.execute(
+        "SELECT id FROM socios_agro WHERE empresa_id=? AND LOWER(TRIM(nombre))=LOWER(?) AND id != COALESCE(?, -1);",
+        (empresa_id, nombre, socio_id),
+    )
+    if cursor.fetchone():
+        raise ValueError("Ya existe un socio con ese nombre.")
+    campos = {k: (data.get(k) or "").strip() for k in ("cuit", "contacto", "telefono", "email", "observaciones")}
+    campos["nombre"] = nombre
+    campos["activo"] = 1 if data.get("activo", True) else 0
+    if socio_id:
+        cursor.execute("SELECT nombre FROM socios_agro WHERE id=? AND empresa_id=?;", (socio_id, empresa_id))
+        prev = cursor.fetchone()
+        if not prev:
+            raise ValueError("Socio inexistente.")
+        cursor.execute(
+            f"UPDATE socios_agro SET {', '.join(f'{k}=?' for k in campos)} WHERE id=?;",
+            (*campos.values(), socio_id),
+        )
+        cursor.execute(
+            """
+            UPDATE campo_participaciones SET socio_id=?, socio_nombre=?, socio_cuit=?
+            WHERE empresa_id=? AND (socio_id=? OR (socio_id IS NULL AND LOWER(TRIM(socio_nombre))=LOWER(TRIM(?))));
+            """,
+            (socio_id, nombre, campos["cuit"], empresa_id, socio_id, prev["nombre"]),
+        )
+    else:
+        cursor.execute(
+            f"INSERT INTO socios_agro (empresa_id, {', '.join(campos)}) VALUES (?, {', '.join('?' for _ in campos)});",
+            (empresa_id, *campos.values()),
+        )
+        socio_id = cursor.lastrowid
+        cursor.execute(
+            """
+            UPDATE campo_participaciones SET socio_id=?
+            WHERE empresa_id=? AND socio_id IS NULL AND LOWER(TRIM(socio_nombre))=LOWER(?);
+            """,
+            (socio_id, empresa_id, nombre),
+        )
+    cursor.execute("SELECT * FROM socios_agro WHERE id=?;", (socio_id,))
+    return dict(cursor.fetchone())
+
+
+def borrar_socio_agro(cursor, empresa_id: int, socio_id: int) -> str:
+    """Si ya participa en algún campo se da de baja (inactivo) para no perder la historia."""
+    cursor.execute("SELECT nombre FROM socios_agro WHERE id=? AND empresa_id=?;", (socio_id, empresa_id))
+    reg = cursor.fetchone()
+    if not reg:
+        raise ValueError("Socio inexistente.")
+    cursor.execute(
+        """
+        SELECT 1 FROM campo_participaciones
+        WHERE empresa_id=? AND (socio_id=? OR LOWER(TRIM(socio_nombre))=LOWER(TRIM(?))) LIMIT 1;
+        """,
+        (empresa_id, socio_id, reg["nombre"]),
+    )
+    if cursor.fetchone():
+        cursor.execute("UPDATE socios_agro SET activo=0 WHERE id=?;", (socio_id,))
+        return "inactivo"
+    cursor.execute("DELETE FROM socios_agro WHERE id=?;", (socio_id,))
+    return "borrado"
 
 
 def participaciones_campania(cursor, empresa_id: int, campania_id: int) -> Dict[int, Dict[str, Any]]:
@@ -1397,6 +1529,7 @@ def _crear_lineas_ot(
         aporte_pedido = 100.0 if aporte_pedido is None or aporte_pedido == "" else float(aporte_pedido)
         if aporte_pedido < 0 or aporte_pedido > 100:
             raise ValueError(f"El % de aporte de «{item.get('nombre')}» tiene que estar entre 0 y 100.")
+        aporta_txt = (c.get("aporta") or "").strip()[:120]
 
         if total_has > 0:
             partes = [round(cant * d["superficie_has"] / total_has, 6) for d in destinos]
@@ -1442,11 +1575,11 @@ def _crear_lineas_ot(
                 INSERT INTO ot_consumos
                 (ot_id, item_id, tipo_item, dosis_por_ha, cantidad, unidad,
                  costo_unitario_neto, costo_total_neto, movimiento_id, destino_id,
-                 aporte_pct, participacion_pct)
-                VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?);
+                 aporte_pct, participacion_pct, aporta)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?);
                 """,
                 (ot_id, item_id, tipo_item, dosis, cant_d, item.get("unidad") or "", mov_id, d["id"],
-                 aporte, part_pct),
+                 aporte, part_pct, aporta_txt if part_pct < 100 else ""),
             )
             consumo_id = cursor.lastrowid
             cursor.execute(
@@ -1676,6 +1809,7 @@ def detalle_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
         SELECT oc.item_id, MAX(oc.tipo_item) AS tipo_item, MAX(oc.unidad) AS unidad,
                MAX(oc.dosis_por_ha) AS dosis_por_ha, SUM(oc.cantidad) AS cantidad,
                COALESCE(MAX(CASE WHEN COALESCE(oc.participacion_pct, 100) < 100 THEN oc.aporte_pct END), 100) AS aporte_pct,
+               COALESCE(MAX(CASE WHEN COALESCE(oc.participacion_pct, 100) < 100 THEN oc.aporta END), '') AS aporta,
                MAX(i.nombre) AS nombre, MIN(oc.id) AS orden
         FROM ot_consumos oc
         LEFT JOIN almacen_items i ON i.id = oc.item_id
@@ -2178,6 +2312,7 @@ def resumen_participacion_campania(cursor, empresa_id: int, campania_id: int) ->
                COALESCE(d.socios_txt, '') AS socios_txt,
                oc.id AS consumo_id, oc.tipo_item, oc.cantidad, oc.unidad,
                COALESCE(oc.aporte_pct, 100) AS aporte_pct,
+               COALESCE(oc.aporta, '') AS aporta,
                i.nombre AS item,
                m.cantidad_total AS cantidad_empresa, m.costo_usd, m.costo_ars,
                m.proveedor, m.nro_remito
@@ -2234,6 +2369,21 @@ def resumen_participacion_campania(cursor, empresa_id: int, campania_id: int) ->
         "resumen": sorted(grupos.values(), key=lambda g: (g["campo"].lower(), g["socios_txt"].lower())),
         "pendientes": pendientes,
     }
+
+
+def aporta_legible(aporta: Optional[str], aporte_pct: Any, empresa: str = "Empresa") -> str:
+    """'empresa' | 'compartido' | 'socio:Nombre' | 'manual' -> texto para mostrar."""
+    a = (aporta or "").strip()
+    pct = float(aporte_pct if aporte_pct is not None else 100)
+    if a == "empresa" or (not a and pct >= 100):
+        return empresa
+    if a == "compartido":
+        return f"Compartido ({empresa} {pct:g}%)"
+    if a.startswith("socio:"):
+        return a[6:].strip() or "Socio"
+    if not a and pct <= 0:
+        return "Socio"
+    return f"{empresa} {pct:g}%"
 
 
 def excel_participacion_campania(cursor, empresa_id: int, campania_id: int) -> bytes:
@@ -2297,7 +2447,7 @@ def excel_participacion_campania(cursor, empresa_id: int, campania_id: int) -> b
 
     ws2 = wb.create_sheet("Detalle")
     cols2 = ["OT", "Fecha", "Campo", "Lote", "Cultivo", "Has físicas", "Tipo", "Producto / labor",
-             "Cantidad física", "Unidad", f"% aporte {empresa}", f"% {empresa} en el campo", "Socios",
+             "Cantidad física", "Unidad", "Aporta", f"% aporte {empresa}", f"% {empresa} en el campo", "Socios",
              "Total U$S", f"Aportó {empresa} U$S", f"Corresponde {empresa} U$S", "Diferencia U$S",
              "Total $", f"Aportó {empresa} $", f"Corresponde {empresa} $", "Diferencia $"]
     encabezado(ws2, 1, cols2)
@@ -2306,14 +2456,15 @@ def excel_participacion_campania(cursor, empresa_id: int, campania_id: int) -> b
         valores = [x.get("nro_ot"), "/".join(reversed(f.split("-"))) if f else "", x.get("campo"), x.get("lote"),
                    x.get("cultivo"), x.get("has_fisicas"),
                    "Labor" if x.get("tipo_item") == "laboreo" else "Producto", x.get("item"),
-                   x.get("cantidad"), x.get("unidad"), x.get("aporte_pct"), x.get("participacion_pct"), x.get("socios_txt"),
+                   x.get("cantidad"), x.get("unidad"), aporta_legible(x.get("aporta"), x.get("aporte_pct"), empresa),
+                   x.get("aporte_pct"), x.get("participacion_pct"), x.get("socios_txt"),
                    x["total_usd"], x["aporte_empresa_usd"], x["corresponde_empresa_usd"], x["diferencia_usd"],
                    x["total_ars"], x["aporte_empresa_ars"], x["corresponde_empresa_ars"], x["diferencia_ars"]]
         for col, v in enumerate(valores, 1):
             c = ws2.cell(row=fila, column=col, value=v)
-            if col >= 14:
+            if col >= 15:
                 c.number_format = money
-    anchos(ws2, [8, 11, 18, 14, 12, 11, 10, 30, 13, 8, 12, 12, 26, 13, 15, 17, 14, 15, 17, 19, 15])
+    anchos(ws2, [8, 11, 18, 14, 12, 11, 10, 30, 13, 8, 22, 12, 12, 26, 13, 15, 17, 14, 15, 17, 19, 15])
     ws2.freeze_panes = "A2"
 
     buf = BytesIO()

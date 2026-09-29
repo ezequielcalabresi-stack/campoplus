@@ -273,12 +273,26 @@ class OtConsumoModel(BaseModel):
     dosis_por_ha: float = 0.0
     cantidad: float = 0.0
     aporte_pct: Optional[float] = None
+    aporta: Optional[str] = ""
 
 
 class SocioParticipacionModel(BaseModel):
+    socio_id: Optional[int] = None
     socio_nombre: str = ""
     socio_cuit: Optional[str] = ""
     porcentaje: float = 0.0
+    aporta_labores: Optional[bool] = None
+    aporta_insumos: Optional[bool] = None
+
+
+class SocioAgroModel(BaseModel):
+    nombre: str
+    cuit: Optional[str] = ""
+    contacto: Optional[str] = ""
+    telefono: Optional[str] = ""
+    email: Optional[str] = ""
+    observaciones: Optional[str] = ""
+    activo: bool = True
 
 
 class ParticipacionCampoModel(BaseModel):
@@ -852,6 +866,9 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         participaciones_campania,
         resumen_participacion_campania,
         excel_participacion_campania,
+        listar_socios_agro,
+        guardar_socio_agro,
+        borrar_socio_agro,
     )
 
     try:
@@ -1314,6 +1331,54 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             raise HTTPException(400, str(e))
         conn.close()
         return result
+
+    @app.get("/api/agro/socios")
+    def api_socios(incluir_inactivos: bool = False):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        asegurar_schema_participaciones(cur)
+        data = listar_socios_agro(cur, empresa_id, incluir_inactivos)
+        conn.close()
+        return data
+
+    def _guardar_socio(data: SocioAgroModel, socio_id: Optional[int] = None):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        asegurar_schema_participaciones(cur)
+        try:
+            result = guardar_socio_agro(cur, empresa_id, data.dict(), socio_id)
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, str(e))
+        conn.close()
+        return result
+
+    @app.post("/api/agro/socios")
+    def api_socio_nuevo(data: SocioAgroModel):
+        return _guardar_socio(data)
+
+    @app.put("/api/agro/socios/{socio_id}")
+    def api_socio_editar(socio_id: int, data: SocioAgroModel):
+        return _guardar_socio(data, socio_id)
+
+    @app.delete("/api/agro/socios/{socio_id}")
+    def api_socio_borrar(socio_id: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        asegurar_schema_participaciones(cur)
+        try:
+            res = borrar_socio_agro(cur, empresa_id, socio_id)
+            conn.commit()
+        except ValueError as e:
+            conn.close()
+            raise HTTPException(404, str(e))
+        conn.close()
+        return {"status": res}
 
     @app.get("/api/agro/campanias/{campania_id}/participaciones")
     def api_campania_participaciones(campania_id: int):

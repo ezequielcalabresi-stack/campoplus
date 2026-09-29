@@ -42,6 +42,7 @@
     <ul class="nav nav-tabs mb-3">
         <li class="nav-item"><button class="nav-link active" id="tabBtnEmitir" onclick="mostrarTab('emitir')">Emitir OT</button></li>
         <li class="nav-item"><button class="nav-link" id="tabBtnCostear" onclick="mostrarTab('costear')">Costear OT <span class="badge bg-warning text-dark" id="badgePend"></span></button></li>
+        <li class="nav-item"><button class="nav-link" id="tabBtnSoc" onclick="mostrarTab('soc')">Campos en sociedad</button></li>
         <li class="nav-item"><button class="nav-link" id="tabBtnPart" onclick="mostrarTab('part')">Participación con socios</button></li>
     </ul>
 
@@ -142,20 +143,19 @@
             <datalist id="dlProductos"></datalist>
             <datalist id="dlLabores"></datalist>
             <div id="barraAportes" class="alert alert-info py-2 small d-none">
-                <div class="fw-bold mb-1">Campo en participación: ¿cuánto aporta <span class="lbl-empresa">la empresa</span>?</div>
+                <div class="fw-bold mb-1">Campo en sociedad: elegí en cada línea quién la aporta</div>
+                <div id="partModalidad" class="mb-1"></div>
                 <div class="d-flex flex-wrap gap-3 align-items-center">
-                    <span>Labores:
-                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('laboreo', 100)">100%</button>
-                        <button type="button" class="btn btn-sm btn-outline-dark py-0 btn-aporte-part" onclick="setAporte('laboreo', 'part')"></button>
-                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('laboreo', 0)">0%</button>
+                    <span>Todas las labores:
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('laboreo', 'empresa')"><span class="lbl-empresa">la empresa</span></button>
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0 btn-comp-laboreo" onclick="setAporte('laboreo', 'compartido')">Compartido</button>
                     </span>
-                    <span>Productos:
-                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('producto', 100)">100%</button>
-                        <button type="button" class="btn btn-sm btn-outline-dark py-0 btn-aporte-part" onclick="setAporte('producto', 'part')"></button>
-                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('producto', 0)">0%</button>
+                    <span>Todos los productos:
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('producto', 'empresa')"><span class="lbl-empresa">la empresa</span></button>
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0 btn-comp-producto" onclick="setAporte('producto', 'compartido')">Compartido</button>
                     </span>
                 </div>
-                <div class="hint mt-1">El almacén descuenta solo lo que aporta la empresa. El costo de la campaña toma lo que le corresponde según su % en el campo; la diferencia se ve en "Participación con socios".</div>
+                <div class="hint mt-1">El almacén descuenta solo lo que aporta la empresa; lo que pone el socio no afecta el stock. El costo de la campaña toma lo que le corresponde según su % en el campo; la diferencia se ve en "Participación con socios".</div>
             </div>
             <div class="table-responsive">
                 <table class="table table-sm table-bordered align-middle mb-0 sin-part" id="tablaConsumosT">
@@ -166,7 +166,7 @@
                             <th class="text-center" style="width:110px;">Dosis / ha</th>
                             <th class="text-end" style="width:130px;">Cantidad</th>
                             <th style="width:60px;">Un.</th>
-                            <th class="text-end col-aporte" style="width:120px;">% aporta <span class="lbl-empresa">la empresa</span></th>
+                            <th class="col-aporte" style="width:230px;">Quién aporta</th>
                             <th class="text-end" style="width:150px;">Stock actual</th>
                             <th style="width:40px;"></th>
                         </tr>
@@ -232,6 +232,48 @@
         </div>
     </div>
 
+    <!-- ===================== CAMPOS EN SOCIEDAD ===================== -->
+    <div id="tabSoc" class="d-none">
+        <div class="main-card">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="small fw-bold">Campaña</label>
+                    <select id="sCampania" class="form-select form-select-sm" onchange="cargarCamposSociedad()"></select>
+                </div>
+                <div class="col-md-9 text-end">
+                    <button class="btn btn-sm btn-success fw-bold" onclick="abrirCampoSoc()">+ Campo en sociedad</button>
+                </div>
+            </div>
+            <p class="hint mt-2 mb-0">Cargá acá los campos que se trabajan con otras sociedades: socio, % de participación y cómo participa (con labores, con agroquímicos o solo con dinero). La carga sigue vigente en las campañas siguientes hasta que la cambies. Al emitir una OT en estos campos, cada línea ofrece quién la aporta: si es <span class="lbl-empresa">la empresa</span> sale del almacén; si es del socio no afecta el stock.</p>
+        </div>
+        <div class="main-card">
+            <h6 class="fw-bold">Campos en sociedad</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Campo</th><th class="text-end">% <span class="lbl-empresa">la empresa</span></th><th>Socio</th><th class="text-end">% socio</th>
+                            <th>Participa con</th><th>Vigencia</th><th style="width:150px;"></th></tr>
+                    </thead>
+                    <tbody id="tablaCamposSoc"><tr><td colspan="7" class="text-muted text-center py-3"> - </td></tr></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="main-card">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0">Socios</h6>
+                <button class="btn btn-sm btn-outline-success fw-bold" onclick="abrirSocio()">+ Socio</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Socio</th><th>CUIT</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th class="text-end">Campos</th><th style="width:130px;"></th></tr>
+                    </thead>
+                    <tbody id="tablaSocios"><tr><td colspan="7" class="text-muted text-center py-3"> - </td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- ===================== PARTICIPACIÓN ===================== -->
     <div id="tabPart" class="d-none">
         <div class="main-card">
@@ -288,6 +330,58 @@
 </div>
 
 <!-- ===================== MODAL COSTEO ===================== -->
+<div class="modal fade" id="modalSocio" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h6 class="modal-title fw-bold" id="socTitulo">Socio</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="socId">
+                <label class="small fw-bold">Nombre / razón social *</label>
+                <input id="socNombre" class="form-control form-control-sm mb-2" list="dlProveedores" oninput="onSocioNombreInput()">
+                <div class="row g-2">
+                    <div class="col-6"><label class="small fw-bold">CUIT</label><input id="socCuit" class="form-control form-control-sm"></div>
+                    <div class="col-6"><label class="small fw-bold">Contacto</label><input id="socContacto" class="form-control form-control-sm"></div>
+                    <div class="col-6"><label class="small fw-bold">Teléfono</label><input id="socTel" class="form-control form-control-sm"></div>
+                    <div class="col-6"><label class="small fw-bold">Email</label><input id="socEmail" type="email" class="form-control form-control-sm"></div>
+                    <div class="col-12"><label class="small fw-bold">Observaciones</label><input id="socObs" class="form-control form-control-sm"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-success fw-bold" onclick="guardarSocio()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalCampoSoc" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h6 class="modal-title fw-bold">Campo en sociedad | Campaña <span id="csCampania"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="small fw-bold">Campo</label>
+                <select id="csCampo" class="form-select form-select-sm mb-3" onchange="onCampoSocChange()"></select>
+                <table class="table table-sm align-middle mb-1">
+                    <thead class="table-light">
+                        <tr><th>Socio</th><th class="text-end" style="width:100px;">% socio</th>
+                            <th class="text-center" style="width:95px;">Labores</th><th class="text-center" style="width:115px;">Agroquímicos</th><th style="width:36px;"></th></tr>
+                    </thead>
+                    <tbody id="csSocios"></tbody>
+                </table>
+                <div class="d-flex justify-content-between align-items-center">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="agregarFilaCampoSoc()">+ Otro socio</button>
+                    <span class="small" id="csResumen"></span>
+                </div>
+                <div class="hint mt-2">Labores / Agroquímicos tildados: el socio puede aportarlos en las OT. Sin tildar: participa solo con dinero y <span class="lbl-empresa">la empresa</span> pone el 100%; la diferencia se ve en "Participación con socios". ¿El socio no está en la lista? Cargalo primero en "+ Socio".</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-success fw-bold" onclick="guardarCampoSoc()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="modalCosteo" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -427,11 +521,214 @@ function mostrarTab(t) {
     document.getElementById('tabEmitir').classList.toggle('d-none', t !== 'emitir');
     document.getElementById('tabCostear').classList.toggle('d-none', t !== 'costear');
     document.getElementById('tabPart').classList.toggle('d-none', t !== 'part');
+    document.getElementById('tabSoc').classList.toggle('d-none', t !== 'soc');
     document.getElementById('tabBtnEmitir').classList.toggle('active', t === 'emitir');
     document.getElementById('tabBtnCostear').classList.toggle('active', t === 'costear');
     document.getElementById('tabBtnPart').classList.toggle('active', t === 'part');
+    document.getElementById('tabBtnSoc').classList.toggle('active', t === 'soc');
     if (t === 'costear') cargarLineas();
     if (t === 'part') cargarParticipacionResumen();
+    if (t === 'soc') cargarCamposSociedad();
+}
+
+// ===================== CAMPOS EN SOCIEDAD =====================
+let sociosCache = [];
+let partSocCache = {};
+let modalSocio = null;
+let modalCampoSoc = null;
+
+async function cargarSocios() {
+    const res = await fetch('/api/agro/socios');
+    sociosCache = res.ok ? await res.json() : [];
+    document.getElementById('tablaSocios').innerHTML = sociosCache.length ? sociosCache.map(s => `
+        <tr>
+            <td class="fw-bold">${esc(s.nombre)}${s.observaciones ? `<div class="hint">${esc(s.observaciones)}</div>` : ''}</td>
+            <td class="font-mono">${esc(s.cuit || '')}</td>
+            <td>${esc(s.contacto || '')}</td>
+            <td>${esc(s.telefono || '')}</td>
+            <td>${esc(s.email || '')}</td>
+            <td class="text-end font-mono">${Number(s.campos || 0)}</td>
+            <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-outline-dark py-0" onclick="abrirSocio(${s.id})">Editar</button>
+                <button class="btn btn-sm btn-outline-danger py-0" onclick="borrarSocio(${s.id})">x</button>
+            </td>
+        </tr>`).join('')
+        : '<tr><td colspan="7" class="text-muted text-center py-3">Todavía no hay socios cargados.</td></tr>';
+}
+
+async function cargarCamposSociedad() {
+    const sel = document.getElementById('sCampania');
+    await cargarSocios();
+    const id = sel.value;
+    partSocCache = id ? await fetch(`/api/agro/campanias/${id}/participaciones`).then(r => r.ok ? r.json() : {}).catch(() => ({})) : {};
+    const codigo = sel.selectedOptions[0]?.dataset.codigo || '';
+    const nomCampo = cid => (camposCache.find(c => String(c.id) === String(cid)) || {}).nombre || ('Campo ' + cid);
+    const modo = s => {
+        const l = Number(s.aporta_labores ?? 1), a = Number(s.aporta_insumos ?? 1);
+        return [l ? '<span class="badge bg-warning-subtle text-warning-emphasis border">Labores</span>' : '',
+                a ? '<span class="badge bg-primary-subtle text-primary-emphasis border">Agroquímicos</span>' : '',
+                !l && !a ? '<span class="badge bg-secondary-subtle text-secondary-emphasis border">Solo dinero</span>' : ''].join(' ');
+    };
+    const filas = Object.entries(partSocCache)
+        .sort((a, b) => cmpTxt(nomCampo(a[0]), nomCampo(b[0])))
+        .flatMap(([cid, p]) => (p.socios || []).map((s, i) => `
+            <tr${i ? '' : ' class="border-top"'}>
+                <td class="fw-bold">${i ? '' : esc(nomCampo(cid))}</td>
+                <td class="text-end font-mono">${i ? '' : pctAr(p.pct_empresa)}</td>
+                <td>${esc(s.socio_nombre)}${s.socio_id ? '' : ' <span class="hint">(sin ficha de socio)</span>'}</td>
+                <td class="text-end font-mono">${pctAr(s.porcentaje)}</td>
+                <td>${modo(s)}</td>
+                <td class="small">${i ? '' : (p.campania_codigo_origen && p.campania_codigo_origen !== codigo
+                    ? `Desde ${esc(p.campania_codigo_origen)}` : `Campaña ${esc(codigo)}`)}</td>
+                <td class="text-end text-nowrap">${i ? '' : `
+                    <button class="btn btn-sm btn-outline-dark py-0" onclick="abrirCampoSoc(${cid})">Editar</button>
+                    <button class="btn btn-sm btn-outline-danger py-0" onclick="quitarCampoSoc(${cid})">Quitar</button>`}</td>
+            </tr>`));
+    document.getElementById('tablaCamposSoc').innerHTML = filas.join('')
+        || `<tr><td colspan="7" class="text-muted text-center py-3">No hay campos en sociedad para la campaña ${esc(codigo)}.</td></tr>`;
+}
+
+function onSocioNombreInput() {
+    const p = proveedorPorTexto(document.getElementById('socNombre').value);
+    const cuit = document.getElementById('socCuit');
+    if (p && !cuit.value.trim()) cuit.value = p.cuit;
+}
+
+function abrirSocio(id) {
+    const s = sociosCache.find(x => x.id === id) || {};
+    document.getElementById('socTitulo').textContent = id ? 'Editar socio' : 'Nuevo socio';
+    document.getElementById('socId').value = id || '';
+    document.getElementById('socNombre').value = s.nombre || '';
+    document.getElementById('socCuit').value = s.cuit || '';
+    document.getElementById('socContacto').value = s.contacto || '';
+    document.getElementById('socTel').value = s.telefono || '';
+    document.getElementById('socEmail').value = s.email || '';
+    document.getElementById('socObs').value = s.observaciones || '';
+    (modalSocio = modalSocio || new bootstrap.Modal(document.getElementById('modalSocio'))).show();
+}
+
+async function guardarSocio() {
+    const id = document.getElementById('socId').value;
+    const body = {
+        nombre: document.getElementById('socNombre').value.trim(),
+        cuit: document.getElementById('socCuit').value.trim(),
+        contacto: document.getElementById('socContacto').value.trim(),
+        telefono: document.getElementById('socTel').value.trim(),
+        email: document.getElementById('socEmail').value.trim(),
+        observaciones: document.getElementById('socObs').value.trim(),
+    };
+    if (!body.nombre) return alert('Indicá el nombre del socio.');
+    const res = await fetch(id ? `/api/agro/socios/${id}` : '/api/agro/socios', {
+        method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(errMsg(d, 'No se pudo guardar el socio.'));
+    modalSocio.hide();
+    await cargarCamposSociedad();
+    await cargarPlanCampania();
+}
+
+async function borrarSocio(id) {
+    const s = sociosCache.find(x => x.id === id);
+    if (!s || !confirm(`¿Quitar a ${s.nombre} de la lista de socios?`)) return;
+    const res = await fetch(`/api/agro/socios/${id}`, { method: 'DELETE' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(errMsg(d, 'No se pudo quitar.'));
+    if (d.status === 'inactivo') alert(`${s.nombre} participa en campos cargados: queda dado de baja pero se conserva la historia.`);
+    cargarCamposSociedad();
+}
+
+function opcionesSocioSelect(p) {
+    const extra = p && p.socio_nombre && !sociosCache.some(s => s.nombre.trim().toLowerCase() === p.socio_nombre.trim().toLowerCase())
+        ? `<option value="n:${esc(p.socio_nombre)}">${esc(p.socio_nombre)} (sin ficha)</option>` : '';
+    return '<option value="">Elegí el socio...</option>' + extra
+        + sociosCache.map(s => `<option value="${s.id}">${esc(s.nombre)}</option>`).join('');
+}
+
+function agregarFilaCampoSoc(s) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><select class="form-select form-select-sm cs-socio" onchange="resumenCampoSoc()">${opcionesSocioSelect(s)}</select></td>
+        <td><input type="number" step="0.01" min="0" max="99.99" class="form-control form-control-sm text-end font-mono cs-pct" value="${s ? Number(s.porcentaje) : ''}" oninput="resumenCampoSoc()"></td>
+        <td class="text-center"><input type="checkbox" class="form-check-input cs-lab" ${!s || Number(s.aporta_labores ?? 1) ? 'checked' : ''} onchange="resumenCampoSoc()"></td>
+        <td class="text-center"><input type="checkbox" class="form-check-input cs-ins" ${!s || Number(s.aporta_insumos ?? 1) ? 'checked' : ''} onchange="resumenCampoSoc()"></td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove(); resumenCampoSoc()">x</button></td>`;
+    document.getElementById('csSocios').appendChild(tr);
+    if (s) {
+        const sel = tr.querySelector('.cs-socio');
+        const porId = s.socio_id && sociosCache.some(x => x.id === Number(s.socio_id));
+        const porNombre = sociosCache.find(x => x.nombre.trim().toLowerCase() === (s.socio_nombre || '').trim().toLowerCase());
+        sel.value = porId ? String(s.socio_id) : porNombre ? String(porNombre.id) : 'n:' + s.socio_nombre;
+    }
+    resumenCampoSoc();
+}
+
+function resumenCampoSoc() {
+    const filas = [...document.querySelectorAll('#csSocios tr')];
+    const tot = filas.reduce((a, tr) => a + (parseFloat(tr.querySelector('.cs-pct').value || 0) || 0), 0);
+    const emp = Math.round((100 - tot) * 100) / 100;
+    document.getElementById('csResumen').innerHTML = `${esc(empresaNombre)}: <b class="font-mono ${emp <= 0 ? 'text-danger' : ''}">${pctAr(emp)}</b> | socios ${pctAr(tot)}`;
+}
+
+async function abrirCampoSoc(campoId) {
+    if (!sociosCache.length) await cargarSocios();
+    const sel = document.getElementById('csCampo');
+    sel.innerHTML = '<option value="">Elegí el campo...</option>' + camposCache.map(c =>
+        `<option value="${c.id}">${esc(c.nombre)}${c.tipo ? ' (' + esc(c.tipo) + ')' : ''}</option>`).join('');
+    sel.value = campoId ? String(campoId) : '';
+    sel.disabled = !!campoId;
+    document.getElementById('csCampania').textContent = document.getElementById('sCampania').selectedOptions[0]?.dataset.codigo || '';
+    onCampoSocChange();
+    (modalCampoSoc = modalCampoSoc || new bootstrap.Modal(document.getElementById('modalCampoSoc'))).show();
+}
+
+function onCampoSocChange() {
+    const cid = document.getElementById('csCampo').value;
+    const p = partSocCache[cid];
+    document.getElementById('csSocios').innerHTML = '';
+    if (p && (p.socios || []).length) p.socios.forEach(s => agregarFilaCampoSoc(s));
+    else agregarFilaCampoSoc();
+}
+
+async function guardarCampoSoc() {
+    const campoId = document.getElementById('csCampo').value;
+    const campania_id = parseInt(document.getElementById('sCampania').value || 0, 10);
+    if (!campoId) return alert('Elegí el campo.');
+    if (!campania_id) return alert('Elegí la campaña.');
+    const socios = [];
+    for (const tr of document.querySelectorAll('#csSocios tr')) {
+        const v = tr.querySelector('.cs-socio').value;
+        const pct = parseFloat(tr.querySelector('.cs-pct').value || 0) || 0;
+        if (!v && !pct) continue;
+        if (!v) return alert('Elegí el socio en cada fila.');
+        if (!(pct > 0 && pct < 100)) return alert('El % de cada socio tiene que estar entre 0 y 100.');
+        socios.push({
+            ...(v.startsWith('n:') ? { socio_nombre: v.slice(2) } : { socio_id: parseInt(v, 10) }),
+            porcentaje: pct,
+            aporta_labores: tr.querySelector('.cs-lab').checked,
+            aporta_insumos: tr.querySelector('.cs-ins').checked,
+        });
+    }
+    if (!socios.length) return alert('Cargá al menos un socio con su %.');
+    await enviarParticipacion(campoId, campania_id, socios);
+}
+
+async function quitarCampoSoc(campoId) {
+    const nom = (camposCache.find(c => String(c.id) === String(campoId)) || {}).nombre || 'el campo';
+    const codigo = document.getElementById('sCampania').selectedOptions[0]?.dataset.codigo || '';
+    if (!confirm(`¿${nom} deja de trabajarse en sociedad desde la campaña ${codigo}? Las campañas anteriores no cambian.`)) return;
+    await enviarParticipacion(campoId, parseInt(document.getElementById('sCampania').value, 10), []);
+}
+
+async function enviarParticipacion(campoId, campania_id, socios) {
+    const res = await fetch(`/api/agro/campos/${campoId}/participacion`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campania_id, socios }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(errMsg(d, 'No se pudo guardar.'));
+    modalCampoSoc?.hide();
+    await cargarCamposSociedad();
+    await cargarPlanCampania();
 }
 
 function pctAr(n) {
@@ -473,6 +770,8 @@ async function init() {
     if (activa) selC.value = String(activa.id);
     document.getElementById('pCampania').innerHTML = selC.innerHTML;
     document.getElementById('pCampania').value = selC.value;
+    document.getElementById('sCampania').innerHTML = selC.innerHTML;
+    document.getElementById('sCampania').value = selC.value;
     empresaActiva().then(emp => {
         if (emp && emp.razon_social) empresaNombre = emp.razon_social;
         document.querySelectorAll('.lbl-empresa').forEach(el => { el.textContent = empresaNombre; });
@@ -673,23 +972,119 @@ function actualizarParticipacionUI() {
     });
     document.getElementById('tablaConsumosT').classList.toggle('sin-part', !hayPart);
     document.getElementById('barraAportes').classList.toggle('d-none', !hayPart);
-    document.querySelectorAll('.btn-aporte-part').forEach(b => {
-        b.textContent = pctRef != null ? pctAr(pctRef) : '';
-        b.classList.toggle('d-none', pctRef == null || pctRef === 100);
-    });
+    const soc = sociosDeLaOrden();
+    const modo = s => {
+        const l = Number(s.aporta_labores ?? 1), a = Number(s.aporta_insumos ?? 1);
+        return l && a ? 'labores y agroquímicos' : l ? 'labores' : a ? 'agroquímicos' : 'solo dinero';
+    };
+    document.getElementById('partModalidad').innerHTML = soc.map(s =>
+        `<span class="badge bg-white text-dark border me-1">${esc(s.socio_nombre)} ${pctAr(s.porcentaje)} | participa con ${modo(s)}</span>`).join('');
+    document.querySelectorAll('.btn-comp-laboreo').forEach(b => b.classList.toggle('d-none', !soc.some(s => Number(s.aporta_labores ?? 1))));
+    document.querySelectorAll('.btn-comp-producto').forEach(b => b.classList.toggle('d-none', !soc.some(s => Number(s.aporta_insumos ?? 1))));
+    refrescarAportes(hayPart);
     document.getElementById('totalHasPart').innerHTML = hayPart
         ? `Le corresponden a ${esc(empresaNombre)}: <b class="font-mono">${numAr(Math.round(hasEmp * 100) / 100)}</b> de ${numAr(Math.round(hasTot * 100) / 100)} has`
         : '';
 }
 
-function setAporte(tipo, valor) {
-    let v = valor;
-    if (valor === 'part') {
-        const tr = [...document.querySelectorAll('#tablaDestinos tr')].find(t => Number(t.dataset.part || 100) < 100);
-        v = tr ? Number(tr.dataset.part) : 100;
-    }
+function partsDeLaOrden() {
+    return [...document.querySelectorAll('#tablaDestinos tr')]
+        .map(tr => partDeCampo(tr.querySelector('.dest-campo').value)).filter(Boolean);
+}
+
+function sociosDeLaOrden() {
+    const vistos = {};
+    partsDeLaOrden().forEach(p => (p.socios || []).forEach(s => {
+        const k = (s.socio_nombre || '').trim().toLowerCase();
+        if (k && !vistos[k]) vistos[k] = s;
+    }));
+    return Object.values(vistos);
+}
+
+function opcionesAporte(tipo) {
+    const parts = partsDeLaOrden();
+    if (!parts.length) return [];
+    const flag = tipo === 'laboreo' ? 'aporta_labores' : 'aporta_insumos';
+    const socios = sociosDeLaOrden().filter(s => Number(s[flag] ?? 1));
+    const pct = parts[0].pct_empresa;
+    const prod = tipo !== 'laboreo';
+    const ops = [{ v: 'empresa', pct: 100, txt: empresaNombre + (prod ? ' (sale del almacén)' : '') }];
+    if (socios.length) ops.push({ v: 'compartido', pct, txt: `Compartido: ${empresaNombre} ${pctAr(pct)}` });
+    socios.forEach(s => ops.push({ v: 'socio:' + s.socio_nombre, pct: 0, txt: s.socio_nombre + (prod ? ' (no afecta el almacén)' : '') }));
+    ops.push({ v: 'manual', pct: null, txt: 'Otro %' });
+    return ops;
+}
+
+function aportaPorDefecto(tipo) {
+    const flag = tipo === 'laboreo' ? 'aporta_labores' : 'aporta_insumos';
+    return sociosDeLaOrden().some(s => Number(s[flag] ?? 1)) ? 'compartido' : 'empresa';
+}
+
+function refrescarAportes(hayPart) {
     document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
-        if (tr.querySelector('.cons-tipo').value === tipo) tr.querySelector('.cons-aporte').value = v;
+        const tipo = tr.querySelector('.cons-tipo').value;
+        const sel = tr.querySelector('.cons-aporta');
+        if (!hayPart) {
+            tr.dataset.aportaSig = '';
+            sel.innerHTML = '';
+            tr.querySelector('.cons-aporte').value = 100;
+            return;
+        }
+        const ops = opcionesAporte(tipo);
+        const sig = tipo + '|' + ops.map(o => o.v + '=' + o.pct).join(';');
+        if (tr.dataset.aportaSig === sig) return;
+        tr.dataset.aportaSig = sig;
+        const actual = sel.value;
+        sel.innerHTML = ops.map(o => `<option value="${esc(o.v)}">${esc(o.txt)}</option>`).join('');
+        if (tr.dataset.aportaPct != null) {
+            sel.value = aportaGuardada(ops, tr.dataset.aportaInicial || '', Number(tr.dataset.aportaPct));
+            delete tr.dataset.aportaInicial;
+            delete tr.dataset.aportaPct;
+        } else {
+            sel.value = ops.some(o => o.v === actual) ? actual : aportaPorDefecto(tipo);
+        }
+        aplicarAporta(tr, ops);
+    });
+}
+
+function aportaGuardada(ops, aporta, pct) {
+    if (ops.some(o => o.v === aporta)) return aporta;
+    const porPct = ops.find(o => o.pct != null && Math.abs(o.pct - pct) < 0.001);
+    return porPct ? porPct.v : 'manual';
+}
+
+function aplicarAporta(tr, ops) {
+    const sel = tr.querySelector('.cons-aporta');
+    const op = (ops || opcionesAporte(tr.querySelector('.cons-tipo').value)).find(o => o.v === sel.value);
+    const manual = !op || op.pct == null;
+    tr.querySelector('.cons-aporte-box').classList.toggle('d-none', !manual);
+    if (!manual) tr.querySelector('.cons-aporte').value = op.pct;
+}
+
+function onAportaChange(sel) {
+    aplicarAporta(sel.closest('tr'));
+    recalcularLineas();
+}
+
+function fijarAportaFila(tr, aporta, pct) {
+    tr.querySelector('.cons-aporte').value = pct;
+    const ops = opcionesAporte(tr.querySelector('.cons-tipo').value);
+    if (!ops.length || !tr.dataset.aportaSig) {
+        tr.dataset.aportaInicial = aporta || '';
+        tr.dataset.aportaPct = String(pct);
+        return;
+    }
+    tr.querySelector('.cons-aporta').value = aportaGuardada(ops, aporta, pct);
+    aplicarAporta(tr, ops);
+}
+
+function setAporte(tipo, valor) {
+    document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
+        if (tr.querySelector('.cons-tipo').value !== tipo) return;
+        const sel = tr.querySelector('.cons-aporta');
+        if (![...sel.options].some(o => o.value === valor)) return;
+        sel.value = valor;
+        aplicarAporta(tr);
     });
     recalcularLineas();
 }
@@ -717,7 +1112,13 @@ function agregarLinea(tipoInicial) {
         <td><input type="number" step="0.001" class="form-control form-control-sm font-mono text-end cons-dosis" value="${tipo==='laboreo'?'1':'0'}" oninput="recalcularLineas()"></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm font-mono text-end cons-cant" value="0"></td>
         <td class="cons-un small"></td>
-        <td class="col-aporte"><input type="number" step="1" min="0" max="100" class="form-control form-control-sm font-mono text-end cons-aporte" value="100" oninput="recalcularLineas()" title="Qué % de esta labor o producto pone la empresa en los campos en participación"></td>
+        <td class="col-aporte">
+            <select class="form-select form-select-sm cons-aporta" onchange="onAportaChange(this)"></select>
+            <div class="input-group input-group-sm mt-1 d-none cons-aporte-box">
+                <input type="number" step="1" min="0" max="100" class="form-control font-mono text-end cons-aporte" value="100" oninput="recalcularLineas()" title="Qué % de esta labor o producto pone la empresa">
+                <span class="input-group-text">% empresa</span>
+            </div>
+        </td>
         <td class="text-end font-mono small cons-stock"></td>
         <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove();">x</button></td>`;
     document.getElementById('tablaConsumos').appendChild(tr);
@@ -811,9 +1212,10 @@ async function emitirOT() {
         const cantidad = parseFloat(tr.querySelector('.cons-cant').value || 0);
         const aporteTxt = tr.querySelector('.cons-aporte').value;
         const aporte_pct = aporteTxt === '' ? 100 : parseFloat(aporteTxt);
+        const aporta = tr.querySelector('.cons-aporta').value || '';
         if (nombre && !item_id) invalidos.push(nombre);
         if (!(aporte_pct >= 0 && aporte_pct <= 100)) invalidos.push(nombre + ' (el % de aporte tiene que estar entre 0 y 100)');
-        if (item_id && cantidad > 0) consumos.push({ item_id, dosis_por_ha: dosis, cantidad, aporte_pct });
+        if (item_id && cantidad > 0) consumos.push({ item_id, dosis_por_ha: dosis, cantidad, aporte_pct, aporta });
     });
     if (invalidos.length) return alert('Revisá estos ítems (elegilos de la lista del almacén):\n' + invalidos.join('\n'));
     if (!consumos.length) return alert('Agregá al menos un producto o labor con cantidad.');
@@ -948,7 +1350,7 @@ async function editarOT(id) {
         const dosis = Number(c.dosis_por_ha || 0);
         const cant = Number(c.cantidad || 0);
         tr.querySelector('.cons-dosis').value = dosis;
-        tr.querySelector('.cons-aporte').value = c.aporte_pct == null ? 100 : Number(c.aporte_pct);
+        fijarAportaFila(tr, c.aporta || '', c.aporte_pct == null ? 100 : Number(c.aporte_pct));
         const cantInp = tr.querySelector('.cons-cant');
         cantInp.value = Math.round(cant * 1000) / 1000;
         if (!(dosis > 0 && Math.abs(dosis * has - cant) < 0.001)) cantInp.dataset.manual = '1';
@@ -1295,7 +1697,7 @@ async function cargarParticipacionResumen() {
             <td>${esc(x.campo || '')}${x.lote ? ' | ' + esc(x.lote) : ''}</td>
             <td>${x.tipo_item === 'laboreo' ? '<span class="badge bg-warning-subtle text-warning-emphasis border me-1">Labor</span>' : '<span class="badge bg-primary-subtle text-primary-emphasis border me-1">Prod.</span>'}${esc(x.item || '')}</td>
             <td class="text-end font-mono">${numAr(x.cantidad)} ${esc(x.unidad || '')}</td>
-            <td class="text-end font-mono">${pctAr(x.aporte_pct)}</td>
+            <td class="text-end font-mono">${pctAr(x.aporte_pct)}<div class="hint">${esc(aportaTxt(x.aporta, x.aporte_pct))}</div></td>
             <td class="text-end font-mono">${pctAr(x.participacion_pct)}</td>
             <td class="text-end font-mono">${moneyAr(x.total_usd)}</td>
             ${celdaDif(x.diferencia_usd)}
@@ -1303,6 +1705,17 @@ async function cargarParticipacionResumen() {
             ${celdaDif(x.diferencia_ars)}
         </tr>`).join('')
         : '<tr><td colspan="11" class="text-muted text-center py-3"> - </td></tr>';
+}
+
+function aportaTxt(aporta, pct, nomEmp) {
+    const emp = nomEmp || empresaNombre;
+    const a = (aporta || '').trim();
+    const p = Number(pct ?? 100);
+    if (a === 'empresa' || (!a && p >= 100)) return emp;
+    if (a === 'compartido') return `Compartido (${emp} ${pctAr(p)})`;
+    if (a.startsWith('socio:')) return a.slice(6).trim() || 'Socio';
+    if (!a && p <= 0) return 'Socio';
+    return `${emp} ${pctAr(p)}`;
 }
 
 async function descargarExcelParticipacion() {
@@ -1425,11 +1838,11 @@ function generarPdfOt(d, emp) {
         columnStyles: conPart ? { 2: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } } : { 2: { halign: 'right' }, 4: { halign: 'right' } },
         head: [['Tipo', 'Producto / labor', { content: 'Dosis por ha', styles: { halign: 'right' } }, 'Unidad',
             { content: 'Cantidad total', styles: { halign: 'right' } },
-            ...(conPart ? [{ content: 'Aporta ' + nomEmp, styles: { halign: 'right' } }] : [])]],
+            ...(conPart ? [{ content: 'Aporta', styles: { halign: 'right' } }] : [])]],
         body: (d.consumos || []).map(c => [
             c.tipo_item === 'laboreo' ? 'Labor' : 'Producto', c.nombre || '',
             numAr(c.dosis_por_ha), c.unidad || '', numAr(c.cantidad),
-            ...(conPart ? [pctAr(c.aporte_pct ?? 100)] : []),
+            ...(conPart ? [aportaTxt(c.aporta, c.aporte_pct, nomEmp)] : []),
         ]),
     });
 
