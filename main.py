@@ -4,7 +4,7 @@ from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Dict, List, Optional
 import sqlite3
 import tempfile
 import uvicorn
@@ -12,7 +12,7 @@ import pandas as pd
 import os
 import re
 import io
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from motor_contable import (
     init_contabilidad,
     asiento_para_movimiento_banco,
@@ -7641,6 +7641,133 @@ def _kpis_actividad(cursor, empresa_id: int) -> dict:
     return out
 
 
+def _fecha_flexible(valor) -> Optional[date]:
+    s = str(valor or "").strip()[:10]
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _sumar_anios(d: date, anios: int) -> date:
+    try:
+        return d.replace(year=d.year + anios)
+    except ValueError:
+        return d.replace(year=d.year + anios, day=28)
+
+
+def _plazos_dashboard(cursor, empresa_id: int, campania_activa: str) -> dict:
+    """Corto (hasta 12 meses), mediano (12 a 36) y largo plazo (más de 36). Lo vencido cuenta como corto."""
+    hoy = date.today()
+    lim12, lim36 = _sumar_anios(hoy, 1), _sumar_anios(hoy, 3)
+
+    def vacio():
+        return {"corto": 0.0, "mediano": 0.0, "largo": 0.0}
+
+    def tramo(d: Optional[date]) -> str:
+        if d is None or d <= lim12:
+            return "corto"
+        return "mediano" if d <= lim36 else "largo"
+
+    def tabla(nombre: str) -> bool:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (nombre,))
+        return cursor.fetchone() is not None
+
+    compromisos = vacio()
+    cursor.execute(
+        """
+        SELECT REPLACE(cc.entidad_id, '-', '') AS cuit, cc.fecha, cc.vencimiento,
+               COALESCE(cc.debe, 0) AS debe, COALESCE(cc.haber, 0) AS haber
+        FROM cuentas_corrientes cc
+        WHERE COALESCE(cc.empresa_id, 1) = ?
+          AND REPLACE(cc.entidad_id, '-', '') IN (
+              SELECT REPLACE(e.cuit, '-', '') FROM entidades e
+              WHERE COALESCE(e.es_cuenta_ajuste, 0) = 0 AND COALESCE(e.es_cuenta_bancaria, 0) = 0
+          );
+        """,
+        (empresa_id,),
+    )
+    por_cuit: Dict[str, list] = {}
+    for r in cursor.fetchall():
+        por_cuit.setdefault(r["cuit"], []).append(r)
+    for filas in por_cuit.values():
+        saldo = sum(float(f["debe"]) - float(f["haber"]) for f in filas)
+        if round(saldo, 2) < 0.01:
+            continue
+        debitos = []
+        for f in filas:
+            if float(f["debe"]) > 0:
+                fecha = _fecha_flexible(f["fecha"])
+                vto = _fecha_flexible(f["vencimiento"]) or (fecha + timedelta(days=30) if fecha else None)
+                debitos.append((fecha or date.min, vto, float(f["debe"])))
+        debitos.sort(key=lambda x: x[0], reverse=True)
+        resto = saldo
+        for _, vto, monto in debitos:
+            if resto <= 0:
+                break
+            parte = min(monto, resto)
+            compromisos[tramo(vto)] += parte
+            resto -= parte
+        if resto > 0:
+            compromisos["corto"] += resto
+
+    prestamos_ars, deuda_usd = vacio(), vacio()
+    if tabla("creditos_cuotas") and tabla("creditos_prestamos"):
+        cursor.execute(
+            """
+            SELECT UPPER(COALESCE(c.moneda, 'ARS')) AS moneda, q.fecha_pago,
+                   COALESCE(q.capital, 0) AS capital, COALESCE(q.capital_usd, 0) AS capital_usd
+            FROM creditos_cuotas q
+            JOIN creditos_prestamos c ON c.id = q.credito_id
+            WHERE COALESCE(c.empresa_id, 1) = ? AND UPPER(COALESCE(q.estado, '')) != 'PAGADA';
+            """,
+            (empresa_id,),
+        )
+        for r in cursor.fetchall():
+            t = tramo(_fecha_flexible(r["fecha_pago"]))
+            if r["moneda"] in ("USD", "U$S", "DOLARES", "DÓLARES"):
+                deuda_usd[t] += float(r["capital_usd"] or r["capital"] or 0)
+            else:
+                prestamos_ars[t] += float(r["capital"] or 0)
+
+    alquileres = vacio()
+    if tabla("contratos_alquileres"):
+        m = re.match(r"^(\d{2})-", campania_activa or "")
+        inicio_activa = 2000 + int(m.group(1)) if m else (hoy.year if hoy.month >= 7 else hoy.year - 1)
+        cursor.execute(
+            """
+            SELECT campania_codigo, COALESCE(SUM(
+                CASE WHEN COALESCE(kilos_totales, 0) > 0 THEN kilos_totales ELSE COALESCE(tn_totales, 0) * 1000 END
+            ), 0.0) AS kg
+            FROM contratos_alquileres
+            WHERE COALESCE(empresa_id, 1) = ? AND UPPER(TRIM(COALESCE(grano, ''))) LIKE 'SOJA%'
+            GROUP BY campania_codigo;
+            """,
+            (empresa_id,),
+        )
+        for r in cursor.fetchall():
+            mc = re.match(r"^(\d{2})-", str(r["campania_codigo"] or ""))
+            if not mc:
+                continue
+            desfase = 2000 + int(mc.group(1)) - inicio_activa
+            if desfase < 0:
+                continue
+            clave = "corto" if desfase == 0 else ("mediano" if desfase <= 2 else "largo")
+            alquileres[clave] += float(r["kg"] or 0)
+
+    def redondear(d):
+        return {k: round(v, 2) for k, v in d.items()}
+
+    return {
+        "compromisos": redondear(compromisos),
+        "prestamos_ars": redondear(prestamos_ars),
+        "deuda_usd": redondear(deuda_usd),
+        "alquileres_kg": redondear(alquileres),
+    }
+
+
 def _rol_ve_numeros_empresa(rol: str, es_superadmin: int) -> bool:
     if es_superadmin:
         return True
@@ -7728,6 +7855,7 @@ def dashboard_kpis(request: Request):
         )
         alquileres_kg = float(cursor.fetchone()["kg"] or 0)
 
+    plazos = _plazos_dashboard(cursor, empresa_id, campania_activa)
     conn.close()
     return {
         "vista": "empresa",
@@ -7737,8 +7865,11 @@ def dashboard_kpis(request: Request):
         "compromisos_neto_fci_ars": compromisos_neto,
         "acuerdos_bancarios_ars": acuerdos,
         "deuda_usd": deuda_usd,
+        "deuda_usd_creditos": round(sum(plazos["deuda_usd"].values()), 2),
         "alquileres_kg": alquileres_kg,
+        "alquileres_kg_total": round(sum(plazos["alquileres_kg"].values()), 2),
         "campania_activa": campania_activa,
+        "plazos": plazos,
     }
 
 @app.get("/api/ordenes_pago")

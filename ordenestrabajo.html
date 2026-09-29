@@ -292,6 +292,36 @@
     </div>
 </div>
 
+<!-- ===================== MODAL ENVIAR PDF ===================== -->
+<div class="modal fade" id="modalEnviar" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title fw-bold" id="envTitulo">Enviar OT</h5>
+                    <div class="hint" id="envSub"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="envCargando" class="text-muted small">Generando PDF...</div>
+                <div id="envAcciones" class="d-none">
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-dark fw-bold" id="btnEnvCompartir" onclick="envCompartir()">Compartir PDF (WhatsApp, Mail, ...)</button>
+                        <button type="button" class="btn btn-success fw-bold" onclick="envWhatsApp()">WhatsApp</button>
+                        <button type="button" class="btn btn-primary fw-bold" onclick="envMail()">Mail</button>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary flex-fill" onclick="envVer()">Ver PDF</button>
+                            <button type="button" class="btn btn-outline-secondary flex-fill" onclick="envDescargar()">Descargar PDF</button>
+                        </div>
+                    </div>
+                    <p class="hint mt-3 mb-0" id="envHint"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 let camposCache = [];
@@ -318,6 +348,13 @@ function esc(s) {
 function fechaAr(f) {
     return (f || '').slice(0, 10).split('-').reverse().join('/');
 }
+function cmpTxt(a, b) {
+    return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
+}
+function ordenarDestinos(lista) {
+    return (lista || []).slice().sort((a, b) =>
+        cmpTxt(a.campo_nombre, b.campo_nombre) || cmpTxt(a.lote_nombre, b.lote_nombre));
+}
 
 function mostrarTab(t) {
     document.getElementById('tabEmitir').classList.toggle('d-none', t !== 'emitir');
@@ -341,7 +378,7 @@ async function init() {
         fetch('/api/entidades?rol=proveedor').then(r => r.ok ? r.json() : []).catch(() => []),
     ]);
     document.getElementById('nroOT').value = nro.nro_ot || '';
-    camposCache = campos || [];
+    camposCache = (campos || []).slice().sort((a, b) => cmpTxt(a.nombre, b.nombre));
     itemsCache = (items || []).slice().sort((a, b) =>
         String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' })
     );
@@ -366,6 +403,11 @@ async function init() {
     if (selC.value) await cargarPlanCampania();
     selC.addEventListener('change', cargarPlanCampania);
     actualizarBadgePendientes();
+    const enviarId = parseInt(new URLSearchParams(location.search).get('enviar') || 0, 10);
+    if (enviarId) {
+        history.replaceState(null, '', 'ordenestrabajo.html');
+        abrirEnviar(enviarId);
+    }
 }
 
 // ===================== DESTINOS (campos / lotes) =====================
@@ -374,7 +416,7 @@ async function lotesDeCampo(id) {
     if (!lotesPorCampo[id]) {
         const res = await fetch(`/api/agro/campos/${id}`);
         const d = res.ok ? await res.json() : {};
-        lotesPorCampo[id] = d.lotes || [];
+        lotesPorCampo[id] = (d.lotes || []).slice().sort((a, b) => cmpTxt(a.nombre, b.nombre));
     }
     return lotesPorCampo[id];
 }
@@ -604,6 +646,9 @@ async function emitirOT() {
     }
     const lotesIds = destinos.map(d => d.lote_id);
     if (new Set(lotesIds).size !== lotesIds.length) return alert('Hay un lote repetido en la orden.');
+    const nomCampo = d => (camposCache.find(c => c.id === d.campo_id) || {}).nombre;
+    const nomLote = d => ((lotesPorCampo[d.campo_id] || []).find(l => l.id === d.lote_id) || {}).nombre;
+    destinos.sort((a, b) => cmpTxt(nomCampo(a), nomCampo(b)) || cmpTxt(nomLote(a), nomLote(b)));
     const consumos = [];
     const invalidos = [];
     document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
@@ -650,8 +695,12 @@ async function emitirOT() {
     if ((d.sin_stock || []).length) {
         msg += '\n\n' + d.sin_stock.map(s => `${s.nombre}: había ${numAr(s.stock_previo)} ${s.unidad}, se usaron ${numAr(s.pedido)}`).join('\n');
     }
-    alert(msg);
-    location.reload();
+    if (d.ot_id && confirm(msg + '\n\n¿Generar el PDF para enviarla por WhatsApp o mail?')) {
+        location.href = 'ordenestrabajo.html?enviar=' + d.ot_id;
+        return;
+    }
+    if (!d.ot_id) alert(msg);
+    location.href = 'ordenestrabajo.html';
 }
 
 function badgeEstado(e) {
@@ -675,7 +724,7 @@ function renderHist(rows) {
         const confirmada = Number(o.confirmada || 0) === 1;
         const nro = String(o.nro_ot || '');
         const destinos = Number(o.n_destinos || 0) > 1
-            ? `<span class="badge bg-light text-dark border me-1">${o.n_destinos} lotes</span><span class="small">${esc(o.destinos_txt || '')}</span>`
+            ? `<span class="badge bg-light text-dark border me-1">${o.n_destinos} lotes</span><span class="small">${esc(String(o.destinos_txt || '').split('; ').sort(cmpTxt).join('; '))}</span>`
             : `${esc(o.campo_nombre || '')}${o.lote_nombre ? ' | ' + esc(o.lote_nombre) : ''}`;
         return `
         <tr class="${anulada ? 'text-muted' : ''}">
@@ -689,6 +738,7 @@ function renderHist(rows) {
             <td class="text-end font-mono">${moneyAr(o.costo_insumos_neto)}</td>
             <td class="text-end font-mono">${moneyAr(o.costo_laboreos_neto)}</td>
             <td class="text-nowrap text-end">
+                ${!anulada ? `<button class="btn btn-outline-dark btn-sm py-0" onclick="abrirEnviar(${o.id})" title="Generar el PDF y enviarlo por WhatsApp o mail">PDF / Enviar</button>` : ''}
                 ${!anulada && !confirmada ? `<button class="btn btn-outline-primary btn-sm py-0" onclick="editarOT(${o.id})">Editar</button>` : ''}
                 ${!anulada && !confirmada ? `<button class="btn btn-outline-dark btn-sm py-0" onclick="confirmarOT(${o.id}, '${esc(nro)}', true)">Confirmar</button>` : ''}
                 ${!anulada && confirmada ? `<button class="btn btn-outline-secondary btn-sm py-0" onclick="confirmarOT(${o.id}, '${esc(nro)}', false)">Reabrir</button>` : ''}
@@ -724,7 +774,7 @@ async function editarOT(id) {
     selTL.value = optTL ? optTL.value : '';
 
     document.getElementById('tablaDestinos').innerHTML = '';
-    for (const dest of (d.destinos || [])) await agregarDestino(dest);
+    for (const dest of ordenarDestinos(d.destinos)) await agregarDestino(dest);
     if (!document.querySelector('#tablaDestinos tr')) await agregarDestino();
 
     const tb = document.getElementById('tablaConsumos');
@@ -1024,6 +1074,201 @@ async function guardarCosteo() {
     await cargarLineas();
     actualizarBadgePendientes();
     fetch('/api/agro/ot?limit=30').then(r => r.json()).then(renderHist).catch(() => {});
+}
+
+// ===================== PDF / ENVIAR =====================
+let modalEnviar = null;
+let env = null;
+let empresaActivaCache = null;
+
+function cargarScript(src) {
+    return new Promise((ok, err) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = ok;
+        s.onerror = () => err(new Error('No se pudo cargar ' + src));
+        document.head.appendChild(s);
+    });
+}
+async function asegurarJsPDF() {
+    if (!window.jspdf) await cargarScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+    if (!window.jspdf.jsPDF.API.autoTable) await cargarScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js');
+}
+async function empresaActiva() {
+    if (!empresaActivaCache) {
+        const r = await fetch('/api/empresa_activa').catch(() => null);
+        empresaActivaCache = r && r.ok ? await r.json() : {};
+    }
+    return empresaActivaCache;
+}
+function cuitFmt(c) {
+    const d = String(c || '').replace(/\D/g, '');
+    return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : String(c || '');
+}
+
+async function datosOtParaPdf(id) {
+    const res = await fetch(`/api/agro/ot/${id}`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(errMsg(d, 'No se pudo leer la OT'));
+    for (const x of (d.destinos || [])) {
+        if (!x.campo_nombre) x.campo_nombre = (camposCache.find(c => c.id === x.campo_id) || {}).nombre || '';
+        if (!x.lote_nombre && x.campo_id) {
+            x.lote_nombre = ((await lotesDeCampo(x.campo_id)).find(l => l.id === x.lote_id) || {}).nombre || '';
+        }
+    }
+    d.destinos = ordenarDestinos(d.destinos);
+    const opt = document.querySelector(`#selCampania option[value="${d.campania_id}"]`);
+    d.campania_codigo = opt ? opt.dataset.codigo : '';
+    return d;
+}
+
+function generarPdfOt(d, emp) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth();
+    const M = 14;
+
+    doc.setFont('helvetica', 'bold').setFontSize(14);
+    doc.text(String(emp.razon_social || '').toUpperCase(), M, 18);
+    doc.setFont('helvetica', 'normal').setFontSize(9);
+    doc.text([emp.cuit ? 'CUIT ' + cuitFmt(emp.cuit) : '', emp.localidad || ''].filter(Boolean).join(' | '), M, 23);
+    doc.setFont('helvetica', 'bold').setFontSize(15);
+    doc.text('ORDEN DE TRABAJO', W - M, 17, { align: 'right' });
+    doc.setFontSize(13);
+    doc.text('Nº ' + (d.nro_ot || ''), W - M, 24, { align: 'right' });
+    doc.setDrawColor(30, 41, 59).setLineWidth(0.5).line(M, 27, W - M, 27);
+
+    const contratista = (d.contratista_nombre || '') + (d.contratista_cuit ? ' | CUIT ' + cuitFmt(d.contratista_cuit) : '');
+    doc.autoTable({
+        startY: 30, theme: 'plain', margin: { left: M, right: M },
+        styles: { fontSize: 9.5, cellPadding: 1.2 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 32 }, 2: { fontStyle: 'bold', cellWidth: 32 } },
+        body: [
+            ['Fecha orden', fechaAr(d.fecha), 'Fecha aplicación', fechaAr(d.fecha_aplicacion || d.fecha)],
+            ['Campaña', d.campania_codigo || '', 'Tipo de labor', d.tipo_labor || ''],
+            ['Labor cultural', d.labor_cultural || '', 'Estado', Number(d.confirmada || 0) === 1 ? 'Confirmada' : 'Emitida'],
+            ['Contratista', { content: contratista, colSpan: 3 }],
+            ...(d.observaciones ? [['Observaciones', { content: d.observaciones, colSpan: 3 }]] : []),
+        ],
+    });
+
+    const totHas = (d.destinos || []).reduce((s, x) => s + Number(x.superficie_has || 0), 0);
+    doc.setFont('helvetica', 'bold').setFontSize(11);
+    doc.text('Campos y lotes', M, doc.lastAutoTable.finalY + 7);
+    doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 9, margin: { left: M, right: M },
+        headStyles: { fillColor: [30, 41, 59] }, footStyles: { fillColor: [226, 232, 240], textColor: 20 },
+        styles: { fontSize: 9.5 },
+        columnStyles: { 3: { halign: 'right' } },
+        head: [['Campo', 'Lote', 'Cultivo', { content: 'Has', styles: { halign: 'right' } }]],
+        body: (d.destinos || []).map(x => [x.campo_nombre || '', x.lote_nombre || '', x.cultivo || '', numAr(x.superficie_has)]),
+        foot: [[{ content: 'Total has', colSpan: 3, styles: { halign: 'right' } }, { content: numAr(totHas), styles: { halign: 'right' } }]],
+    });
+
+    doc.setFont('helvetica', 'bold').setFontSize(11);
+    doc.text('Productos y labores', M, doc.lastAutoTable.finalY + 7);
+    doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 9, margin: { left: M, right: M },
+        headStyles: { fillColor: [30, 41, 59] }, styles: { fontSize: 9.5 },
+        columnStyles: { 2: { halign: 'right' }, 4: { halign: 'right' } },
+        head: [['Tipo', 'Producto / labor', { content: 'Dosis por ha', styles: { halign: 'right' } }, 'Unidad',
+            { content: 'Cantidad total', styles: { halign: 'right' } }]],
+        body: (d.consumos || []).map(c => [
+            c.tipo_item === 'laboreo' ? 'Labor' : 'Producto', c.nombre || '',
+            numAr(c.dosis_por_ha), c.unidad || '', numAr(c.cantidad),
+        ]),
+    });
+
+    let y = doc.lastAutoTable.finalY + 28;
+    if (y > doc.internal.pageSize.getHeight() - 20) { doc.addPage(); y = 40; }
+    doc.setDrawColor(100).setLineWidth(0.3);
+    doc.line(M + 5, y, M + 70, y);
+    doc.line(W - M - 70, y, W - M - 5, y);
+    doc.setFont('helvetica', 'normal').setFontSize(9);
+    doc.text('Firma y aclaración | Ingeniero', M + 37.5, y + 5, { align: 'center' });
+    doc.text('Firma y aclaración | Contratista', W - M - 37.5, y + 5, { align: 'center' });
+
+    const n = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8).setTextColor(120);
+        doc.text(`CAmpo+ | OT ${d.nro_ot || ''} | Página ${i} de ${n}`, W / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' });
+        doc.setTextColor(0);
+    }
+    return doc.output('blob');
+}
+
+function textoEnvioOt(d) {
+    const lotes = (d.destinos || []).map(x => `${x.campo_nombre || ''} ${x.lote_nombre || ''}`.trim()).join(', ');
+    const totHas = (d.destinos || []).reduce((s, x) => s + Number(x.superficie_has || 0), 0);
+    return [
+        `Orden de trabajo Nº ${d.nro_ot || ''}`,
+        d.tipo_labor ? `Labor: ${d.tipo_labor}` : '',
+        `Aplicación: ${fechaAr(d.fecha_aplicacion || d.fecha)}`,
+        lotes ? `Lotes: ${lotes} (${numAr(totHas)} has)` : '',
+    ].filter(Boolean).join('\n');
+}
+
+async function abrirEnviar(id) {
+    if (!modalEnviar) modalEnviar = new bootstrap.Modal(document.getElementById('modalEnviar'));
+    document.getElementById('envTitulo').textContent = 'Enviar OT';
+    document.getElementById('envSub').textContent = '';
+    document.getElementById('envCargando').classList.remove('d-none');
+    document.getElementById('envCargando').textContent = 'Generando PDF...';
+    document.getElementById('envAcciones').classList.add('d-none');
+    modalEnviar.show();
+    try {
+        const [d, emp] = await Promise.all([datosOtParaPdf(id), empresaActiva(), asegurarJsPDF()]);
+        const blob = generarPdfOt(d, emp);
+        const campo = ((d.destinos || [])[0] || {}).campo_nombre || '';
+        const nombre = `OT_${d.nro_ot || id}${campo ? '_' + campo : ''}.pdf`.replace(/[^\w.\-]+/g, '_');
+        const file = new File([blob], nombre, { type: 'application/pdf' });
+        env = { d, blob, file, nombre, texto: textoEnvioOt(d) };
+        const puedeCompartir = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+        document.getElementById('btnEnvCompartir').classList.toggle('d-none', !puedeCompartir);
+        document.getElementById('envTitulo').textContent = 'Enviar OT Nº ' + (d.nro_ot || '');
+        document.getElementById('envSub').textContent = nombre;
+        document.getElementById('envHint').textContent = puedeCompartir
+            ? '"Compartir PDF" adjunta el archivo directamente en la aplicación que elijas. Con los botones WhatsApp y Mail el PDF se descarga y hay que adjuntarlo a mano: el navegador no permite adjuntarlo solo.'
+            : 'Con WhatsApp y Mail el PDF se descarga y se abre el mensaje con el texto de la OT; adjuntá el archivo descargado. El navegador no permite adjuntarlo solo.';
+        document.getElementById('envCargando').classList.add('d-none');
+        document.getElementById('envAcciones').classList.remove('d-none');
+    } catch (e) {
+        document.getElementById('envCargando').textContent = 'No se pudo generar el PDF: ' + e.message;
+    }
+}
+
+function envDescargar() {
+    if (!env) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(env.blob);
+    a.download = env.nombre;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+function envVer() {
+    if (env) window.open(URL.createObjectURL(env.blob), '_blank');
+}
+async function envCompartir() {
+    if (!env) return;
+    try {
+        await navigator.share({ files: [env.file], title: 'Orden de trabajo Nº ' + (env.d.nro_ot || ''), text: env.texto });
+    } catch (e) {
+        if (e.name !== 'AbortError') alert('No se pudo compartir: ' + e.message);
+    }
+}
+function envWhatsApp() {
+    if (!env) return;
+    envDescargar();
+    window.open('https://wa.me/?text=' + encodeURIComponent(env.texto + '\n\n(Adjunto el PDF de la orden)'), '_blank');
+}
+function envMail() {
+    if (!env) return;
+    envDescargar();
+    location.href = 'mailto:?subject=' + encodeURIComponent('Orden de trabajo Nº ' + (env.d.nro_ot || ''))
+        + '&body=' + encodeURIComponent(env.texto + '\n\nSe adjunta el PDF de la orden de trabajo.');
 }
 
 init();

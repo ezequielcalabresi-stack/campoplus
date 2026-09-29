@@ -41,21 +41,25 @@
                 <span class="text-xs font-bold text-emerald-800 uppercase">Compromisos a Pagar (ARS)</span>
                 <h3 id="kpiCompromisos" class="text-2xl font-extrabold text-emerald-900 mt-1">Cargando...</h3>
                 <span id="kpiCompromisosSub" class="text-xs text-emerald-700 mt-1 block">Saldo pendiente con proveedores</span>
+                <div id="plzCompromisos" class="mt-2 pt-2 border-t border-emerald-200 text-emerald-900"></div>
             </div>
             <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl shadow-sm">
                 <span class="text-xs font-bold text-blue-800 uppercase">Acuerdos Bancarios Totales</span>
                 <h3 id="kpiBancos" class="text-2xl font-extrabold text-blue-900 mt-1">Cargando...</h3>
                 <span class="text-xs text-blue-700 mt-1 block">Línea de crédito en Ctas. Ctes.</span>
+                <div id="plzBancos" class="mt-2 pt-2 border-t border-blue-200 text-blue-900"></div>
             </div>
             <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl shadow-sm">
                 <span class="text-xs font-bold text-amber-800 uppercase">Deuda en Dólares (USD)</span>
                 <h3 id="kpiDeudaUsd" class="text-2xl font-extrabold text-amber-900 mt-1">Cargando...</h3>
-                <span class="text-xs text-amber-700 mt-1 block">Forwards / líneas en USD</span>
+                <span id="kpiDeudaUsdSub" class="text-xs text-amber-700 mt-1 block">Capital pendiente de créditos en USD</span>
+                <div id="plzDeudaUsd" class="mt-2 pt-2 border-t border-amber-200 text-amber-900"></div>
             </div>
             <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm">
                 <span class="text-xs font-bold text-slate-700 uppercase">Alquileres (Kilos Soja)</span>
                 <h3 id="kpiAlquileres" class="text-2xl font-extrabold text-slate-900 mt-1">Cargando...</h3>
                 <span id="kpiAlquileresSub" class="text-xs text-slate-500 mt-1 block">Kilos pactados, campaña activa</span>
+                <div id="plzAlquileres" class="mt-2 pt-2 border-t border-slate-200 text-slate-800"></div>
             </div>
         </div>
         <div id="kpiActividad" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8" style="display:none">
@@ -355,6 +359,22 @@
             });
         }
 
+        function pintarPlazos(id, datos, fmt, titulo, ayudas) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (!datos) { el.innerHTML = ''; return; }
+            const filas = [
+                ['Corto plazo', 'hasta 12 meses', datos.corto],
+                ['Mediano plazo', '12 a 36 meses', datos.mediano],
+                ['Largo plazo', 'más de 36 meses', datos.largo],
+            ];
+            el.innerHTML = `<div class="text-[10px] uppercase font-bold opacity-70 mb-1">${titulo}</div>` + filas.map((f, i) => `
+                <div class="flex justify-between items-baseline text-xs leading-5" title="${ayudas ? ayudas[i] : f[1]}">
+                    <span>${f[0]} <span class="opacity-60 text-[10px]">${ayudas ? ayudas[i] : f[1]}</span></span>
+                    <span class="font-semibold tabular-nums">${fmt(f[2])}</span>
+                </div>`).join('');
+        }
+
         async function cargarMetricasBackend() {
             const fmtArs = (n) => "$ " + Math.abs(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
             const fmtUsd = (n) => "USD " + Math.abs(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
@@ -379,14 +399,25 @@
                         : 'Saldo pendiente con proveedores';
                 }
                 document.getElementById('kpiBancos').innerText = fmtArs(kpis.acuerdos_bancarios_ars);
-                document.getElementById('kpiDeudaUsd').innerText = fmtUsd(kpis.deuda_usd);
-                document.getElementById('kpiAlquileres').innerText = fmtKg(kpis.alquileres_kg);
+                const plz = kpis.plazos || {};
+                const conCreditos = kpis.deuda_usd_creditos != null;
+                document.getElementById('kpiDeudaUsd').innerText = fmtUsd(conCreditos ? kpis.deuda_usd_creditos : kpis.deuda_usd);
+                const fw = Number(kpis.deuda_usd || 0);
+                document.getElementById('kpiDeudaUsdSub').innerText = conCreditos
+                    ? 'Capital pendiente de créditos en USD' + (fw > 0.01 ? ` | Forwards ${fmtUsd(fw)}` : '')
+                    : 'Forwards / líneas en USD';
+                const conAlqTotal = kpis.alquileres_kg_total != null;
+                document.getElementById('kpiAlquileres').innerText = fmtKg(conAlqTotal ? kpis.alquileres_kg_total : kpis.alquileres_kg);
                 const subAlq = document.getElementById('kpiAlquileresSub');
                 if (subAlq) {
                     subAlq.innerText = kpis.campania_activa
- ? `Kilos pactados / campaña ${kpis.campania_activa}`
+                        ? (conAlqTotal ? `Kilos pactados desde la campaña ${kpis.campania_activa}` : `Kilos pactados / campaña ${kpis.campania_activa}`)
                         : 'Kilos pactados, campaña activa';
                 }
+                pintarPlazos('plzCompromisos', plz.compromisos, fmtArs, 'Por vencimiento de factura');
+                pintarPlazos('plzBancos', plz.prestamos_ars, fmtArs, 'Préstamos en $ (capital)');
+                pintarPlazos('plzDeudaUsd', plz.deuda_usd, fmtUsd, 'Por vencimiento de cuota');
+                pintarPlazos('plzAlquileres', plz.alquileres_kg, fmtKg, 'Por campaña', ['Campaña activa', 'Las 2 siguientes', 'Posteriores']);
             } catch (e) {
                 console.error("Error al cargar métricas del backend:", e);
                 document.getElementById('kpiCompromisos').innerText = "Servidor Offline";
