@@ -386,7 +386,10 @@
                             <tbody id="tbodyLotesNuevos"></tbody>
                         </table>
                     </div>
-                    <p class="small fw-bold mb-1" id="lotesTotales"></p>
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+                        <p class="small fw-bold mb-0" id="lotesTotales"></p>
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 d-none" id="btnConvertirHasTotal" onclick="convertirHasAlTotal()" title="Para lotes que se cargaron completos en Has Silo Chico antes de cargar la participación">Las has cargadas son del 100% → aplicar % de Silo Chico</button>
+                    </div>
                     <p class="small text-muted mb-0">La superficie total del campo es la suma de los lotes. Si cambiás las hectáreas de un lote, rigen desde la campaña activa en adelante; las campañas anteriores conservan la superficie que tenían.</p>
                     <p class="hint mb-0">Las has de lote pueden ajustarse por campaña después. Seleccioná una fila y hacé clic en el mapa de arriba para Lat/Lng. Con "Dibujar" marcás el contorno del lote punto por punto sobre el mapa.</p>
                     <p class="hint mb-0 col-total-lote d-none">Campo en participación: "Has Silo Chico" es la parte de la empresa (contrato, IP1 e IP2). En "Has totales" va el lote completo; si lo dejás vacío se calcula con el % de la empresa.</p>
@@ -816,6 +819,7 @@ function abrirModalCampo(tipo) {
     if (dibujo) cerrarDibujo();
     cerrarImportGeo();
     pctEmpresaActual = 100;
+    document.getElementById('btnConvertirHasTotal').classList.add('d-none');
     document.getElementById('tbodyLotesNuevos').innerHTML = '';
     document.getElementById('boxArrendador').style.display = tipo === 'arrendado' ? 'block' : 'none';
     if (tipo === 'arrendado') {
@@ -865,7 +869,7 @@ function agregarFilaLote(data) {
         <td><input class="form-control form-control-sm lote-cod" value="${data?.codigo||''}" placeholder="L1"></td>
         <td><input class="form-control form-control-sm lote-nom" value="${data?.nombre||''}" placeholder="Lote 1"></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-has" value="${data?.superficie_base||0}" oninput="recalcularHasCampo()"></td>
-        <td class="col-total-lote ${colTotalLoteVisible() ? '' : 'd-none'}"><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-total" value="${Number(data?.superficie_total_lote || 0) || ''}" oninput="recalcularHasCampo()"></td>
+        <td class="col-total-lote ${colTotalLoteVisible() ? '' : 'd-none'}"><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-total" value="${Number(data?.superficie_total_lote || 0) || ''}" oninput="totalLoteEditado(this)"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lat" value="${data?.lat??''}"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lng" value="${data?.lng??''}"></td>
         <td class="text-nowrap">
@@ -926,6 +930,9 @@ function colTotalLoteVisible() {
 function actualizarColTotalLote() {
     const ver = colTotalLoteVisible();
     document.querySelectorAll('#modalCampo .col-total-lote').forEach(el => el.classList.toggle('d-none', !ver));
+    const sinTotal = [...document.querySelectorAll('#tbodyLotesNuevos tr')].some(tr =>
+        parseFloat(tr.querySelector('.lote-has').value || 0) > 0 && !(parseFloat(tr.querySelector('.lote-total').value || 0) > 0));
+    document.getElementById('btnConvertirHasTotal').classList.toggle('d-none', !(pctEmpresaActual < 100 && sinTotal));
     recalcularHasCampo();
 }
 
@@ -933,6 +940,32 @@ function hasTotalSugerido(tr) {
     const has = parseFloat(tr.querySelector('.lote-has').value || 0) || 0;
     if (!has || pctEmpresaActual >= 100 || pctEmpresaActual <= 0) return 0;
     return Math.round(has / (pctEmpresaActual / 100) * 100) / 100;
+}
+
+function hasEmpresaDeTotal(total) {
+    return Math.round(total * pctEmpresaActual) / 100;
+}
+
+function totalLoteEditado(inp) {
+    const total = parseFloat(inp.value || 0) || 0;
+    if (total > 0 && pctEmpresaActual < 100) {
+        inp.closest('tr').querySelector('.lote-has').value = hasEmpresaDeTotal(total);
+    }
+    recalcularHasCampo();
+}
+
+function convertirHasAlTotal() {
+    const filas = [...document.querySelectorAll('#tbodyLotesNuevos tr')].filter(tr => parseFloat(tr.querySelector('.lote-has').value || 0) > 0);
+    if (!filas.length || pctEmpresaActual >= 100) return;
+    const fmt = n => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+    const antes = sumaHasLotes();
+    if (!confirm(`Las hectáreas cargadas en "Has Silo Chico" (${fmt(antes)} has) pasan a "Has totales" y Silo Chico queda con el ${fmt(pctEmpresaActual)}% de cada lote (${fmt(hasEmpresaDeTotal(antes))} has aprox.).\n\n¿Continuar?`)) return;
+    filas.forEach(tr => {
+        const has = parseFloat(tr.querySelector('.lote-has').value || 0) || 0;
+        tr.querySelector('.lote-total').value = has;
+        tr.querySelector('.lote-has').value = hasEmpresaDeTotal(has);
+    });
+    actualizarColTotalLote();
 }
 
 function hasTotalLote(tr) {
