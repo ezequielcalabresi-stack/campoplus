@@ -106,6 +106,30 @@ def _es_nombre_banco_real(banco: str) -> bool:
     return any(t in b for t in tokens)
 
 
+_COLS_DTO_VALORES = [
+    ("descontado", "INTEGER DEFAULT 0"),
+    ("dto_fecha", "TEXT"),
+    ("dto_tasa", "REAL"),
+    ("dto_dias", "INTEGER"),
+    ("dto_intereses", "REAL"),
+    ("dto_gastos", "REAL"),
+    ("dto_mov_gastos_id", "INTEGER"),
+]
+
+
+def _asegurar_cols_dto_valores(cursor) -> None:
+    """Las bases de cada empresa se clonan una vez; las columnas nuevas se agregan al usarlas."""
+    cursor.execute("PRAGMA table_info(cartera_cheques);")
+    cols = {r[1] for r in cursor.fetchall()}
+    if not cols:
+        return
+    faltan = [(c, d) for c, d in _COLS_DTO_VALORES if c not in cols]
+    for col, ddl in faltan:
+        cursor.execute(f"ALTER TABLE cartera_cheques ADD COLUMN {col} {ddl};")
+    if faltan:
+        cursor.connection.commit()
+
+
 def _clasificar_cuentas_bancarias(cursor) -> None:
     """Marca cuentas reales vs cuentas de pago (clientes) en datos migrados."""
     cursor.execute("PRAGMA table_info(ctas_ctes_bancarias);")
@@ -547,6 +571,7 @@ def init_db():
     ]:
         if col not in cols_chq:
             cursor.execute(f"ALTER TABLE cartera_cheques ADD COLUMN {col} {ddl};")
+    _asegurar_cols_dto_valores(cursor)
 
     # Caja chica (pagos menores / cobros en efectivo)
     cursor.execute("""
@@ -1868,6 +1893,10 @@ class ChequeDepositarModel(BaseModel):
     cuenta_id: int
     fecha: Optional[str] = ""
     observaciones: Optional[str] = ""
+    descuento: bool = False
+    tasa: float = 0.0
+    intereses: Optional[float] = None
+    gastos: float = 0.0
 
 
 class ChequeAplicarPagoModel(BaseModel):
@@ -2332,8 +2361,28 @@ def listar_cuentas_bancarias(tipo: str = "bancarias"):
     query += " ORDER BY banco ASC;"
     cursor.execute(query, params)
     rows = [dict(r) for r in cursor.fetchall()]
+    usado = _margen_dto_valores_usado(cursor, empresa_id)
+    for r in rows:
+        r["vta_cpd_usado"] = round(usado.get(r["id"], 0.0), 2)
+        r["vta_cpd_disponible"] = round(float(r.get("vta_cpd") or 0) - r["vta_cpd_usado"], 2)
     conn.close()
     return rows
+
+
+def _margen_dto_valores_usado(cursor, empresa_id: int) -> Dict[int, float]:
+    """Cheques descontados que todavía no vencieron, por cuenta. Al llegar la fecha de pago el margen se libera."""
+    _asegurar_cols_dto_valores(cursor)
+    cursor.execute(
+        """
+        SELECT cuenta_id, COALESCE(SUM(monto), 0) AS usado
+        FROM cartera_cheques
+        WHERE COALESCE(empresa_id, 1) = ? AND COALESCE(descontado, 0) = 1
+          AND cuenta_id IS NOT NULL AND fecha_pago > ?
+        GROUP BY cuenta_id;
+        """,
+        (empresa_id, date.today().isoformat()),
+    )
+    return {int(r["cuenta_id"]): float(r["usado"] or 0) for r in cursor.fetchall()}
 
 @app.post("/api/bancos/cuentas")
 def crear_cuenta_bancaria(data: CuentaBancariaModel):
@@ -3965,6 +4014,10 @@ def listar_cheques(
         """
     elif est in ("emitido", "emitidos"):
         query += " AND UPPER(TRIM(COALESCE(tipo,''))) = 'EMITIDO'"
+    elif est in ("descontados", "descontados_vigentes"):
+        _asegurar_cols_dto_valores(cursor)
+        query += " AND COALESCE(descontado, 0) = 1 AND fecha_pago > ?"
+        params.append(date.today().isoformat())
     elif est not in ("todos", "all", ""):
         query += " AND LOWER(TRIM(COALESCE(estado,''))) = ?"
         params.append(est)
@@ -4235,39 +4288,115 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
 
     ref = (ch["cliente_nombre"] or ch["dador"] or ch["librador"] or "Depósito cheque").strip()
     obs = (data.observaciones or "").strip()
-    proveedor = f"Dep. Ch. {ch['nro_cheque']} — {ref}"[:120]
+    monto = float(ch["monto"] or 0)
+
+    dto = None
+    if data.descuento:
+        _asegurar_cols_dto_valores(cursor)
+        f_dep, f_pago = _fecha_flexible(fecha), _fecha_flexible(ch["fecha_pago"])
+        if not f_dep or not f_pago:
+            conn.close()
+            raise HTTPException(400, "El descuento necesita la fecha de depósito y la fecha de pago del cheque.")
+        dias = (f_pago - f_dep).days
+        if dias < 1:
+            conn.close()
+            raise HTTPException(400, "El cheque ya es cobrable: se deposita sin descuento.")
+        tasa = float(data.tasa or 0)
+        intereses = (
+            round(float(data.intereses), 2) if data.intereses is not None
+            else round(monto * tasa / 100 * dias / 365, 2)
+        )
+        gastos = round(float(data.gastos or 0), 2)
+        dto = {"dias": dias, "tasa": tasa, "intereses": intereses, "gastos": gastos}
+
+    etiqueta = "Dto. Valores Ch." if dto else "Dep. Ch."
+    proveedor = f"{etiqueta} {ch['nro_cheque']} — {ref}"[:120]
     cursor.execute(
         """
         INSERT INTO movimientos_cta_cte_bancos
         (cuenta_id, fecha_cobro, fecha_debito, proveedor, nro_cheque, haber, debe, imp_chq,
          cta_cte_nro, conciliado, tipo_operacion)
-        VALUES (?, ?, '', ?, ?, 0, ?, 0, ?, 0, 'Deposito');
+        VALUES (?, ?, '', ?, ?, 0, ?, 0, ?, 0, ?);
         """,
         (
             data.cuenta_id,
             fecha,
             proveedor,
             ch["nro_cheque"],
-            float(ch["monto"] or 0),
+            monto,
             cta["nro_cta_cte"] or "",
+            "Descuento de valores" if dto else "Deposito",
         ),
     )
     mov_id = cursor.lastrowid
+
+    if not dto:
+        cursor.execute(
+            """
+            UPDATE cartera_cheques
+            SET estado = 'Depositado', cuenta_id = ?, movimiento_banco_id = ?,
+                observaciones = TRIM(COALESCE(observaciones,'') || ?)
+            WHERE id = ?;
+            """,
+            (data.cuenta_id, mov_id, (" | " + obs) if obs else "", cheque_id),
+        )
+        conn.commit()
+        conn.close()
+        return {
+            "status": "success",
+            "movimiento_id": mov_id,
+            "message": f"Cheque depositado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}".strip(),
+        }
+
+    costo = round(dto["intereses"] + dto["gastos"], 2)
+    mov_gastos_id = None
+    if costo > 0:
+        tasa_txt = f"{dto['tasa']:g}".replace(".", ",")
+        cursor.execute(
+            """
+            INSERT INTO movimientos_cta_cte_bancos
+            (cuenta_id, fecha_cobro, fecha_debito, proveedor, nro_cheque, haber, debe, imp_chq,
+             cta_cte_nro, conciliado, tipo_operacion)
+            VALUES (?, ?, '', ?, ?, ?, 0, 0, ?, 0, 'Intereses dto. valores');
+            """,
+            (
+                data.cuenta_id,
+                fecha,
+                f"Intereses dto. Ch. {ch['nro_cheque']} | {tasa_txt}% x {dto['dias']} días"[:120],
+                ch["nro_cheque"],
+                costo,
+                cta["nro_cta_cte"] or "",
+            ),
+        )
+        mov_gastos_id = cursor.lastrowid
     cursor.execute(
         """
         UPDATE cartera_cheques
         SET estado = 'Depositado', cuenta_id = ?, movimiento_banco_id = ?,
+            descontado = 1, dto_fecha = ?, dto_tasa = ?, dto_dias = ?, dto_intereses = ?,
+            dto_gastos = ?, dto_mov_gastos_id = ?,
             observaciones = TRIM(COALESCE(observaciones,'') || ?)
         WHERE id = ?;
         """,
-        (data.cuenta_id, mov_id, (" | " + obs) if obs else "", cheque_id),
+        (
+            data.cuenta_id, mov_id, fecha, dto["tasa"], dto["dias"], dto["intereses"],
+            dto["gastos"], mov_gastos_id, (" | " + obs) if obs else "", cheque_id,
+        ),
     )
     conn.commit()
+    cursor.execute("SELECT COALESCE(vta_cpd, 0) AS m FROM ctas_ctes_bancarias WHERE id = ?;", (data.cuenta_id,))
+    margen = float(cursor.fetchone()["m"] or 0)
+    usado = _margen_dto_valores_usado(cursor, empresa_id).get(int(data.cuenta_id), 0.0)
     conn.close()
     return {
         "status": "success",
         "movimiento_id": mov_id,
-        "message": f"Cheque depositado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}".strip(),
+        "descuento": {**dto, "neto": round(monto - costo, 2)},
+        "margen": {"total": margen, "usado": round(usado, 2), "disponible": round(margen - usado, 2)},
+        "message": (
+            f"Cheque descontado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}. Neto acreditado $ "
+            + f"{monto - costo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        ),
     }
 
 
@@ -4389,6 +4518,11 @@ def eliminar_cheque_cartera(cheque_id: int):
         cursor.execute("DELETE FROM movimientos_cta_cte_bancos WHERE id = ?;", (mov_id,))
         if cursor.rowcount:
             revertidos.append(f"mov. banco #{mov_id}")
+    mov_dto_id = ch["dto_mov_gastos_id"] if "dto_mov_gastos_id" in ch.keys() else None
+    if mov_dto_id:
+        cursor.execute("DELETE FROM movimientos_cta_cte_bancos WHERE id = ?;", (mov_dto_id,))
+        if cursor.rowcount:
+            revertidos.append(f"intereses dto. #{mov_dto_id}")
     if op_id:
         cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (op_id,))
         if cursor.rowcount:

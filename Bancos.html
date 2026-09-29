@@ -322,12 +322,14 @@
                                 <th class="text-end">Business</th>
                                 <th class="text-end">Rural</th>
                                 <th class="text-end">Vta CPD</th>
+                                <th class="text-end" title="Cheques descontados que todavía no vencieron">CPD usado</th>
+                                <th class="text-end" title="Se libera solo al llegar la fecha de pago de cada cheque descontado">CPD disponible</th>
                                 <th class="text-end">Sola Firma</th>
                                 <th class="text-center">Acción</th>
                             </tr>
                         </thead>
                         <tbody id="tablaCuentasBody">
-                            <tr><td colspan="11" class="text-center py-4 text-muted">Cargando cuentas bancarias...</td></tr>
+                            <tr><td colspan="13" class="text-center py-4 text-muted">Cargando cuentas bancarias...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -396,6 +398,7 @@
                             <option value="disponibles" selected>Disponibles</option>
                             <option value="todos">Todos</option>
                             <option value="depositado">Depositados</option>
+                            <option value="descontados">Descontados sin vencer</option>
                             <option value="cobrado en caja">Cobrados en caja</option>
                             <option value="entregado proveedor">Entregados a proveedor</option>
                             <option value="emitidos">Emitidos (propios)</option>
@@ -508,20 +511,53 @@
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h6 class="modal-title fw-bold">Depositar cheque en banco</h6>
+                        <h6 class="modal-title fw-bold" id="depTitulo">Depositar cheque en banco</h6>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <input type="hidden" id="depChqId">
                         <p class="small" id="depChqInfo"></p>
                         <label class="lbl">Cuenta bancaria destino *</label>
-                        <select id="depCuentaId" class="form-select form-select-sm mb-2"></select>
+                        <select id="depCuentaId" class="form-select form-select-sm mb-2" onchange="recalcularDtoValores()"></select>
                         <label class="lbl">Fecha depósito</label>
-                        <input type="date" id="depFecha" class="form-control form-control-sm">
+                        <input type="date" id="depFecha" class="form-control form-control-sm" onchange="recalcularDtoValores()">
+
+                        <div id="depDtoBox" class="border rounded p-2 mt-3 bg-light" style="display:none;">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="depDtoActivo" checked onchange="recalcularDtoValores()">
+                                <label class="form-check-label fw-bold small" for="depDtoActivo">Descuento de valores</label>
+                                <div class="hint" id="depDtoAviso"></div>
+                            </div>
+                            <div id="depDtoCampos">
+                                <div class="row g-2">
+                                    <div class="col-4">
+                                        <label class="lbl">Tasa de descuento (TNA %)</label>
+                                        <input type="number" step="0.01" id="depDtoTasa" class="form-control form-control-sm text-end" oninput="delete document.getElementById('depDtoIntereses').dataset.manual; recalcularDtoValores(true)">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="lbl">Días de descuento</label>
+                                        <input type="text" id="depDtoDias" class="form-control form-control-sm text-end" readonly>
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="lbl">Intereses</label>
+                                        <input type="number" step="0.01" id="depDtoIntereses" class="form-control form-control-sm text-end" oninput="this.dataset.manual='1'; recalcularDtoValores(true)">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="lbl">Gastos / IVA</label>
+                                        <input type="number" step="0.01" id="depDtoGastos" class="form-control form-control-sm text-end" value="0" oninput="recalcularDtoValores(true)">
+                                    </div>
+                                    <div class="col-8">
+                                        <label class="lbl">Neto a acreditar</label>
+                                        <input type="text" id="depDtoNeto" class="form-control form-control-sm text-end fw-bold" readonly>
+                                    </div>
+                                </div>
+                                <div class="small mt-2" id="depDtoMargen"></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="confirmarDepositarCheque()">Depositar</button>
+                        <button type="button" class="btn btn-primary btn-sm fw-bold" id="depBtnConfirmar" onclick="confirmarDepositarCheque()">Depositar</button>
                     </div>
                 </div>
             </div>
@@ -1048,6 +1084,8 @@
                             <td class="text-end font-mono">${money(c.visa_business)}</td>
                             <td class="text-end font-mono">${money(c.tarjeta_rural)}</td>
                             <td class="text-end font-mono">${money(c.vta_cpd)}</td>
+                            <td class="text-end font-mono">${Number(c.vta_cpd_usado || 0) ? `<a href="#" onclick="verDescontados(${c.id}); return false;">${money(c.vta_cpd_usado)}</a>` : money(0)}</td>
+                            <td class="text-end font-mono fw-bold ${Number(c.vta_cpd_disponible || 0) < 0 ? 'text-danger' : ''}">${money(c.vta_cpd_disponible)}</td>
                             <td class="text-end font-mono">${money(c.sola_firma)}</td>
                             <td class="text-center text-nowrap">
                                 ${btnTipo}
@@ -1057,7 +1095,7 @@
                     `;
                 });
 
-                tbody.innerHTML = htmlTbody || `<tr><td colspan="11" class="text-center py-4 text-muted">No hay cuentas registradas.</td></tr>`;
+                tbody.innerHTML = htmlTbody || `<tr><td colspan="13" class="text-center py-4 text-muted">No hay cuentas registradas.</td></tr>`;
 
                 // Selector de conciliación automática
                 const selConc = document.getElementById('selectCuentaConciliacion');
@@ -1485,10 +1523,19 @@
                     <td class="font-mono small">${c.fecha_recepcion || c.fecha_emision || ' - '}</td>
                     <td class="font-mono small">${c.fecha_pago || ' - '}</td>
                     <td class="text-end font-mono fw-bold">${money(c.monto)}</td>
-                    <td class="text-center"><span class="badge ${estBadge}">${c.estado || ''}</span></td>
+                    <td class="text-center">${Number(c.descontado || 0)
+                        ? `<span class="badge bg-info text-dark" title="Tasa ${c.dto_tasa || 0}% | ${c.dto_dias || 0} días | Intereses ${money(c.dto_intereses)} | Gastos ${money(c.dto_gastos)}">Descontado</span>`
+                        : `<span class="badge ${estBadge}">${c.estado || ''}</span>`}</td>
                     <td class="text-center text-nowrap">${acciones}</td>
                 </tr>`;
             }).join('') || `<tr><td colspan="10" class="text-center py-4 text-muted">No hay cheques en este filtro.</td></tr>`;
+        }
+
+        async function verDescontados(cuentaId) {
+            document.getElementById('filtroChequesEstado').value = 'descontados';
+            document.querySelector('.nav-link[onclick*="tabCheques"]')?.click();
+            await cargarCheques();
+            renderTablaCheques(_chequesCache.filter(c => Number(c.cuenta_id) === Number(cuentaId)));
         }
 
         async function eliminarChequeCartera(id) {
@@ -1508,42 +1555,126 @@
             cargarCheques();
         }
 
-        async function abrirDepositarCheque(id) {            const c = _chequesCache.find(x => x.id === id);
+        let _depCheque = null;
+        let _depCuentas = [];
+
+        async function abrirDepositarCheque(id) {
+            const c = _chequesCache.find(x => x.id === id);
             if (!c) return;
+            _depCheque = c;
             document.getElementById('depChqId').value = id;
             document.getElementById('depChqInfo').textContent =
-                `Ch. ${c.nro_cheque} - $ ${Number(c.monto).toLocaleString('es-AR')} - ${c.banco || ''} - ${c.librador || c.cliente_nombre || ''}`;
+                `Ch. ${c.nro_cheque} - $ ${Number(c.monto).toLocaleString('es-AR')} - ${c.banco || ''} - ${c.librador || c.cliente_nombre || ''} - Pago ${fechaDMY(c.fecha_pago)}`;
             document.getElementById('depFecha').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('depDtoActivo').checked = true;
+            document.getElementById('depDtoGastos').value = '0';
+            document.getElementById('depDtoTasa').value = '';
+            delete document.getElementById('depDtoTasa').dataset.cuenta;
+            delete document.getElementById('depDtoIntereses').dataset.manual;
             const sel = document.getElementById('depCuentaId');
             sel.innerHTML = '<option value="">Cargando...</option>';
             const ctas = await fetch('/api/bancos/cuentas?tipo=bancarias').then(r => r.ok ? r.json() : []).catch(() => []);
             const lista = (ctas && ctas.length) ? ctas : await fetch('/api/bancos/cuentas?tipo=todas').then(r => r.json()).catch(() => []);
+            _depCuentas = (lista || []).filter(x => Number(x.es_cuenta_bancaria) !== 0 || !('es_cuenta_bancaria' in x));
             sel.innerHTML = '<option value=""> -  Cuenta destino - </option>';
-            (lista || []).filter(x => Number(x.es_cuenta_bancaria) !== 0 || !('es_cuenta_bancaria' in x)).forEach(cta => {
+            _depCuentas.forEach(cta => {
                 const o = document.createElement('option');
                 o.value = cta.id;
                 o.textContent = `${cta.banco || ''} ${cta.nro_cta_cte || ''}`.trim();
                 sel.appendChild(o);
             });
+            recalcularDtoValores();
             new bootstrap.Modal(document.getElementById('modalDepositarCheque')).show();
+        }
+
+        function fechaDMY(f) {
+            return (f || '').slice(0, 10).split('-').reverse().join('/');
+        }
+
+        function diasEntre(desde, hasta) {
+            const a = new Date((desde || '').slice(0, 10) + 'T00:00:00');
+            const b = new Date((hasta || '').slice(0, 10) + 'T00:00:00');
+            if (isNaN(a) || isNaN(b)) return null;
+            return Math.round((b - a) / 86400000);
+        }
+
+        function datosDtoValores() {
+            const c = _depCheque;
+            const dias = c ? diasEntre(document.getElementById('depFecha').value, c.fecha_pago) : null;
+            const aplica = dias != null && dias >= 1;
+            const activo = aplica && document.getElementById('depDtoActivo').checked;
+            const monto = Number(c ? c.monto : 0);
+            const tasa = parseFloat(document.getElementById('depDtoTasa').value || 0) || 0;
+            const intInp = document.getElementById('depDtoIntereses');
+            const intereses = intInp.dataset.manual
+                ? (parseFloat(intInp.value || 0) || 0)
+                : Math.round(monto * tasa / 100 * (dias || 0) / 365 * 100) / 100;
+            const gastos = parseFloat(document.getElementById('depDtoGastos').value || 0) || 0;
+            return { dias, aplica, activo, monto, tasa, intereses, gastos, neto: monto - intereses - gastos };
+        }
+
+        function recalcularDtoValores(soloTotales) {
+            const d = datosDtoValores();
+            const fmt = n => '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const cuentaId = parseInt(document.getElementById('depCuentaId').value || 0, 10);
+            const tasaInp = document.getElementById('depDtoTasa');
+            if (!soloTotales && cuentaId && tasaInp.dataset.cuenta !== String(cuentaId)) {
+                tasaInp.dataset.cuenta = String(cuentaId);
+                tasaInp.value = localStorage.getItem('campoplus_tasa_dto_' + cuentaId) || tasaInp.value;
+                return recalcularDtoValores(true);
+            }
+            document.getElementById('depDtoBox').style.display = d.aplica ? '' : 'none';
+            document.getElementById('depDtoCampos').style.display = d.activo ? '' : 'none';
+            document.getElementById('depTitulo').textContent = d.activo ? 'Descuento de valores' : 'Depositar cheque en banco';
+            document.getElementById('depBtnConfirmar').textContent = d.activo ? 'Descontar' : 'Depositar';
+            if (!d.aplica) return;
+            document.getElementById('depDtoAviso').textContent =
+                `El cheque se paga el ${fechaDMY(_depCheque.fecha_pago)}: faltan ${d.dias} día(s). Usa el margen de descuento de cheques (Vta CPD) de la cuenta.`;
+            document.getElementById('depDtoDias').value = d.dias;
+            const intInp = document.getElementById('depDtoIntereses');
+            if (!intInp.dataset.manual) intInp.value = d.intereses.toFixed(2);
+            document.getElementById('depDtoNeto').value = fmt(d.neto);
+            const margenBox = document.getElementById('depDtoMargen');
+            const cta = _depCuentas.find(x => x.id === cuentaId);
+            if (!cta) { margenBox.innerHTML = '<span class="text-muted">Elegí la cuenta para ver el margen disponible.</span>'; return; }
+            const margen = Number(cta.vta_cpd || 0);
+            const usado = Number(cta.vta_cpd_usado || 0);
+            const disp = margen - usado;
+            const luego = disp - d.monto;
+            margenBox.innerHTML = `Margen Vta CPD ${fmt(margen)} | Usado ${fmt(usado)} | Disponible <b>${fmt(disp)}</b><br>`
+                + `Después de este cheque: <b class="${luego < 0 ? 'text-danger' : 'text-success'}">${fmt(luego)}</b>`
+                + (luego < 0 ? ' <span class="text-danger">(supera el margen calificado)</span>' : '');
         }
 
         async function confirmarDepositarCheque() {
             const id = document.getElementById('depChqId').value;
             const cuenta_id = parseInt(document.getElementById('depCuentaId').value || '0', 10);
             if (!cuenta_id) { alert('Elegí la cuenta bancaria'); return; }
+            const d = datosDtoValores();
+            const body = { cuenta_id, fecha: document.getElementById('depFecha').value };
+            if (d.activo) {
+                if (!(d.tasa > 0) && !(d.intereses > 0) && !confirm('No cargaste tasa ni intereses. ¿Descontar igual sin costo?')) return;
+                const cta = _depCuentas.find(x => x.id === cuenta_id);
+                const disp = cta ? Number(cta.vta_cpd || 0) - Number(cta.vta_cpd_usado || 0) : 0;
+                if (d.monto > disp + 0.005 && !confirm('El cheque supera el margen disponible de descuento de la cuenta. ¿Descontar igual?')) return;
+                Object.assign(body, { descuento: true, tasa: d.tasa, intereses: d.intereses, gastos: d.gastos });
+                if (d.tasa > 0) localStorage.setItem('campoplus_tasa_dto_' + cuenta_id, String(d.tasa));
+            }
             const res = await fetch(`/api/bancos/cheques/${id}/depositar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cuenta_id,
-                    fecha: document.getElementById('depFecha').value,
-                }),
+                body: JSON.stringify(body),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { alert(data.detail || 'Error al depositar'); return; }
             bootstrap.Modal.getInstance(document.getElementById('modalDepositarCheque'))?.hide();
-            alert(data.message || 'Depositado');
+            let msg = data.message || 'Depositado';
+            if (data.margen) {
+                const f = n => '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                msg += `\n\nMargen Vta CPD: ${f(data.margen.total)} | Usado: ${f(data.margen.usado)} | Disponible: ${f(data.margen.disponible)}`;
+                cargarCuentas();
+            }
+            alert(msg);
             cargarCheques();
         }
 
