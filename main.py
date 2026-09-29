@@ -4348,27 +4348,9 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
             "message": f"Cheque depositado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}".strip(),
         }
 
+    # El banco debita intereses y gastos por separado: se cargan al conciliar, aca quedan informativos.
     costo = round(dto["intereses"] + dto["gastos"], 2)
     mov_gastos_id = None
-    if costo > 0:
-        tasa_txt = f"{dto['tasa']:g}".replace(".", ",")
-        cursor.execute(
-            """
-            INSERT INTO movimientos_cta_cte_bancos
-            (cuenta_id, fecha_cobro, fecha_debito, proveedor, nro_cheque, haber, debe, imp_chq,
-             cta_cte_nro, conciliado, tipo_operacion)
-            VALUES (?, ?, '', ?, ?, ?, 0, 0, ?, 0, 'Intereses dto. valores');
-            """,
-            (
-                data.cuenta_id,
-                fecha,
-                f"Intereses dto. Ch. {ch['nro_cheque']} | {tasa_txt}% x {dto['dias']} días"[:120],
-                ch["nro_cheque"],
-                costo,
-                cta["nro_cta_cte"] or "",
-            ),
-        )
-        mov_gastos_id = cursor.lastrowid
     cursor.execute(
         """
         UPDATE cartera_cheques
@@ -4394,8 +4376,11 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
         "descuento": {**dto, "neto": round(monto - costo, 2)},
         "margen": {"total": margen, "usado": round(usado, 2), "disponible": round(margen - usado, 2)},
         "message": (
-            f"Cheque descontado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}. Neto acreditado $ "
-            + f"{monto - costo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            f"Cheque descontado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}. Se acredita el total $ "
+            + f"{monto:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            + ". Intereses y gastos estimados $ "
+            + f"{costo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            + " (se cargan al conciliar el extracto)."
         ),
     }
 

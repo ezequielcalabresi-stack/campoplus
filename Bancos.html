@@ -546,11 +546,16 @@
                                         <label class="lbl">Gastos / IVA</label>
                                         <input type="number" step="0.01" id="depDtoGastos" class="form-control form-control-sm text-end" value="0" oninput="recalcularDtoValores(true)">
                                     </div>
-                                    <div class="col-8">
-                                        <label class="lbl">Neto a acreditar</label>
-                                        <input type="text" id="depDtoNeto" class="form-control form-control-sm text-end fw-bold" readonly>
+                                    <div class="col-4">
+                                        <label class="lbl">Se acredita en la cuenta</label>
+                                        <input type="text" id="depDtoAcredita" class="form-control form-control-sm text-end fw-bold" readonly>
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="lbl">Neto estimado</label>
+                                        <input type="text" id="depDtoNeto" class="form-control form-control-sm text-end text-muted" readonly>
                                     </div>
                                 </div>
+                                <div class="hint mt-1">Se acredita el total del cheque. Intereses y gastos son informativos: el banco los debita aparte y se cargan al conciliar el extracto.</div>
                                 <div class="small mt-2" id="depDtoMargen"></div>
                             </div>
                         </div>
@@ -1633,6 +1638,7 @@
             document.getElementById('depDtoDias').value = d.dias;
             const intInp = document.getElementById('depDtoIntereses');
             if (!intInp.dataset.manual) intInp.value = d.intereses.toFixed(2);
+            document.getElementById('depDtoAcredita').value = fmt(d.monto);
             document.getElementById('depDtoNeto').value = fmt(d.neto);
             const margenBox = document.getElementById('depDtoMargen');
             const cta = _depCuentas.find(x => x.id === cuentaId);
