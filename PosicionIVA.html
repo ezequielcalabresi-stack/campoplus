@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Posición mensual de IVA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-money.js"></script>
+    <style>
+        .tab-btn.activo { background:#6d28d9; color:#fff; border-color:#6d28d9; }
+        .num { font-variant-numeric: tabular-nums; }
+        .fila-total td { font-weight:700; background:#f5f3ff; }
+        tr.est-excluido td, tr.est-movido_a td, tr.est-informativo td { color:#94a3b8; }
+        tr.est-excluido td.tachar { text-decoration: line-through; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="max-w-7xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Posición mensual de IVA <span class="text-sm font-normal text-violet-700">Esquema F.2051 · IVA Simple (ARCA)</span></h1>
+            <p class="text-xs text-slate-500 mt-1" id="subEmpresa">Débito fiscal, crédito fiscal, saldo técnico, retenciones y percepciones, saldo de libre disponibilidad.</p>
+        </div>
+        <div class="flex gap-2 items-start">
+            <a href="Sicore.html" class="bg-purple-50 text-purple-900 border border-purple-200 px-3 py-2 rounded-md text-sm font-medium">SICORE</a>
+            <a href="Index.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
+        </div>
+    </div>
+
+    <div class="flex flex-wrap items-end gap-3 mb-4">
+        <div>
+            <label class="text-[10px] font-bold uppercase text-slate-500">Período</label>
+            <div class="flex items-center gap-1 mt-1">
+                <button type="button" onclick="moverPeriodo(-1)" class="border rounded px-2 py-2 text-sm font-bold hover:bg-slate-100">‹</button>
+                <select id="selMes" class="border rounded p-2 text-sm" onchange="cargar()"></select>
+                <input id="inpAnio" type="number" class="border rounded p-2 text-sm w-24" onchange="cargar()">
+                <button type="button" onclick="moverPeriodo(1)" class="border rounded px-2 py-2 text-sm font-bold hover:bg-slate-100">›</button>
+            </div>
+        </div>
+        <button type="button" onclick="cargar()" class="bg-slate-800 text-white px-4 py-2 rounded text-sm font-bold">Recalcular</button>
+        <button type="button" onclick="descargarExcel()" class="bg-emerald-700 text-white px-4 py-2 rounded text-sm font-bold">Excel</button>
+        <div class="ml-auto text-right">
+            <div id="badgeEstado"></div>
+            <div class="text-xs text-slate-500 mt-1" id="txtVenc"></div>
+        </div>
+    </div>
+
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4"></div>
+    <div id="boxAlertas" class="mb-4 space-y-1"></div>
+
+    <div class="flex flex-wrap gap-2 mb-3 border-b pb-3" id="tabs">
+        <button class="tab-btn activo border rounded px-3 py-1.5 text-sm font-semibold" data-tab="det">Determinación</button>
+        <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="compras">Libro IVA Compras <span class="cnt" data-cnt="credito"></span></button>
+        <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="ventas">Libro IVA Ventas <span class="cnt" data-cnt="debito"></span></button>
+        <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="retper">Retenciones y percepciones <span class="cnt" data-cnt="retper"></span></button>
+        <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="ajustes">Ajustes manuales</button>
+        <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="anual">Evolución anual</button>
+    </div>
+
+    <!-- Determinación -->
+    <div class="tab-panel" id="tab-det">
+        <div class="grid lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 border rounded-xl overflow-hidden">
+                <table class="w-full text-sm">
+                    <tbody id="tbodyDet" class="divide-y"></tbody>
+                </table>
+            </div>
+            <div class="space-y-4">
+                <div class="border rounded-xl p-4">
+                    <h3 class="font-bold text-slate-800 mb-2 text-sm">Neto e IVA por alícuota</h3>
+                    <table class="w-full text-xs">
+                        <thead class="text-slate-500 uppercase"><tr><th class="text-left py-1">Libro</th><th class="text-left">Alíc.</th><th class="text-right">Neto</th><th class="text-right">IVA</th></tr></thead>
+                        <tbody id="tbodyAlic" class="divide-y"></tbody>
+                    </table>
+                </div>
+                <div class="border rounded-xl p-4 bg-violet-50/40" id="boxPresentacion"></div>
+            </div>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-3">
+            El saldo técnico a favor y el saldo de libre disponibilidad del período anterior se toman del período anterior guardado en el programa.
+            Si lo dejás vacío queda automático. Para empezar la cadena, copiá los valores que te muestra ARCA en el F.2051 del primer mes.
+            Las percepciones bancarias (RG 2408) se pueden computar en el período o en los 5 siguientes; las retenciones, en el período en que se sufrieron.
+            Esta planilla es una ayuda de trabajo: la presentación se hace en el Portal IVA de ARCA.
+        </p>
+    </div>
+
+    <!-- Libros -->
+    <div class="tab-panel hidden" id="tab-compras"></div>
+    <div class="tab-panel hidden" id="tab-ventas"></div>
+    <div class="tab-panel hidden" id="tab-retper"></div>
+
+    <!-- Ajustes -->
+    <div class="tab-panel hidden" id="tab-ajustes">
+        <form class="grid md:grid-cols-6 gap-2 mb-4 border rounded-lg p-3 bg-slate-50" onsubmit="return agregarAjuste(event)">
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Tipo</label>
+                <select id="ajTipo" class="mt-1 w-full border rounded p-2 text-sm">
+                    <option value="debito">Débito fiscal</option>
+                    <option value="credito">Crédito fiscal</option>
+                    <option value="retencion">Retención sufrida</option>
+                    <option value="percepcion">Percepción sufrida</option>
+                    <option value="pago_cuenta">Pago a cuenta</option>
+                    <option value="devolucion">Devolución / reintegro</option>
+                </select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[10px] font-bold uppercase text-slate-500">Concepto</label>
+                <input id="ajConcepto" class="mt-1 w-full border rounded p-2 text-sm" placeholder="Ej: Restitución de débito fiscal, percepción aduanera...">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Alícuota / Neto</label>
+                <div class="flex gap-1 mt-1">
+                    <select id="ajAlic" class="border rounded p-2 text-sm w-20">
+                        <option value="0.21">21%</option><option value="0.105">10,5%</option><option value="0.27">27%</option><option value="0">-</option>
+                    </select>
+                    <input id="ajNeto" type="text" data-money class="flex-1 min-w-0 border rounded p-2 text-sm text-right" value="0,00" oninput="sugerirIvaAjuste()">
+                </div>
+            </div>
+            <div>
+                <label class="text-[10px] font-bold uppercase text-slate-500">Importe (IVA)</label>
+                <input id="ajImporte" type="text" data-money class="mt-1 w-full border rounded p-2 text-sm text-right" value="0,00">
+            </div>
+            <div class="flex items-end">
+                <button class="w-full bg-violet-700 text-white px-3 py-2 rounded text-sm font-bold" id="btnAjuste">+ Agregar</button>
+            </div>
+        </form>
+        <div id="listaAjustes"></div>
+        <p class="text-[11px] text-slate-500 mt-3">Un importe negativo resta (por ejemplo, una nota de crédito recibida que no está cargada).</p>
+    </div>
+
+    <!-- Evolución anual -->
+    <div class="tab-panel hidden" id="tab-anual">
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-violet-100 text-xs uppercase text-violet-900">
+                    <tr>
+                        <th class="p-2 text-left">Período</th><th class="p-2 text-right">Débito</th><th class="p-2 text-right">Crédito</th>
+                        <th class="p-2 text-right">Impuesto det.</th><th class="p-2 text-right">ST a favor</th><th class="p-2 text-right">Ret. + Perc.</th>
+                        <th class="p-2 text-right">A pagar</th><th class="p-2 text-right">SLD a favor</th><th class="p-2 text-left">Estado</th><th class="p-2 text-left">Vence</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyAnual" class="divide-y"></tbody>
+            </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-2">Clic en un mes para abrirlo.</p>
+    </div>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const ESTADOS_ITEM = {
+    computa: '', excluido: 'Excluido', movido_a: 'Movido a ', movido_desde: 'Computado acá', informativo: 'Informativo',
+};
+let POS = null;
+let tabActiva = 'det';
+
+function periodoActual() {
+    return `${document.getElementById('inpAnio').value}-${String(document.getElementById('selMes').value).padStart(2, '0')}`;
+}
+function fmtPeriodo(p) { return `${MESES[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`; }
+function fmtFecha(f) { return f && /^\d{4}-\d{2}-\d{2}/.test(f) ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : (f || ''); }
+function periodoMas(p, n) {
+    const i = Number(p.slice(0, 4)) * 12 + Number(p.slice(5, 7)) - 1 + n;
+    return `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`;
+}
+function cerrado() { return POS && POS.cabecera.estado === 'presentada'; }
+
+function boot() {
+    document.getElementById('selMes').innerHTML = MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    const guardado = localStorage.getItem('campoplus_iva_periodo');
+    const p = guardado && /^\d{4}-\d{2}$/.test(guardado) ? guardado : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    document.getElementById('inpAnio').value = p.slice(0, 4);
+    document.getElementById('selMes').value = String(Number(p.slice(5, 7)));
+    document.querySelectorAll('#tabs .tab-btn').forEach(b => b.addEventListener('click', () => mostrarTab(b.dataset.tab)));
+    CampoMoney.bind(document);
+    cargar();
+}
+
+function moverPeriodo(n) {
+    const p = periodoMas(periodoActual(), n);
+    document.getElementById('inpAnio').value = p.slice(0, 4);
+    document.getElementById('selMes').value = String(Number(p.slice(5, 7)));
+    cargar();
+}
+
+function mostrarTab(t) {
+    tabActiva = t;
+    document.querySelectorAll('#tabs .tab-btn').forEach(b => b.classList.toggle('activo', b.dataset.tab === t));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + t));
+    if (t === 'anual') cargarAnual();
+}
+
+async function api(url, opts = {}) {
+    const res = await fetch(url, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'Error');
+    return data;
+}
+
+async function cargar() {
+    const p = periodoActual();
+    localStorage.setItem('campoplus_iva_periodo', p);
+    try {
+        POS = await api('/api/iva/posicion?periodo=' + p);
+    } catch (e) { alert(e.message); return; }
+    render();
+    if (tabActiva === 'anual') cargarAnual();
+}
+
+function render() {
+    const r = POS.resultado, cab = POS.cabecera, emp = POS.empresa;
+    document.getElementById('subEmpresa').textContent = `${emp.razon_social || ''} · CUIT ${emp.cuit || '-'} · Período ${fmtPeriodo(POS.periodo)}`;
+    const est = {
+        presentada: ['Presentada', 'bg-emerald-100 text-emerald-800 border-emerald-300'],
+        borrador: ['Borrador guardado', 'bg-amber-50 text-amber-800 border-amber-300'],
+        sin_guardar: ['Sin guardar', 'bg-slate-100 text-slate-600 border-slate-300'],
+    }[cab.estado] || [cab.estado, 'bg-slate-100'];
+    document.getElementById('badgeEstado').innerHTML = `<span class="inline-block border rounded-full px-3 py-1 text-xs font-bold ${est[1]}">${est[0]}</span>`;
+    document.getElementById('txtVenc').textContent = POS.vencimiento ? `Vencimiento estimado: ${fmtFecha(POS.vencimiento)} (según terminación de CUIT, sin feriados)` : '';
+
+    const resultado = r.a_pagar > 0
+        ? ['Saldo a pagar', money(r.a_pagar), 'bg-rose-50 border-rose-200 text-rose-800']
+        : ['SLD a favor', money(r.sld_a_favor), 'bg-emerald-50 border-emerald-200 text-emerald-800'];
+    const tecnico = r.impuesto_determinado > 0
+        ? ['Impuesto determinado', money(r.impuesto_determinado)]
+        : ['Saldo técnico a favor', money(r.st_a_favor)];
+    document.getElementById('kpis').innerHTML = [
+        ['Débito fiscal', money(r.debito_fiscal), 'bg-violet-50/60'],
+        ['Crédito fiscal', money(r.credito_fiscal), 'bg-violet-50/60'],
+        [tecnico[0], tecnico[1], 'bg-violet-50/60'],
+        ['Retenciones + percepciones', money(r.retenciones + r.percepciones), 'bg-violet-50/60'],
+        resultado,
+    ].map(([a, b, cls]) => `<div class="border rounded-xl p-3 ${cls}"><div class="text-[10px] font-bold uppercase opacity-80">${a}</div><div class="text-xl font-extrabold num">$ ${b}</div></div>`).join('');
+
+    const colores = { error: 'bg-rose-50 border-rose-200 text-rose-800', aviso: 'bg-amber-50 border-amber-200 text-amber-800', info: 'bg-sky-50 border-sky-200 text-sky-800' };
+    document.getElementById('boxAlertas').innerHTML = (POS.alertas || []).map(a =>
+        `<div class="border rounded px-3 py-1.5 text-xs ${colores[a.nivel] || colores.info}">${esc(a.texto)}</div>`).join('');
+
+    const items = POS.items || [];
+    const cnt = { credito: 0, debito: 0, retper: 0 };
+    items.forEach(it => { if (it.seccion === 'credito') cnt.credito++; else if (it.seccion === 'debito') cnt.debito++; else cnt.retper++; });
+    document.querySelectorAll('.cnt').forEach(s => { s.textContent = cnt[s.dataset.cnt] ? `(${cnt[s.dataset.cnt]})` : ''; });
+
+    renderDeterminacion();
+    renderLibro('compras', it => it.seccion === 'credito', 'Libro IVA Compras');
+    renderLibro('ventas', it => it.seccion === 'debito', 'Libro IVA Ventas');
+    renderLibro('retper', it => ['retencion', 'percepcion', 'devolucion'].includes(it.seccion), 'Retenciones, percepciones y reintegros');
+    renderAjustes();
+    document.getElementById('btnAjuste').disabled = cerrado();
+}
+
+function inputMonto(id, valor, placeholder) {
+    const dis = cerrado() ? 'disabled' : '';
+    const v = valor === null || valor === undefined ? '' : money(valor);
+    return `<input id="${id}" type="text" inputmode="decimal" class="border rounded px-2 py-1 text-sm text-right w-40 num" value="${v}" placeholder="${esc(placeholder || '')}" onblur="fmtOpcional(this)" ${dis}>`;
+}
+
+function fmtOpcional(el) {
+    if (el.value.trim() !== '') el.value = money(CampoMoney.parse(el.value));
+}
+
+function renderDeterminacion() {
+    const r = POS.resultado, cab = POS.cabecera, ant = POS.anterior;
+    const fuentes = s => POS.por_fuente.filter(f => f.seccion === s);
+    const linea = (txt, val, extra = '') => `<tr class="${extra}"><td class="p-2 pl-6">${txt}</td><td class="p-2 text-right num w-48">${val}</td></tr>`;
+    const titulo = txt => `<tr class="bg-violet-100"><td colspan="2" class="p-2 text-xs font-extrabold uppercase text-violet-900">${txt}</td></tr>`;
+    const total = (txt, val, cls = '') => `<tr class="fila-total ${cls}"><td class="p-2">${txt}</td><td class="p-2 text-right num">$ ${money(val)}</td></tr>`;
+    const antTxt = ant ? `Automático: $ ${money(ant.st_a_favor)} (${fmtPeriodo(ant.periodo)}, ${ant.fuente})` : 'Automático: sin período anterior guardado';
+    const antSld = ant ? `Automático: $ ${money(ant.sld_a_favor)}` : 'Automático: sin período anterior guardado';
+    const html = [
+        titulo('I. Determinación del impuesto'),
+        ...fuentes('debito').map(f => linea(`Débito fiscal · ${esc(f.fuente)}`, money(f.importe))),
+        total('Total débito fiscal', r.debito_fiscal),
+        ...fuentes('credito').map(f => linea(`Crédito fiscal · ${esc(f.fuente)}`, money(f.importe))),
+        total('Total crédito fiscal', r.credito_fiscal),
+        `<tr><td class="p-2 pl-6">Saldo técnico a favor del período anterior<div class="text-[11px] text-slate-400">${esc(antTxt)}</div></td>
+             <td class="p-2 text-right">${inputMonto('inpStAnt', cab.st_anterior, 'automático')}</td></tr>`,
+        r.impuesto_determinado > 0
+            ? total('Impuesto determinado (saldo técnico a pagar)', r.impuesto_determinado, 'text-rose-800')
+            : total('Saldo técnico a favor (pasa al mes siguiente)', r.st_a_favor, 'text-emerald-800'),
+        titulo('II. Determinación del saldo'),
+        linea('Retenciones sufridas', money(r.retenciones)),
+        linea('Percepciones sufridas', money(r.percepciones)),
+        `<tr><td class="p-2 pl-6">Pagos a cuenta / anticipos<div class="text-[11px] text-slate-400">Además de los cargados como ajuste</div></td>
+             <td class="p-2 text-right">${inputMonto('inpPagos', cab.pagos_cuenta || null, '0,00')}</td></tr>`,
+        `<tr><td class="p-2 pl-6">Saldo de libre disponibilidad del período anterior<div class="text-[11px] text-slate-400">${esc(antSld)}</div></td>
+             <td class="p-2 text-right">${inputMonto('inpSldAnt', cab.sld_anterior, 'automático')}</td></tr>`,
+        `<tr><td class="p-2 pl-6">Devoluciones, reintegros y transferencias del SLD<div class="text-[11px] text-slate-400">Reintegro sistémico de granos, compensaciones con otros impuestos, etc.</div></td>
+             <td class="p-2 text-right">${inputMonto('inpDevol', cab.devoluciones || null, '0,00')}</td></tr>`,
+        r.a_pagar > 0
+            ? total('SALDO A PAGAR', r.a_pagar, 'text-rose-800')
+            : total('SALDO DE LIBRE DISPONIBILIDAD A FAVOR', r.sld_a_favor, 'text-emerald-800'),
+        `<tr><td class="p-2" colspan="2">
+            <input id="inpObs" class="border rounded px-2 py-1 text-sm w-full" placeholder="Observaciones del período" value="${esc(cab.observaciones)}" ${cerrado() ? 'disabled' : ''}>
+         </td></tr>`,
+        cerrado() ? '' : `<tr><td class="p-2 text-right" colspan="2"><button type="button" onclick="guardarCabecera()" class="bg-violet-700 text-white px-4 py-2 rounded text-sm font-bold">Guardar borrador</button></td></tr>`,
+    ].join('');
+    document.getElementById('tbodyDet').innerHTML = html;
+
+    document.getElementById('tbodyAlic').innerHTML = POS.por_alicuota.map(a => `
+        <tr><td class="py-1">${a.seccion === 'debito' ? 'Ventas' : 'Compras'}</td>
+            <td>${a.alicuota === null ? '<span class="text-amber-700">s/ident.</span>' : (a.alicuota * 100).toLocaleString('es-AR') + '%'}</td>
+            <td class="text-right num">${money(a.neto)}</td><td class="text-right num">${money(a.iva)}</td></tr>`).join('')
+        || '<tr><td colspan="4" class="py-2 text-slate-400">Sin operaciones</td></tr>';
+
+    const pres = POS.presentado;
+    document.getElementById('boxPresentacion').innerHTML = cerrado() ? `
+        <h3 class="font-bold text-emerald-800 mb-2 text-sm">Presentada</h3>
+        <div class="text-xs space-y-1">
+            <div>Fecha de presentación: <b>${fmtFecha(cab.fecha_presentacion)}</b></div>
+            <div>Nº transacción / VEP: <b>${esc(cab.nro_transaccion || '-')}</b></div>
+            <div>Importe pagado: <b>$ ${money(cab.importe_pagado)}</b> ${cab.fecha_pago ? 'el ' + fmtFecha(cab.fecha_pago) : ''}</div>
+            ${pres ? `<div>Saldo presentado: <b>$ ${money(pres.a_pagar)}</b> a pagar · <b>$ ${money(pres.sld_a_favor)}</b> SLD a favor</div>` : ''}
+        </div>
+        <button type="button" onclick="reabrir()" class="mt-3 border border-slate-400 text-slate-700 px-3 py-1.5 rounded text-xs font-bold">Reabrir (rectificativa)</button>` : `
+        <h3 class="font-bold text-slate-800 mb-2 text-sm">Registrar presentación</h3>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+            <label class="col-span-1">Fecha presentación<input id="presFecha" type="date" class="mt-1 w-full border rounded p-1.5" value="${new Date().toISOString().slice(0, 10)}"></label>
+            <label class="col-span-1">Nº transacción / VEP<input id="presNro" class="mt-1 w-full border rounded p-1.5"></label>
+            <label class="col-span-1">Importe pagado<input id="presImporte" type="text" data-money class="mt-1 w-full border rounded p-1.5 text-right" value="${money(r.a_pagar)}"></label>
+            <label class="col-span-1">Fecha de pago<input id="presFechaPago" type="date" class="mt-1 w-full border rounded p-1.5"></label>
+        </div>
+        <button type="button" onclick="presentar()" class="mt-3 w-full bg-emerald-700 text-white px-3 py-2 rounded text-sm font-bold">Marcar como presentada</button>
+        <p class="text-[11px] text-slate-500 mt-2">Congela los importes de este mes; el saldo a favor pasa al mes siguiente.</p>`;
+    CampoMoney.bind(document.getElementById('boxPresentacion'));
+}
+
+function accionesItem(it) {
+    if (cerrado() || it.origen === 'ajuste') return '';
+    const b = (txt, fn, cls = 'text-violet-700') => `<button type="button" class="${cls} text-[11px] font-bold hover:underline mr-2" onclick="${fn}">${txt}</button>`;
+    if (it.override_id) return b('Restaurar', `restaurar(${it.override_id})`, 'text-slate-600');
+    if (it.estado === 'informativo') return b('Computar', `computarAca('${it.origen}', ${it.origen_id})`, 'text-emerald-700');
+    return b('Mover', `moverItem('${it.origen}', ${it.origen_id})`) + b('Excluir', `excluirItem('${it.origen}', ${it.origen_id})`, 'text-rose-700');
+}
+
+function renderLibro(tab, filtro, titulo) {
+    const items = (POS.items || []).filter(filtro);
+    const esLibro = tab !== 'retper';
+    const computan = items.filter(it => ['computa', 'movido_desde'].includes(it.estado));
+    const tNeto = computan.reduce((s, it) => s + it.neto, 0);
+    const tImp = computan.reduce((s, it) => s + it.importe, 0);
+    const filas = items.map(it => {
+        const alic = (it.alicuotas || []).map(a => a.alicuota === null ? '?' : (a.alicuota * 100).toLocaleString('es-AR') + '%').join(' / ');
+        let estado = ESTADOS_ITEM[it.estado] || '';
+        if (it.estado === 'movido_a') estado += fmtPeriodo(it.periodo_destino);
+        if (it.estado === 'movido_desde' && it.periodo_natural !== POS.periodo) estado = 'Desde ' + fmtPeriodo(it.periodo_natural);
+        return `<tr class="est-${it.estado} hover:bg-slate-50">
+            <td class="p-1.5 whitespace-nowrap">${fmtFecha(it.fecha)}</td>
+            <td class="p-1.5">${esc(it.tipo)}</td>
+            <td class="p-1.5 font-mono text-xs tachar">${esc(it.comprobante)}</td>
+            <td class="p-1.5 font-mono text-xs">${esc(it.cuit)}</td>
+            <td class="p-1.5">${esc(it.razon)}</td>
+            ${esLibro ? `<td class="p-1.5 text-right num">${money(it.neto)}</td><td class="p-1.5 text-center text-xs">${alic}</td>` : `<td class="p-1.5 text-xs text-slate-500">${esc(it.fuente)}</td>`}
+            <td class="p-1.5 text-right num font-semibold tachar">${money(it.importe)}</td>
+            <td class="p-1.5 text-xs whitespace-nowrap" title="${esc(it.motivo)}">${esc(estado)}</td>
+            <td class="p-1.5 whitespace-nowrap">${accionesItem(it)}</td>
+        </tr>`;
+    }).join('');
+    const cols = esLibro
+        ? '<th class="p-2 text-right">Neto gravado</th><th class="p-2">Alíc.</th><th class="p-2 text-right">IVA</th>'
+        : '<th class="p-2 text-left">Fuente</th><th class="p-2 text-right">Importe</th>';
+    document.getElementById('tab-' + tab).innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="font-bold text-slate-800">${titulo} · ${fmtPeriodo(POS.periodo)}</h3>
+            <input class="border rounded p-1.5 text-sm w-64" placeholder="Buscar..." oninput="filtrarTabla(this)">
+        </div>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-violet-100 text-xs uppercase text-violet-900">
+                    <tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Tipo</th><th class="p-2 text-left">Comprobante</th>
+                        <th class="p-2 text-left">CUIT</th><th class="p-2 text-left">Razón social</th>${cols}<th class="p-2 text-left">Estado</th><th class="p-2"></th></tr>
+                </thead>
+                <tbody class="divide-y">${filas || `<tr><td colspan="10" class="p-4 text-center text-slate-400">Sin movimientos en el período</td></tr>`}</tbody>
+                <tfoot><tr class="fila-total"><td colspan="5" class="p-2">Total que computa (${computan.length})</td>
+                    ${esLibro ? `<td class="p-2 text-right num">${money(tNeto)}</td><td></td>` : '<td></td>'}
+                    <td class="p-2 text-right num">${money(tImp)}</td><td colspan="2"></td></tr></tfoot>
+            </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-2">"Mover" imputa el comprobante en otro período (por ejemplo, una factura recibida tarde o una percepción que computás después). "Excluir" lo saca de la posición sin borrarlo de la cuenta corriente.</p>`;
+}
+
+function filtrarTabla(inp) {
+    const q = inp.value.toLowerCase();
+    inp.closest('.tab-panel').querySelectorAll('tbody tr').forEach(tr => {
+        tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function renderAjustes() {
+    const aj = (POS.items || []).filter(it => it.origen === 'ajuste');
+    const nombres = { debito: 'Débito fiscal', credito: 'Crédito fiscal', retencion: 'Retención', percepcion: 'Percepción', pago_cuenta: 'Pago a cuenta', devolucion: 'Devolución' };
+    document.getElementById('listaAjustes').innerHTML = aj.length ? `
+        <table class="w-full text-sm border rounded-lg overflow-hidden">
+            <thead class="bg-violet-100 text-xs uppercase text-violet-900"><tr><th class="p-2 text-left">Tipo</th><th class="p-2 text-left">Concepto</th><th class="p-2 text-right">Neto</th><th class="p-2 text-right">Importe</th><th></th></tr></thead>
+            <tbody class="divide-y">${aj.map(it => `<tr>
+                <td class="p-2">${nombres[it.seccion] || it.seccion}</td><td class="p-2">${esc(it.comprobante)}</td>
+                <td class="p-2 text-right num">${money(it.neto)}</td><td class="p-2 text-right num font-semibold">${money(it.importe)}</td>
+                <td class="p-2 text-center">${cerrado() ? '' : `<button type="button" class="text-rose-600 text-xs font-bold" onclick="borrarAjuste(${it.origen_id})">×</button>`}</td></tr>`).join('')}</tbody>
+        </table>` : '<p class="text-sm text-slate-400">Sin ajustes en este período.</p>';
+}
+
+function sugerirIvaAjuste() {
+    const neto = CampoMoney.parse(document.getElementById('ajNeto').value);
+    const alic = Number(document.getElementById('ajAlic').value);
+    if (neto && alic) document.getElementById('ajImporte').value = money(Math.round(neto * alic * 100) / 100);
+}
+
+async function agregarAjuste(ev) {
+    ev.preventDefault();
+    const body = {
+        periodo: POS.periodo,
+        tipo: document.getElementById('ajTipo').value,
+        concepto: document.getElementById('ajConcepto').value.trim(),
+        alicuota: Number(document.getElementById('ajAlic').value),
+        neto: CampoMoney.parse(document.getElementById('ajNeto').value),
+        importe: CampoMoney.parse(document.getElementById('ajImporte').value),
+    };
+    if (!body.concepto || !body.importe) { alert('Completá concepto e importe.'); return false; }
+    try {
+        await api('/api/iva/ajustes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    } catch (e) { alert(e.message); return false; }
+    document.getElementById('ajConcepto').value = '';
+    document.getElementById('ajNeto').value = '0,00';
+    document.getElementById('ajImporte').value = '0,00';
+    await cargar();
+    return false;
+}
+
+async function borrarAjuste(id) {
+    if (!confirm('¿Borrar el ajuste?')) return;
+    try { await api('/api/iva/ajustes/' + id, { method: 'DELETE' }); } catch (e) { alert(e.message); return; }
+    await cargar();
+}
+
+function valorOpcional(id) {
+    const el = document.getElementById(id);
+    return el && el.value.trim() !== '' ? CampoMoney.parse(el.value) : null;
+}
+
+async function guardarCabecera() {
+    const body = {
+        st_anterior: valorOpcional('inpStAnt'),
+        sld_anterior: valorOpcional('inpSldAnt'),
+        pagos_cuenta: valorOpcional('inpPagos') || 0,
+        devoluciones: valorOpcional('inpDevol') || 0,
+        observaciones: document.getElementById('inpObs').value,
+    };
+    try {
+        POS = await api('/api/iva/posicion/' + POS.periodo, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    } catch (e) { alert(e.message); return; }
+    render();
+}
+
+async function presentar() {
+    const body = {
+        fecha_presentacion: document.getElementById('presFecha').value,
+        nro_transaccion: document.getElementById('presNro').value.trim(),
+        importe_pagado: CampoMoney.parse(document.getElementById('presImporte').value),
+        fecha_pago: document.getElementById('presFechaPago').value,
+    };
+    if (!body.fecha_presentacion) { alert('Indicá la fecha de presentación.'); return; }
+    if (!confirm(`¿Marcar ${fmtPeriodo(POS.periodo)} como presentada? Se congelan los importes (se guardan también los saldos anteriores que estás usando).`)) return;
+    try {
+        await guardarCabecera();
+        POS = await api(`/api/iva/posicion/${POS.periodo}/presentar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    } catch (e) { alert(e.message); return; }
+    render();
+}
+
+async function reabrir() {
+    if (!confirm('¿Reabrir el período para modificarlo? Usalo para preparar una rectificativa.')) return;
+    try { POS = await api(`/api/iva/posicion/${POS.periodo}/reabrir`, { method: 'POST' }); } catch (e) { alert(e.message); return; }
+    render();
+}
+
+async function exclusion(body) {
+    try {
+        await api('/api/iva/exclusiones', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    } catch (e) { alert(e.message); return; }
+    await cargar();
+}
+
+function moverItem(origen, id) {
+    const dest = prompt('¿A qué período lo imputás? (AAAA-MM)', periodoMas(POS.periodo, 1));
+    if (!dest) return;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(dest.trim())) { alert('Formato AAAA-MM, por ejemplo 2026-10.'); return; }
+    const motivo = prompt('Motivo (opcional):', '') || '';
+    exclusion({ origen, origen_id: id, periodo_destino: dest.trim(), motivo });
+}
+
+function excluirItem(origen, id) {
+    const motivo = prompt('¿Por qué lo excluís de la posición? (queda registrado)', '');
+    if (motivo === null) return;
+    exclusion({ origen, origen_id: id, periodo_destino: '', motivo });
+}
+
+function computarAca(origen, id) {
+    exclusion({ origen, origen_id: id, periodo_destino: POS.periodo, motivo: 'Computado manualmente' });
+}
+
+async function restaurar(id) {
+    try { await api('/api/iva/exclusiones/' + id, { method: 'DELETE' }); } catch (e) { alert(e.message); return; }
+    await cargar();
+}
+
+async function cargarAnual() {
+    const anio = document.getElementById('inpAnio').value;
+    document.getElementById('tbodyAnual').innerHTML = '<tr><td colspan="10" class="p-4 text-center text-slate-400">Calculando...</td></tr>';
+    let data;
+    try { data = await api('/api/iva/resumen?anio=' + anio); } catch (e) { alert(e.message); return; }
+    const est = { presentada: '✔ Presentada', borrador: 'Borrador', sin_guardar: '-' };
+    const t = { debito_fiscal: 0, credito_fiscal: 0, impuesto_determinado: 0, rp: 0, a_pagar: 0 };
+    document.getElementById('tbodyAnual').innerHTML = data.meses.map(m => {
+        t.debito_fiscal += m.debito_fiscal; t.credito_fiscal += m.credito_fiscal; t.impuesto_determinado += m.impuesto_determinado;
+        t.rp += m.retenciones + m.percepciones; t.a_pagar += m.a_pagar;
+        const actual = m.periodo === POS?.periodo ? 'bg-violet-50 font-semibold' : '';
+        return `<tr class="cursor-pointer hover:bg-slate-50 ${actual}" onclick="irA('${m.periodo}')">
+            <td class="p-2">${fmtPeriodo(m.periodo)}</td>
+            <td class="p-2 text-right num">${money(m.debito_fiscal)}</td><td class="p-2 text-right num">${money(m.credito_fiscal)}</td>
+            <td class="p-2 text-right num">${money(m.impuesto_determinado)}</td><td class="p-2 text-right num">${money(m.st_a_favor)}</td>
+            <td class="p-2 text-right num">${money(m.retenciones + m.percepciones)}</td>
+            <td class="p-2 text-right num ${m.a_pagar > 0 ? 'text-rose-700 font-bold' : ''}">${money(m.a_pagar)}</td>
+            <td class="p-2 text-right num">${money(m.sld_a_favor)}</td>
+            <td class="p-2 text-xs">${est[m.estado] || m.estado}</td><td class="p-2 text-xs">${fmtFecha(m.vencimiento)}</td></tr>`;
+    }).join('') + `<tr class="fila-total"><td class="p-2">Total ${anio}</td><td class="p-2 text-right num">${money(t.debito_fiscal)}</td>
+        <td class="p-2 text-right num">${money(t.credito_fiscal)}</td><td class="p-2 text-right num">${money(t.impuesto_determinado)}</td><td></td>
+        <td class="p-2 text-right num">${money(t.rp)}</td><td class="p-2 text-right num">${money(t.a_pagar)}</td><td colspan="3"></td></tr>`;
+}
+
+function irA(p) {
+    document.getElementById('inpAnio').value = p.slice(0, 4);
+    document.getElementById('selMes').value = String(Number(p.slice(5, 7)));
+    mostrarTab('det');
+    cargar();
+}
+
+async function descargarExcel() {
+    const p = periodoActual();
+    const res = await fetch(`/api/iva/posicion/${p}/excel`);
+    if (!res.ok) { alert('No se pudo generar el Excel.'); return; }
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `posicion_iva_${p}.xlsx`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+boot();
+</script>
+</body>
+</html>

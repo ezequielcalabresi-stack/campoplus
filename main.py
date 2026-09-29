@@ -956,6 +956,9 @@ def init_db():
         cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN observaciones TEXT;")
     if "asiento_id" not in cols_cc:
         cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN asiento_id INTEGER;")
+    if "libro_iva" not in cols_cc:
+        # 'C' = libro IVA compras, 'V' = libro IVA ventas (NULL en filas anteriores).
+        cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN libro_iva TEXT;")
 
     # 10. Agro / Márgenes brutos — campos, lotes, campañas, arrendamientos
     from agro_campania import init_agro_schema
@@ -6339,6 +6342,12 @@ def obtener_granos():
         {"id": 5, "nombre": "Cebada"},
     ]
 
+def _asegurar_col_libro_iva(cursor) -> None:
+    cursor.execute("PRAGMA table_info(cuentas_corrientes);")
+    if "libro_iva" not in {c[1] for c in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN libro_iva TEXT;")
+
+
 @app.post("/api/facturas")
 def guardar_factura(data: FacturaModel):
     empresa_id = get_empresa_activa_id()
@@ -6346,6 +6355,7 @@ def guardar_factura(data: FacturaModel):
     cursor = conn.cursor()
     from actividades_imputacion import init_actividades_schema
     init_actividades_schema(cursor)
+    _asegurar_col_libro_iva(cursor)
 
     tipo_up = (data.tipo_comprobante or "").upper()
     es_nc = (
@@ -6360,9 +6370,9 @@ def guardar_factura(data: FacturaModel):
     cursor.execute("""
         INSERT INTO cuentas_corrientes (
             entidad_id, tipo_comprobante, numero_comprobante, fecha, vencimiento,
-            neto, iva, debe, haber, total, estado, usuario_registro, empresa_id
+            neto, iva, debe, haber, total, estado, usuario_registro, empresa_id, libro_iva
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?, 'C');
     """, (
         data.cuit, data.tipo_comprobante, data.numero_comprobante, data.fecha,
         data.vencimiento, data.neto, data.iva, debe, haber, data.total,
@@ -6779,13 +6789,14 @@ def emitir_factura_venta(data: FacturaVentaModel):
     fecha = (data.fecha or "")[:10]
     venc = (data.vencimiento or fecha)[:10]
     tipo = (data.tipo_comprobante or "Factura A").strip()
+    _asegurar_col_libro_iva(cursor)
 
     cursor.execute(
         """
         INSERT INTO cuentas_corrientes (
             entidad_id, tipo_comprobante, numero_comprobante, fecha, vencimiento,
-            neto, iva, debe, haber, total, estado, usuario_registro, empresa_id, observaciones
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'Pendiente', ?, ?, ?);
+            neto, iva, debe, haber, total, estado, usuario_registro, empresa_id, observaciones, libro_iva
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'Pendiente', ?, ?, ?, 'V');
         """,
         (
             ent["cuit"], tipo, nro, fecha, venc,
@@ -8911,6 +8922,8 @@ from ratios_api import register_ratios_routes
 register_ratios_routes(app, get_db, get_empresa_activa_id)
 from sueldos_api import register_sueldos_routes
 register_sueldos_routes(app, get_db, get_empresa_activa_id)
+from iva_api import register_iva_routes
+register_iva_routes(app, get_db, get_empresa_activa_id)
 
 # Audit schema antes de SaaS (usuarios_sistema)
 try:
