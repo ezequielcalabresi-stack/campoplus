@@ -1813,7 +1813,8 @@ def _refrescar_estados_cuotas_por_debito(cursor, credito_id: int):
             ) THEN 'Pagada'
             ELSE 'Pendiente'
         END
-        WHERE credito_id = ?;
+        WHERE credito_id = ?
+          AND movimiento_banco_id IN (SELECT id FROM movimientos_cta_cte_bancos);
         """,
         (credito_id,),
     )
