@@ -7559,6 +7559,61 @@ def _fmt_cuota_api(v) -> str:
     return s
 
 
+def _lineas_creditos_fuera_de_access(cur, empresa_id: int, desde: str, hasta: str) -> List[dict]:
+    """Cuotas pendientes de créditos que no figuran en la proyección importada del Access (ej. cargados en CAmpo+)."""
+    cur.execute(
+        """
+        SELECT q.fecha_pago, q.nro_cuota, q.total_ars, q.total_pagar, q.capital_usd, q.intereses_usd,
+               q.cargos_usd, q.tipo_cambio, q.capital_ars, q.intereses_ars, q.cargos_ars,
+               c.nro_credito, c.entidad_financiera, c.banco, c.moneda, c.amortizacion, c.plazo,
+               cta.nro_cta_cte
+        FROM creditos_cuotas q
+        JOIN creditos_prestamos c ON c.id = q.credito_id
+        LEFT JOIN movimientos_cta_cte_bancos m ON m.id = q.movimiento_banco_id
+        LEFT JOIN ctas_ctes_bancarias cta ON cta.id = COALESCE(q.cuenta_id, c.cuenta_id)
+        WHERE COALESCE(q.empresa_id, c.empresa_id, 1) = ?
+          AND UPPER(COALESCE(q.estado, '')) = 'PENDIENTE'
+          AND COALESCE(q.fecha_pago, '') BETWEEN ? AND ?
+          AND NOT EXISTS (
+                SELECT 1 FROM flujo_proyeccion_access f
+                WHERE COALESCE(f.empresa_id, 1) = ?
+                  AND (f.id_access = COALESCE(q.id_access, m.id_access)
+                       OR (f.fecha_debito = q.fecha_pago AND ABS(COALESCE(f.subtotal, 0) - COALESCE(q.total_ars, q.total_pagar, 0)) < 1))
+          )
+        ORDER BY q.fecha_pago, q.nro_cuota;
+        """,
+        (empresa_id, desde, hasta, empresa_id),
+    )
+    lineas = []
+    for d in (dict(r) for r in cur.fetchall()):
+        es_usd = (d.get("moneda") or "ARS").upper() == "USD"
+        ars = round(float(d.get("total_ars") or d.get("total_pagar") or 0), 2)
+        if ars < 0.01:
+            continue
+        lineas.append({
+            "fecha": d["fecha_pago"][:10],
+            "detalle": d.get("entidad_financiera") or d.get("banco") or f"Crédito {d.get('nro_credito') or ''}",
+            "forma_pago": d.get("amortizacion") or "Crédito",
+            "cta_cte": (d.get("nro_cta_cte") or "").strip(),
+            "nro_cuota": str(d.get("nro_cuota") or ""),
+            "tipo_cambio": float(d.get("tipo_cambio") or 0) if es_usd else 0,
+            "plazo": str(d.get("plazo") or ""),
+            "capital": round(float(d.get("capital_ars") or 0), 2) if es_usd else ars,
+            "intereses": round(float(d.get("intereses_ars") or 0), 2),
+            "impuestos": 0.0,
+            "cargos": round(float(d.get("cargos_ars") or 0), 2),
+            "subtotal": ars,
+            "monto_ars": ars,
+            "monto_usd": round(float(d.get("capital_usd") or 0), 2) if es_usd else 0.0,
+            "varios": "",
+            "origen": "Crédito (CAmpo+)",
+            "fuente": "credito",
+            "moneda": "USD" if es_usd else "ARS",
+            "es_disponibilidad": False,
+        })
+    return lineas
+
+
 @app.get("/api/financiero/flujo_proyectado")
 def api_flujo_proyectado(
     desde: Optional[str] = None,
@@ -7667,6 +7722,8 @@ def api_flujo_proyectado(
                 "moneda": (d.get("moneda") or "ARS"),
                 "es_disponibilidad": es_disp,
             })
+        lineas += _lineas_creditos_fuera_de_access(cur, empresa_id, desde, hasta)
+        lineas.sort(key=lambda x: x["fecha"])
         if incluir_disponibilidades:
             lineas = _lineas_disponibilidades_financiero(cur, empresa_id, desde) + lineas
     else:
