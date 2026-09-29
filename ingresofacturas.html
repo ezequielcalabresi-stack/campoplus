@@ -245,11 +245,23 @@
                             <input type="text" id="iva105Manual" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono font-bold text-blue-900 bg-white">
                         </div>
                         <div>
+                            <label class="font-medium text-slate-600">Percepción IVA ($)</label>
+                            <input type="text" id="percepcionIva" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono" title="RG 2408 / RG 3337 / aduana. Va a la posición de IVA como pago a cuenta.">
+                        </div>
+                        <div>
                             <label class="font-medium text-slate-600">Percepción IIBB Bs.As. ($)</label>
                             <input type="text" id="percepcionIibb" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono">
                         </div>
                         <div>
-                            <label class="font-medium text-slate-600">Otras Percepciones / Impuestos ($)</label>
+                            <label class="font-medium text-slate-600">Conceptos no gravados ($)</label>
+                            <input type="text" id="noGravado" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono" title="Importes de la factura fuera de los renglones, no alcanzados por IVA">
+                        </div>
+                        <div>
+                            <label class="font-medium text-slate-600">Operaciones exentas ($)</label>
+                            <input type="text" id="exento" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono" title="Importes exentos de la factura fuera de los renglones">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="font-medium text-slate-600">Otros tributos (percep. IIBB otras jurisdicciones, imp. internos, tasas) ($)</label>
                             <input type="text" id="otrasPercepciones" value="0,00" onfocus="onFocusMoneda(this)" oninput="formatearMoneda(this, true)" onblur="onBlurMoneda(this)" class="mt-1 block w-full rounded border p-1.5 text-right font-mono">
                         </div>
                     </div>
@@ -907,6 +919,7 @@
             document.getElementById('iva105Manual').value = "0,00";
             document.getElementById('percepcionIibb').value = "0,00";
             document.getElementById('otrasPercepciones').value = "0,00";
+            ['percepcionIva', 'noGravado', 'exento'].forEach(id => { document.getElementById(id).value = "0,00"; });
             calcularTotales();
         }
 
@@ -987,10 +1000,19 @@
 
             let iibb = limpiarNumero(document.getElementById('percepcionIibb').value);
             let otras = limpiarNumero(document.getElementById('otrasPercepciones').value);
+            let adicionales = importesAdicionales();
 
-            let totalFactura = totalNeto + totalIva + iibb + otras;
+            let totalFactura = totalNeto + totalIva + iibb + otras + adicionales.percIva + adicionales.noGravado + adicionales.exento;
             document.getElementById('lblTotalFactura').innerText = "$ " + totalFactura.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             return { totalNeto, totalFactura };
+        }
+
+        function importesAdicionales() {
+            return {
+                percIva: limpiarNumero(document.getElementById('percepcionIva').value),
+                noGravado: limpiarNumero(document.getElementById('noGravado').value),
+                exento: limpiarNumero(document.getElementById('exento').value),
+            };
         }
 
         function toggleMoneda(select) {
@@ -1069,7 +1091,8 @@
             let totalIva = iva21 + iva105;
             let iibb = limpiarNumero(document.getElementById('percepcionIibb').value);
             let otras = limpiarNumero(document.getElementById('otrasPercepciones').value);
-            let totalFactura = totalNeto + totalIva + iibb + otras;
+            let adicionales = importesAdicionales();
+            let totalFactura = totalNeto + totalIva + iibb + otras + adicionales.percIva + adicionales.noGravado + adicionales.exento;
 
             if (totalNeto <= 0 || totalFactura <= 0) {
                 alert("ERROR DE VALIDACIÓN:\n\nEl Subtotal Neto y el Total del comprobante deben ser mayores a $ 0,00.");
@@ -1164,6 +1187,10 @@
                 neto: totalNeto,
                 iva: totalIva,
                 percepcion_iibb: iibb,
+                percepcion_iva: adicionales.percIva,
+                no_gravado: adicionales.noGravado,
+                exento: adicionales.exento,
+                otros_tributos: otras,
                 total: totalFactura,
                 usuario_registro: usuario,
                 asientos: asientos,

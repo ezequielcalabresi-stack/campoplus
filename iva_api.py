@@ -7,6 +7,7 @@ disponibilidad anterior (neto de devoluciones) = saldo a pagar o a favor.
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 import unicodedata
@@ -18,9 +19,12 @@ from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+import iva_arca
+
 SECCIONES = ("debito", "credito", "retencion", "percepcion", "devolucion")
 TIPOS_AJUSTE = SECCIONES + ("pago_cuenta",)
 ALICUOTAS = (0.21, 0.105, 0.27, 0.05, 0.025)
+ORIGENES_ITEMS = ("cc", "cc_perc", "banco", "granos", "hacienda", "leche", "arca")
 
 
 # ---------------------------------------------------------------- esquema
@@ -77,6 +81,7 @@ def init_iva_schema(cur) -> None:
         );
         """
     )
+    iva_arca.init_arca_schema(cur)
 
 
 # ---------------------------------------------------------------- utilidades
@@ -95,6 +100,10 @@ def _f(v) -> float:
 
 def _r2(v) -> float:
     return round(float(v or 0) + 0.0, 2)
+
+
+def _fmt(v) -> str:
+    return f"{_r2(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _iso(fecha) -> str:
@@ -230,16 +239,18 @@ def _in_clause(ids: list) -> str:
 def _items_cuentas_corrientes(cur, empresa_id: int, periodo: str, ovr: dict) -> list:
     cols = _cols(cur, "cuentas_corrientes")
     col_libro = "cc.libro_iva" if "libro_iva" in cols else "NULL"
+    extras = ", ".join(f"COALESCE(cc.{c},0) AS {c}" if c in cols else f"0 AS {c}"
+                       for c in ("percepcion_iva", "no_gravado", "exento"))
     tiene_asientos = _tabla_existe(cur, "asientos_contables") and "asiento_id" in cols
     join_as = "LEFT JOIN asientos_contables a ON a.id = cc.asiento_id" if tiene_asientos else ""
     col_origen = "a.origen_modulo" if tiene_asientos else "NULL"
     p1, p2, p3 = _patrones_fecha(periodo)
-    movidos = _ids_movidos_a(ovr, "cc", periodo)
+    movidos = _ids_movidos_a(ovr, "cc", periodo) + _ids_movidos_a(ovr, "cc_perc", periodo)
     cur.execute(
         f"""
         SELECT cc.id, cc.entidad_id, cc.tipo_comprobante, cc.numero_comprobante, cc.fecha,
                COALESCE(cc.neto,0) AS neto, COALESCE(cc.iva,0) AS iva, COALESCE(cc.total,0) AS total,
-               COALESCE(cc.debe,0) AS debe, COALESCE(cc.haber,0) AS haber,
+               COALESCE(cc.debe,0) AS debe, COALESCE(cc.haber,0) AS haber, {extras},
                cc.observaciones, {col_libro} AS libro_iva, {col_origen} AS origen_modulo,
                (SELECT e.razon_social FROM entidades e
                  WHERE REPLACE(e.cuit,'-','') = REPLACE(cc.entidad_id,'-','') LIMIT 1) AS razon
@@ -281,19 +292,29 @@ def _items_cuentas_corrientes(cur, empresa_id: int, periodo: str, ovr: dict) -> 
         else:
             a = _alicuota_inferida(neto, iva)
             alicuotas = [{"alicuota": a, "neto": _r2(neto * signo), "iva": _r2(iva * signo)}]
-        items.append({
-            "origen": "cc", "origen_id": int(f["id"]),
-            "seccion": "debito" if libro == "V" else "credito",
-            "libro": libro,
+        base = {
             "fecha": _iso(f["fecha"]), "fecha_original": f["fecha"],
             "periodo_natural": _periodo_de(f["fecha"]),
             "tipo": f["tipo_comprobante"] or "", "letra": _letra(f["tipo_comprobante"]),
             "comprobante": f["numero_comprobante"] or "",
             "cuit": re.sub(r"\D", "", f["entidad_id"] or ""), "razon": f["razon"] or "",
+        }
+        items.append({
+            **base, "origen": "cc", "origen_id": int(f["id"]),
+            "seccion": "debito" if libro == "V" else "credito",
+            "libro": libro,
             "neto": _r2(neto * signo), "iva": _r2(iva * signo), "total": _r2(_f(f["total"]) * signo),
+            "no_gravado": _r2(_f(f["no_gravado"]) * signo), "exento": _r2(_f(f["exento"]) * signo),
             "importe": _r2(iva * signo), "alicuotas": alicuotas,
             "fuente": "Factura de venta" if libro == "V" else "Factura de compra",
         })
+        perc = _f(f["percepcion_iva"])
+        if perc and libro == "C":
+            items.append({
+                **base, "origen": "cc_perc", "origen_id": int(f["id"]), "seccion": "percepcion", "libro": "",
+                "neto": 0.0, "iva": 0.0, "total": _r2(perc * signo), "importe": _r2(perc * signo),
+                "alicuotas": [], "fuente": "Percepción IVA en factura de compra",
+            })
 
     # Retenciones / percepciones / reintegros de IVA registrados en la cuenta corriente.
     for f in filas:
@@ -465,6 +486,168 @@ def _items_ajustes(cur, empresa_id: int, periodo: str) -> list:
     return items
 
 
+# ---------------------------------------------------------------- conciliación ARCA
+
+def _pv_num_de_texto(s) -> tuple:
+    s = str(s or "")
+    m = re.search(r"(\d+)\s*[-/ ]\s*(\d+)\s*$", s)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    d = re.sub(r"\D", "", s)
+    if not d:
+        return None, None
+    if len(d) > 8:
+        return int(d[:-8]), int(d[-8:])
+    return None, int(d)
+
+
+def _mismo_numero(texto, pv: int, numero: int) -> bool:
+    p, n = _pv_num_de_texto(texto)
+    return n == numero and (p is None or not pv or p == pv)
+
+
+def _lado_arca(a: dict) -> str:
+    venta_liq = a["tipo_codigo"] in iva_arca.TIPOS_VENTA_LIQUIDADA
+    if a["origen"] == "R":
+        return "V" if venta_liq else "C"
+    return "C" if venta_liq else "V"
+
+
+def _iva_computable_arca(a: dict, lado: str) -> float:
+    if lado == "C" and (a.get("letra") or "") not in ("A", "M", ""):
+        return 0.0
+    return _f(a["iva"])
+
+
+def _item_arca(a: dict, lado: str) -> dict:
+    signo = -1 if a["es_nc"] else 1
+    iva = _iva_computable_arca(a, lado)
+    alic = [{"alicuota": x.get("alicuota"), "neto": _r2(_f(x["neto"]) * signo), "iva": _r2(_f(x["iva"]) * signo)}
+            for x in (a.get("alicuotas") or [])] if iva else []
+    return {
+        "origen": "arca", "origen_id": int(a["id"]), "seccion": "debito" if lado == "V" else "credito", "libro": lado,
+        "fecha": a["fecha"], "fecha_original": a["fecha"], "periodo_natural": a["periodo"],
+        "tipo": a["tipo"] or "", "letra": a.get("letra") or "",
+        "comprobante": f"{int(a['punto_venta'] or 0):05d}-{int(a['numero'] or 0):08d}",
+        "cuit": a["cuit"] or "", "razon": a["denominacion"] or "",
+        "neto": _r2(_f(a["neto_gravado"]) * signo), "iva": _r2(iva * signo), "total": _r2(_f(a["total"]) * signo),
+        "no_gravado": _r2(_f(a["no_gravado"]) * signo), "exento": _r2(_f(a["exento"]) * signo),
+        "importe": _r2(iva * signo), "alicuotas": alic,
+        "fuente": "ARCA Mis Comprobantes (no cargado en el programa)",
+    }
+
+
+def _buscar_en_otros_periodos(cur, empresa_id: int, pendientes: list) -> dict:
+    """Busca en toda la cuenta corriente los comprobantes de ARCA que no aparecen en el período."""
+    cuits = sorted({a["cuit"] for a, _ in pendientes if a["cuit"]})
+    if not cuits:
+        return {}
+    marcas = ",".join("?" for _ in cuits)
+    cur.execute(
+        f"""SELECT id, fecha, tipo_comprobante, numero_comprobante, COALESCE(iva,0) AS iva,
+                   REPLACE(REPLACE(entidad_id,'-',''),' ','') AS cuit
+            FROM cuentas_corrientes WHERE COALESCE(empresa_id,1)=? AND REPLACE(REPLACE(entidad_id,'-',''),' ','') IN ({marcas});""",
+        (empresa_id, *cuits),
+    )
+    filas = [dict(r) for r in cur.fetchall() if _es_comprobante_iva(r["tipo_comprobante"])]
+    out = {}
+    for a, _ in pendientes:
+        for f in filas:
+            if f["cuit"] == a["cuit"] and _mismo_numero(f["numero_comprobante"], a["punto_venta"], a["numero"]):
+                out[a["id"]] = f
+                break
+    return out
+
+
+def _conciliar_arca(cur, empresa_id: int, periodo: str, items: list, ovr: dict) -> tuple:
+    """Devuelve (conciliacion, items_arca) para el período."""
+    comps = iva_arca.comprobantes_periodo(cur, empresa_id, periodo, _ids_movidos_a(ovr, "arca", periodo))
+    if not comps:
+        return None, []
+    lados_importados = {("C" if a["origen"] == "R" else "V") for a in comps if a["periodo"] == periodo}
+    prog = [it for it in items if it["origen"] in ("cc", "granos", "hacienda", "leche")
+            and it["seccion"] in ("debito", "credito")]
+    usados, filas, pendientes = set(), [], []
+
+    for a in comps:
+        lado = _lado_arca(a)
+        signo = -1 if a["es_nc"] else 1
+        cand = [it for it in prog if it["libro"] == lado and id(it) not in usados and it["cuit"] == a["cuit"]]
+        match = next((it for it in cand if _mismo_numero(it["comprobante"], a["punto_venta"], a["numero"])), None)
+        por_importe = False
+        if match is None and a["total"]:
+            match = next((it for it in cand if abs(abs(it["total"]) - abs(a["total"])) <= 1), None)
+            por_importe = match is not None
+        if match is None:
+            pendientes.append((a, lado))
+            continue
+        usados.add(id(match))
+        iva_arca_c = _r2(_iva_computable_arca(a, lado) * signo)
+        dif = _r2(match["iva"] - iva_arca_c)
+        alic_arca = [x for x in (a.get("alicuotas") or []) if x.get("alicuota") is not None]
+        completado = False
+        if alic_arca and abs(dif) <= 1 and (any(x["alicuota"] is None for x in match["alicuotas"]) or len(alic_arca) > len(match["alicuotas"])):
+            match["alicuotas"] = [{"alicuota": x["alicuota"], "neto": _r2(_f(x["neto"]) * signo), "iva": _r2(_f(x["iva"]) * signo)}
+                                  for x in alic_arca]
+            completado = True
+        estado = "ok" if abs(dif) <= 1 else "diferencia"
+        notas = []
+        if por_importe:
+            notas.append("Vinculado por CUIT e importe (el número no coincide).")
+        if completado:
+            notas.append("Alícuotas completadas con el detalle de ARCA.")
+        if match["estado"] in ("excluido", "movido_a"):
+            notas.append("En el programa está excluido o movido a otro período.")
+        if lado == "C" and a.get("letra") in ("B", "C") and a["iva"]:
+            notas.append(f"Comprobante {a['letra']}: el IVA no es computable como crédito fiscal.")
+        filas.append({"estado": estado, "lado": lado, "arca": _resumen_arca(a, iva_arca_c),
+                      "programa": _resumen_item(match), "dif_iva": dif, "nota": " ".join(notas)})
+
+    otros = _buscar_en_otros_periodos(cur, empresa_id, pendientes)
+    items_arca = []
+    for a, lado in pendientes:
+        signo = -1 if a["es_nc"] else 1
+        iva_c = _r2(_iva_computable_arca(a, lado) * signo)
+        f = otros.get(a["id"])
+        if f and lado == "C":
+            filas.append({"estado": "otro_periodo", "lado": lado, "arca": _resumen_arca(a, iva_c),
+                          "programa": {"origen": "cc", "origen_id": int(f["id"]), "fecha": _iso(f["fecha"]),
+                                       "periodo": _periodo_de(f["fecha"]), "tipo": f["tipo_comprobante"],
+                                       "comprobante": f["numero_comprobante"], "iva": _r2(_f(f["iva"]) * signo)},
+                          "dif_iva": 0.0, "nota": f"Cargado en la cuenta corriente con fecha {_iso(f['fecha'])}."})
+            continue
+        it = _item_arca(a, lado)
+        items_arca.append(it)
+        filas.append({"estado": "solo_arca", "lado": lado, "arca": _resumen_arca(a, iva_c), "programa": None,
+                      "dif_iva": iva_c, "nota": "No está cargado en el programa.", "item": {"origen": "arca", "origen_id": int(a["id"])}})
+
+    for it in prog:
+        if id(it) in usados or it["libro"] not in lados_importados or it["estado"] not in ("computa", "movido_desde"):
+            continue
+        filas.append({"estado": "solo_programa", "lado": it["libro"], "arca": None, "programa": _resumen_item(it),
+                      "dif_iva": _r2(it["iva"]), "nota": "No figura en Mis Comprobantes de ARCA."})
+
+    orden = {"diferencia": 0, "solo_arca": 1, "otro_periodo": 2, "solo_programa": 3, "ok": 4}
+    filas.sort(key=lambda x: (orden[x["estado"]], x["lado"], (x["arca"] or x["programa"] or {}).get("fecha") or ""))
+    resumen = {k: sum(1 for x in filas if x["estado"] == k) for k in orden}
+    iva_arca_tot = {l: _r2(sum(x["arca"]["iva_computable"] for x in filas if x["arca"] and x["lado"] == l)) for l in ("C", "V")}
+    return {"importado": sorted(lados_importados), "resumen": resumen, "iva_arca": iva_arca_tot, "filas": filas}, items_arca
+
+
+def _resumen_arca(a: dict, iva_computable: float) -> dict:
+    signo = -1 if a["es_nc"] else 1
+    return {"id": int(a["id"]), "origen": a["origen"], "fecha": a["fecha"], "tipo": a["tipo"], "letra": a.get("letra") or "",
+            "comprobante": f"{int(a['punto_venta'] or 0):05d}-{int(a['numero'] or 0):08d}", "cuit": a["cuit"],
+            "denominacion": a["denominacion"], "neto": _r2(_f(a["neto_gravado"]) * signo), "iva": _r2(_f(a["iva"]) * signo),
+            "iva_computable": iva_computable, "total": _r2(_f(a["total"]) * signo), "alicuotas": a.get("alicuotas") or []}
+
+
+def _resumen_item(it: dict) -> dict:
+    return {"origen": it["origen"], "origen_id": it["origen_id"], "fecha": it["fecha"], "periodo": it["periodo_natural"],
+            "tipo": it["tipo"], "comprobante": it["comprobante"], "razon": it["razon"], "neto": it["neto"],
+            "iva": it["iva"], "total": it["total"], "estado": it["estado"]}
+
+
 # ---------------------------------------------------------------- cálculo
 
 def _cabecera(cur, empresa_id: int, periodo: str) -> Optional[dict]:
@@ -488,6 +671,32 @@ def _saldos_cierre_anterior(cur, empresa_id: int, periodo: str, memo: dict, prof
     return {"st_a_favor": res["st_a_favor"], "sld_a_favor": res["sld_a_favor"], "periodo": prev, "fuente": "borrador"}
 
 
+def _aplicar_override(it: dict, ovr: dict, periodo: str) -> bool:
+    """Fija el estado del ítem en el período; False si no corresponde mostrarlo."""
+    o = ovr.get((it["origen"], it["origen_id"]))
+    it["override_id"] = o["id"] if o else None
+    it["motivo"] = (o or {}).get("motivo") or ""
+    destino = (o["periodo_destino"] or "") if o else None
+    if o is None:
+        if it["periodo_natural"] != periodo:
+            return False
+        # Los reintegros cobrados y los comprobantes que sólo están en ARCA se muestran
+        # pero no computan hasta confirmarlos.
+        it["estado"] = "informativo" if it["seccion"] == "devolucion" or it["origen"] == "arca" else "computa"
+    elif destino == "":
+        if it["periodo_natural"] != periodo:
+            return False
+        it["estado"] = "excluido"
+    elif destino == periodo:
+        it["estado"] = "movido_desde"
+    else:
+        if it["periodo_natural"] != periodo:
+            return False
+        it["estado"] = "movido_a"
+        it["periodo_destino"] = destino
+    return True
+
+
 def calcular_posicion(cur, empresa_id: int, periodo: str, memo: Optional[dict] = None,
                       profundidad: int = 0, con_items: bool = True) -> dict:
     memo = {} if memo is None else memo
@@ -502,29 +711,9 @@ def calcular_posicion(cur, empresa_id: int, periodo: str, memo: Optional[dict] =
         + _items_bancos(cur, empresa_id, periodo, ovr)
         + _items_liquidaciones(cur, empresa_id, periodo, ovr)
     )
-    items = []
-    for it in crudos:
-        o = ovr.get((it["origen"], it["origen_id"]))
-        it["override_id"] = o["id"] if o else None
-        it["motivo"] = (o or {}).get("motivo") or ""
-        destino = (o["periodo_destino"] or "") if o else None
-        if o is None:
-            if it["periodo_natural"] != periodo:
-                continue
-            # Los reintegros cobrados se muestran pero no restan hasta confirmarlos.
-            it["estado"] = "informativo" if it["seccion"] == "devolucion" else "computa"
-        elif destino == "":
-            if it["periodo_natural"] != periodo:
-                continue
-            it["estado"] = "excluido"
-        elif destino == periodo:
-            it["estado"] = "movido_desde"
-        else:
-            if it["periodo_natural"] != periodo:
-                continue
-            it["estado"] = "movido_a"
-            it["periodo_destino"] = destino
-        items.append(it)
+    items = [it for it in crudos if _aplicar_override(it, ovr, periodo)]
+    conciliacion, items_arca = _conciliar_arca(cur, empresa_id, periodo, items, ovr)
+    items += [it for it in items_arca if _aplicar_override(it, ovr, periodo)]
     items += [dict(it, estado="computa", override_id=None, motivo="") for it in _items_ajustes(cur, empresa_id, periodo)]
     items.sort(key=lambda x: (x["seccion"], x["fecha"], x["comprobante"]))
 
@@ -598,6 +787,13 @@ def calcular_posicion(cur, empresa_id: int, periodo: str, memo: Optional[dict] =
         except Exception:
             out["presentado"] = None
     if con_items:
+        if conciliacion:
+            por_id = {it["origen_id"]: it for it in items if it["origen"] == "arca"}
+            for fila in conciliacion["filas"]:
+                it = por_id.get((fila.get("item") or {}).get("origen_id"))
+                if it:
+                    fila["item"].update(estado=it["estado"], override_id=it["override_id"])
+        out["conciliacion"] = conciliacion
         out["items"] = items
         out["alertas"] = _alertas(items, out)
     memo[clave] = out
@@ -631,6 +827,17 @@ def _alertas(items: list, pos: dict) -> list:
     if any(it["origen"] == "granos" and it["seccion"] == "retencion" for it in comp) and \
        any(it["origen"] == "cc" and it["seccion"] == "retencion" for it in comp):
         al.append({"nivel": "aviso", "texto": "Hay retenciones de IVA de granos en las liquidaciones y también en la cuenta corriente: revisá que no estén duplicadas."})
+    conc = pos.get("conciliacion")
+    if conc:
+        r = conc["resumen"]
+        pend = [it for it in items if it["origen"] == "arca" and it["estado"] == "informativo"]
+        if pend:
+            al.append({"nivel": "error", "texto": f"ARCA informa {len(pend)} comprobante(s) que no están cargados en el programa "
+                                                  f"(IVA $ {_fmt(sum(it['importe'] for it in pend))}). Revisá la solapa Conciliación ARCA."})
+        if r["diferencia"]:
+            al.append({"nivel": "aviso", "texto": f"{r['diferencia']} comprobante(s) con IVA distinto al informado por ARCA."})
+        if r["solo_programa"]:
+            al.append({"nivel": "aviso", "texto": f"{r['solo_programa']} comprobante(s) cargados que no figuran en Mis Comprobantes de ARCA."})
     pres = pos.get("presentado")
     if pres and abs(_f(pres.get("saldo")) - _f(pos["resultado"]["saldo"])) > 1:
         al.append({"nivel": "error", "texto": "Los datos cambiaron después de presentar: el saldo recalculado difiere del presentado. Si corresponde, hacé una rectificativa."})
@@ -726,6 +933,31 @@ def excel_posicion(pos: dict) -> bytes:
         for j, w in enumerate((11, 22, 18, 14, 34, 16, 10, 16, 16, 40, 22), start=1):
             wsx.column_dimensions[get_column_letter(j)].width = w
         wsx.freeze_panes = "A2"
+
+    conc = pos.get("conciliacion")
+    if conc:
+        wsc = wb.create_sheet("Conciliación ARCA")
+        cab_c = ("Resultado", "Libro", "Fecha", "Tipo", "Comprobante", "CUIT", "Razón social",
+                 "IVA ARCA (computable)", "IVA programa", "Diferencia", "Observaciones")
+        for j, h in enumerate(cab_c, start=1):
+            c = wsc.cell(1, j, h)
+            c.font = bold
+            c.fill = head_fill
+        nombres = {"ok": "Coincide", "diferencia": "Diferencia de IVA", "solo_arca": "Sólo en ARCA",
+                   "otro_periodo": "Cargado en otro período", "solo_programa": "Sólo en el programa"}
+        for i, f in enumerate(conc["filas"], start=2):
+            a, p = f["arca"] or {}, f["programa"] or {}
+            vals = (nombres.get(f["estado"], f["estado"]), "Compras" if f["lado"] == "C" else "Ventas",
+                    a.get("fecha") or p.get("fecha"), a.get("tipo") or p.get("tipo"), a.get("comprobante") or p.get("comprobante"),
+                    a.get("cuit") or "", a.get("denominacion") or p.get("razon") or "",
+                    a.get("iva_computable") if a else None, p.get("iva") if p else None, f["dif_iva"], f["nota"])
+            for j, v in enumerate(vals, start=1):
+                c = wsc.cell(i, j, v)
+                if j in (8, 9, 10):
+                    c.number_format = fmt
+        for j, w in enumerate((24, 10, 11, 26, 18, 14, 34, 18, 16, 16, 50), start=1):
+            wsc.column_dimensions[get_column_letter(j)].width = w
+        wsc.freeze_panes = "A2"
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -755,6 +987,12 @@ class AjusteModel(BaseModel):
     alicuota: float = 0
     neto: float = 0
     importe: float
+
+
+class ArcaImportModel(BaseModel):
+    nombre: str
+    contenido_b64: str
+    origen: Optional[str] = None
 
 
 class ExclusionModel(BaseModel):
@@ -904,7 +1142,7 @@ def register_iva_routes(app, get_db, get_empresa_activa_id):
 
     @app.post("/api/iva/exclusiones")
     def api_exclusion(data: ExclusionModel):
-        if data.origen not in ("cc", "banco", "granos", "hacienda", "leche"):
+        if data.origen not in ORIGENES_ITEMS:
             raise HTTPException(400, "Origen inválido.")
         destino = (data.periodo_destino or "").strip()
         if destino:
@@ -967,6 +1205,63 @@ def register_iva_routes(app, get_db, get_empresa_activa_id):
                 meses.append({"periodo": p, "estado": pos["cabecera"]["estado"], "vencimiento": pos["vencimiento"],
                               **pos["resultado"], "importe_pagado": pos["cabecera"]["importe_pagado"]})
             return {"anio": anio, "meses": meses}
+        finally:
+            conn.close()
+
+    @app.post("/api/iva/arca/importar")
+    def api_arca_importar(data: ArcaImportModel):
+        try:
+            contenido = base64.b64decode(data.contenido_b64.split(",")[-1])
+        except Exception:
+            raise HTTPException(400, "Archivo inválido.")
+        if not contenido:
+            raise HTTPException(400, "El archivo está vacío.")
+        try:
+            res = iva_arca.parsear_mis_comprobantes(data.nombre or "archivo.csv", contenido,
+                                                    data.origen if data.origen in ("R", "E") else None)
+        except Exception as e:
+            raise HTTPException(400, f"No se pudo leer el archivo: {e}")
+        if not res["registros"]:
+            raise HTTPException(400, "No se encontraron comprobantes. " + " ".join(res["avisos"]))
+        emp = get_empresa_activa_id()
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            init_iva_schema(cur)
+            periodos = sorted({r["periodo"] for r in res["registros"]})
+            bloqueados = [p for p in periodos if (_cabecera(cur, emp, p) or {}).get("estado") == "presentada"]
+            guardado = iva_arca.guardar_comprobantes(cur, emp, res["registros"])
+            conn.commit()
+            return {**guardado, "origen": res["origen"], "periodos": periodos, "avisos": res["avisos"],
+                    "presentados": bloqueados, "total": len(res["registros"])}
+        finally:
+            conn.close()
+
+    @app.get("/api/iva/arca/importaciones")
+    def api_arca_importaciones():
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            out = iva_arca.resumen_importaciones(cur, get_empresa_activa_id())
+            conn.commit()
+            return out
+        finally:
+            conn.close()
+
+    @app.delete("/api/iva/arca")
+    def api_arca_borrar(periodo: str = Query(...), origen: str = Query(...)):
+        periodo = _validar_periodo(periodo)
+        if origen not in ("R", "E"):
+            raise HTTPException(400, "Origen inválido (R = recibidos, E = emitidos).")
+        emp = get_empresa_activa_id()
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            init_iva_schema(cur)
+            _exigir_abierto(cur, emp, periodo)
+            n = iva_arca.borrar_periodo(cur, emp, periodo, origen)
+            conn.commit()
+            return {"borrados": n}
         finally:
             conn.close()
 

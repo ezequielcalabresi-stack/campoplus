@@ -294,6 +294,17 @@ def obtener_codigo_regimen(descripcion: str) -> str:
         return f"{num:02d}" if num > 0 else '06'
     return '06'
 
+# libro_iva: 'C' = libro IVA compras, 'V' = libro IVA ventas (NULL en filas anteriores).
+_COLS_CC_IVA = (
+    ("libro_iva", "TEXT"),
+    ("percepcion_iva", "REAL DEFAULT 0"),
+    ("percepcion_iibb", "REAL DEFAULT 0"),
+    ("no_gravado", "REAL DEFAULT 0"),
+    ("exento", "REAL DEFAULT 0"),
+    ("otros_tributos", "REAL DEFAULT 0"),
+)
+
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -956,9 +967,9 @@ def init_db():
         cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN observaciones TEXT;")
     if "asiento_id" not in cols_cc:
         cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN asiento_id INTEGER;")
-    if "libro_iva" not in cols_cc:
-        # 'C' = libro IVA compras, 'V' = libro IVA ventas (NULL en filas anteriores).
-        cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN libro_iva TEXT;")
+    for col, ddl in _COLS_CC_IVA:
+        if col not in cols_cc:
+            cursor.execute(f"ALTER TABLE cuentas_corrientes ADD COLUMN {col} {ddl};")
 
     # 10. Agro / Márgenes brutos — campos, lotes, campañas, arrendamientos
     from agro_campania import init_agro_schema
@@ -1880,6 +1891,10 @@ class FacturaModel(BaseModel):
     total: float
     usuario_registro: str = "Administrador"
     percepcion_iibb: float = 0.0
+    percepcion_iva: float = 0.0
+    no_gravado: float = 0.0
+    exento: float = 0.0
+    otros_tributos: float = 0.0
     renglones: Optional[List[FacturaRenglonModel]] = None
 
 class OrdenPagoModel(BaseModel):
@@ -6344,8 +6359,10 @@ def obtener_granos():
 
 def _asegurar_col_libro_iva(cursor) -> None:
     cursor.execute("PRAGMA table_info(cuentas_corrientes);")
-    if "libro_iva" not in {c[1] for c in cursor.fetchall()}:
-        cursor.execute("ALTER TABLE cuentas_corrientes ADD COLUMN libro_iva TEXT;")
+    existentes = {c[1] for c in cursor.fetchall()}
+    for col, ddl in _COLS_CC_IVA:
+        if col not in existentes:
+            cursor.execute(f"ALTER TABLE cuentas_corrientes ADD COLUMN {col} {ddl};")
 
 
 @app.post("/api/facturas")
@@ -6370,13 +6387,16 @@ def guardar_factura(data: FacturaModel):
     cursor.execute("""
         INSERT INTO cuentas_corrientes (
             entidad_id, tipo_comprobante, numero_comprobante, fecha, vencimiento,
-            neto, iva, debe, haber, total, estado, usuario_registro, empresa_id, libro_iva
+            neto, iva, debe, haber, total, estado, usuario_registro, empresa_id, libro_iva,
+            percepcion_iva, percepcion_iibb, no_gravado, exento, otros_tributos
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?, 'C');
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?, 'C', ?, ?, ?, ?, ?);
     """, (
         data.cuit, data.tipo_comprobante, data.numero_comprobante, data.fecha,
         data.vencimiento, data.neto, data.iva, debe, haber, data.total,
         data.usuario_registro, empresa_id,
+        float(data.percepcion_iva or 0), float(data.percepcion_iibb or 0),
+        float(data.no_gravado or 0), float(data.exento or 0), float(data.otros_tributos or 0),
     ))
     cc_id = cursor.lastrowid
 
@@ -6479,6 +6499,8 @@ def guardar_factura(data: FacturaModel):
             es_nota_credito=es_nc,
             empresa_id=empresa_id,
             origen_id=cc_id,
+            percepcion_iva=float(data.percepcion_iva or 0),
+            otros_costos=float(data.no_gravado or 0) + float(data.exento or 0) + float(data.otros_tributos or 0),
         )
         if asiento_id:
             cursor.execute(

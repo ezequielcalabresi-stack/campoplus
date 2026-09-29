@@ -54,6 +54,7 @@
         <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="compras">Libro IVA Compras <span class="cnt" data-cnt="credito"></span></button>
         <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="ventas">Libro IVA Ventas <span class="cnt" data-cnt="debito"></span></button>
         <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="retper">Retenciones y percepciones <span class="cnt" data-cnt="retper"></span></button>
+        <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="arca">Conciliación ARCA <span id="cntArca"></span></button>
         <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="ajustes">Ajustes manuales</button>
         <button class="tab-btn border rounded px-3 py-1.5 text-sm font-semibold" data-tab="anual">Evolución anual</button>
     </div>
@@ -89,6 +90,40 @@
     <div class="tab-panel hidden" id="tab-compras"></div>
     <div class="tab-panel hidden" id="tab-ventas"></div>
     <div class="tab-panel hidden" id="tab-retper"></div>
+
+    <!-- Conciliación ARCA -->
+    <div class="tab-panel hidden" id="tab-arca">
+        <div class="grid lg:grid-cols-3 gap-4 mb-4">
+            <div class="border rounded-xl p-4 bg-slate-50 lg:col-span-2">
+                <h3 class="font-bold text-slate-800 text-sm mb-1">Importar "Mis Comprobantes" de ARCA</h3>
+                <p class="text-[11px] text-slate-500 mb-3">
+                    En ARCA entrá a <b>Mis Comprobantes</b> → <b>Recibidos</b> (o <b>Emitidos</b>), elegí el rango de fechas y descargá el CSV (viene en un .zip) o el Excel.
+                    Subí el archivo tal cual: se reconoce el formato solo. Si lo volvés a subir, se actualizan los comprobantes sin duplicarse.
+                </p>
+                <div class="flex flex-wrap items-end gap-2">
+                    <input id="arcaArchivo" type="file" accept=".zip,.csv,.xlsx,.txt" class="text-sm">
+                    <select id="arcaOrigen" class="border rounded p-2 text-sm">
+                        <option value="">Detectar Recibidos / Emitidos</option>
+                        <option value="R">Recibidos (compras)</option>
+                        <option value="E">Emitidos (ventas)</option>
+                    </select>
+                    <button type="button" id="btnArca" onclick="importarArca()" class="bg-violet-700 text-white px-4 py-2 rounded text-sm font-bold">Importar</button>
+                </div>
+                <div id="arcaMsg" class="text-xs mt-2"></div>
+            </div>
+            <div class="border rounded-xl p-4">
+                <h3 class="font-bold text-slate-800 text-sm mb-2">Importaciones del período</h3>
+                <div id="arcaImportaciones" class="text-xs"></div>
+            </div>
+        </div>
+        <div id="arcaResumen" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3"></div>
+        <div id="arcaTabla"></div>
+        <p class="text-[11px] text-slate-500 mt-2">
+            Se cruza por CUIT, punto de venta y número (y si no coincide, por CUIT e importe total). Los comprobantes que sólo están en ARCA no computan hasta que tocás
+            "Computar"; lo ideal es cargarlos en la cuenta corriente para que también impacten en la contabilidad. En las facturas B y C recibidas el IVA no es crédito fiscal.
+            Mis Comprobantes no informa las percepciones: esas siguen saliendo de lo cargado en el programa y del extracto bancario.
+        </p>
+    </div>
 
     <!-- Ajustes -->
     <div class="tab-panel hidden" id="tab-ajustes">
@@ -193,6 +228,7 @@ function mostrarTab(t) {
     document.querySelectorAll('#tabs .tab-btn').forEach(b => b.classList.toggle('activo', b.dataset.tab === t));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + t));
     if (t === 'anual') cargarAnual();
+    if (t === 'arca' && POS) cargarImportaciones();
 }
 
 async function api(url, opts = {}) {
@@ -251,7 +287,143 @@ function render() {
     renderLibro('ventas', it => it.seccion === 'debito', 'Libro IVA Ventas');
     renderLibro('retper', it => ['retencion', 'percepcion', 'devolucion'].includes(it.seccion), 'Retenciones, percepciones y reintegros');
     renderAjustes();
+    renderArca();
     document.getElementById('btnAjuste').disabled = cerrado();
+}
+
+const CONC_ESTADOS = {
+    diferencia: ['Diferencia de IVA', 'bg-amber-100 text-amber-800'],
+    solo_arca: ['Sólo en ARCA', 'bg-rose-100 text-rose-800'],
+    otro_periodo: ['Cargado en otro período', 'bg-sky-100 text-sky-800'],
+    solo_programa: ['Sólo en el programa', 'bg-slate-200 text-slate-700'],
+    ok: ['Coincide', 'bg-emerald-100 text-emerald-800'],
+};
+
+function accionesConciliacion(f) {
+    if (cerrado()) return '';
+    const b = (txt, fn, cls = 'text-violet-700') => `<button type="button" class="${cls} text-[11px] font-bold hover:underline mr-2" onclick="${fn}">${txt}</button>`;
+    if (f.estado === 'solo_arca' && f.item) {
+        if (f.item.override_id) return b('Quitar', `restaurar(${f.item.override_id})`, 'text-slate-600');
+        return b('Computar', `computarAca('arca', ${f.item.origen_id})`, 'text-emerald-700');
+    }
+    if (f.estado === 'otro_periodo' && f.programa)
+        return b('Traer a este período', `exclusion({origen: 'cc', origen_id: ${f.programa.origen_id}, periodo_destino: POS.periodo, motivo: 'Según ARCA corresponde a ${POS.periodo}'})`);
+    if (f.estado === 'solo_programa' && f.programa && f.programa.estado === 'computa')
+        return b('Excluir', `excluirItem('${f.programa.origen}', ${f.programa.origen_id})`, 'text-rose-700');
+    return '';
+}
+
+function renderArca() {
+    const c = POS.conciliacion;
+    const pend = c ? c.resumen.diferencia + c.resumen.solo_arca + c.resumen.otro_periodo : 0;
+    document.getElementById('cntArca').innerHTML = pend ? `<span class="bg-rose-600 text-white rounded-full px-1.5 text-[10px]">${pend}</span>` : '';
+    document.getElementById('btnArca').disabled = cerrado();
+    if (!c) {
+        document.getElementById('arcaResumen').innerHTML = '';
+        document.getElementById('arcaTabla').innerHTML = `<p class="text-sm text-slate-400">Todavía no importaste Mis Comprobantes para ${fmtPeriodo(POS.periodo)}.</p>`;
+        if (tabActiva === 'arca') cargarImportaciones();
+        return;
+    }
+    const importado = c.importado.map(l => l === 'C' ? 'Recibidos' : 'Emitidos').join(' y ') || 'comprobantes de otros períodos';
+    document.getElementById('arcaResumen').innerHTML = ['ok', 'diferencia', 'solo_arca', 'otro_periodo', 'solo_programa'].map(k =>
+        `<div class="border rounded-xl p-3 ${CONC_ESTADOS[k][1]}"><div class="text-[10px] font-bold uppercase opacity-80">${CONC_ESTADOS[k][0]}</div><div class="text-xl font-extrabold num">${c.resumen[k]}</div></div>`).join('');
+    const filas = c.filas.map(f => {
+        const a = f.arca || {}, p = f.programa || {};
+        const est = CONC_ESTADOS[f.estado];
+        const alic = (a.alicuotas || []).filter(x => x.alicuota !== null && x.alicuota !== undefined)
+            .map(x => (x.alicuota * 100).toLocaleString('es-AR') + '%').join(' / ');
+        let nota = f.nota || '';
+        if (f.estado === 'solo_arca' && f.item && f.item.estado === 'movido_desde') nota = 'Computado en este período. ' + nota;
+        return `<tr class="hover:bg-slate-50">
+            <td class="p-1.5"><span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${est[1]}">${est[0]}</span></td>
+            <td class="p-1.5 text-xs">${f.lado === 'C' ? 'Compras' : 'Ventas'}</td>
+            <td class="p-1.5 whitespace-nowrap">${fmtFecha(a.fecha || p.fecha)}</td>
+            <td class="p-1.5">${esc(a.tipo || p.tipo)}</td>
+            <td class="p-1.5 font-mono text-xs">${esc(a.comprobante || p.comprobante)}</td>
+            <td class="p-1.5">${esc(a.denominacion || p.razon || '')}<div class="font-mono text-[10px] text-slate-400">${esc(a.cuit || '')}</div></td>
+            <td class="p-1.5 text-right num">${f.arca ? money(a.iva_computable) : ''}<div class="text-[10px] text-slate-400">${alic}</div></td>
+            <td class="p-1.5 text-right num">${f.programa ? money(p.iva) : ''}</td>
+            <td class="p-1.5 text-right num font-semibold ${Math.abs(f.dif_iva) > 1 && f.estado !== 'ok' ? 'text-rose-700' : ''}">${f.estado === 'ok' ? '' : money(f.dif_iva)}</td>
+            <td class="p-1.5 text-xs text-slate-600">${esc(nota)}</td>
+            <td class="p-1.5 whitespace-nowrap">${accionesConciliacion(f)}</td>
+        </tr>`;
+    }).join('');
+    document.getElementById('arcaTabla').innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="font-bold text-slate-800">Conciliación con ARCA · ${fmtPeriodo(POS.periodo)} <span class="text-xs font-normal text-slate-500">(importado: ${importado})</span></h3>
+            <input class="border rounded p-1.5 text-sm w-64" placeholder="Buscar..." oninput="filtrarTabla(this)">
+        </div>
+        <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full text-sm">
+                <thead class="bg-violet-100 text-xs uppercase text-violet-900">
+                    <tr><th class="p-2 text-left">Resultado</th><th class="p-2 text-left">Libro</th><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Tipo</th>
+                        <th class="p-2 text-left">Comprobante</th><th class="p-2 text-left">Razón social</th><th class="p-2 text-right">IVA ARCA</th>
+                        <th class="p-2 text-right">IVA programa</th><th class="p-2 text-right">Diferencia</th><th class="p-2 text-left">Observaciones</th><th class="p-2"></th></tr>
+                </thead>
+                <tbody class="divide-y">${filas || '<tr><td colspan="11" class="p-4 text-center text-slate-400">Sin comprobantes</td></tr>'}</tbody>
+                <tfoot><tr class="fila-total"><td colspan="6" class="p-2">IVA según ARCA · compras $ ${money(c.iva_arca.C)} · ventas $ ${money(c.iva_arca.V)}</td><td colspan="5"></td></tr></tfoot>
+            </table>
+        </div>`;
+    if (tabActiva === 'arca') cargarImportaciones();
+}
+
+async function cargarImportaciones() {
+    let data;
+    try { data = await api('/api/iva/arca/importaciones'); } catch (e) { return; }
+    const delPeriodo = data.filter(d => d.periodo === POS.periodo);
+    const otros = data.filter(d => d.periodo !== POS.periodo).slice(0, 12);
+    const fila = (d, borrar) => `<div class="flex justify-between items-center py-1 border-b">
+        <span>${d.origen === 'R' ? 'Recibidos' : 'Emitidos'}${borrar ? '' : ' · ' + fmtPeriodo(d.periodo)}: <b>${d.n}</b> comp. · IVA $ ${money(d.iva)}</span>
+        ${borrar && !cerrado() ? `<button type="button" class="text-rose-600 font-bold" title="Borrar la importación" onclick="borrarArca('${d.periodo}', '${d.origen}')">×</button>` : ''}</div>`;
+    document.getElementById('arcaImportaciones').innerHTML =
+        (delPeriodo.length ? delPeriodo.map(d => fila(d, true)).join('') : '<p class="text-slate-400">Nada importado para este período.</p>') +
+        (otros.length ? `<div class="text-[10px] font-bold uppercase text-slate-400 mt-3 mb-1">Otros períodos</div>` + otros.map(d => fila(d, false)).join('') : '');
+}
+
+function leerBase64(file) {
+    return new Promise((ok, mal) => {
+        const r = new FileReader();
+        r.onload = () => ok(String(r.result).split(',').pop());
+        r.onerror = () => mal(new Error('No se pudo leer el archivo.'));
+        r.readAsDataURL(file);
+    });
+}
+
+async function importarArca() {
+    const file = document.getElementById('arcaArchivo').files[0];
+    const msg = document.getElementById('arcaMsg');
+    if (!file) { alert('Elegí el archivo descargado de Mis Comprobantes.'); return; }
+    const btn = document.getElementById('btnArca');
+    btn.disabled = true;
+    msg.className = 'text-xs mt-2 text-slate-500';
+    msg.textContent = 'Importando...';
+    try {
+        const body = { nombre: file.name, contenido_b64: await leerBase64(file), origen: document.getElementById('arcaOrigen').value || null };
+        const r = await api('/api/iva/arca/importar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const periodos = r.periodos.map(fmtPeriodo).join(', ');
+        let texto = `${r.origen === 'E' ? 'Emitidos' : 'Recibidos'}: ${r.total} comprobantes (${r.nuevos} nuevos, ${r.actualizados} actualizados) · ${periodos}.`;
+        if (r.presentados.length) texto += ` Atención: ${r.presentados.map(fmtPeriodo).join(', ')} ya está presentado; revisá si hace falta rectificar.`;
+        if (r.avisos.length) texto += ' ' + r.avisos.join(' ');
+        msg.className = 'text-xs mt-2 text-emerald-700 font-semibold';
+        msg.textContent = texto;
+        document.getElementById('arcaArchivo').value = '';
+        if (!r.periodos.includes(POS.periodo) && r.periodos.length === 1) {
+            document.getElementById('inpAnio').value = r.periodos[0].slice(0, 4);
+            document.getElementById('selMes').value = String(Number(r.periodos[0].slice(5, 7)));
+        }
+        await cargar();
+    } catch (e) {
+        msg.className = 'text-xs mt-2 text-rose-700 font-semibold';
+        msg.textContent = e.message;
+    } finally {
+        btn.disabled = cerrado();
+    }
+}
+
+async function borrarArca(periodo, origen) {
+    if (!confirm(`¿Borrar los ${origen === 'R' ? 'Recibidos' : 'Emitidos'} importados de ARCA para ${fmtPeriodo(periodo)}? No toca la cuenta corriente.`)) return;
+    try { await api(`/api/iva/arca?periodo=${periodo}&origen=${origen}`, { method: 'DELETE' }); } catch (e) { alert(e.message); return; }
+    await cargar();
 }
 
 function inputMonto(id, valor, placeholder) {

@@ -228,12 +228,15 @@ def asiento_para_comprobante_compra(
     es_nota_credito: bool = False,
     empresa_id: int = 1,
     origen_id: Optional[int] = None,
+    percepcion_iva: float = 0.0,
+    otros_costos: float = 0.0,
 ) -> Optional[int]:
     """
     Asiento de factura/ND de compra, o el INVERSO para Nota de Crédito.
 
     Factura/ND:
-      Debe  Insumos/Existencias (neto) + IVA CF + Perc. IIBB
+      Debe  Insumos/Existencias (neto + no gravado/exento/otros tributos) + IVA CF
+            + Perc. IIBB + Perc. IVA
       Haber Proveedores (total)
 
     Nota de Crédito (inverso — productos devueltos / crédito en cta cte):
@@ -258,10 +261,12 @@ def asiento_para_comprobante_compra(
             if str(cc).strip().upper() in ("SP", "S/P"):
                 return None
 
-    neto = round(float(neto or 0), 2)
+    otros = round(float(otros_costos or 0), 2)
+    neto = round(float(neto or 0) + otros, 2)
     total = round(float(total or 0), 2)
     iva = round(float(iva or 0), 2)
     iibb = round(float(percepcion_iibb or 0), 2)
+    perc_iva = round(float(percepcion_iva or 0), 2)
     iva21 = round(float(iva_21 or 0), 2)
     iva105 = round(float(iva_105 or 0), 2)
     if iva21 <= 0 and iva105 <= 0 and iva > 0:
@@ -272,12 +277,13 @@ def asiento_para_comprobante_compra(
 
     # Si total no viene, armarlo
     if total <= 0:
-        total = round(neto + iva21 + iva105 + iibb, 2)
+        total = round(neto + iva21 + iva105 + iibb + perc_iva, 2)
 
     cta_insumos = _asegurar_cuenta(cursor, "1.1.04", "Insumos y Existencias", "Activo")
     cta_iva21 = _asegurar_cuenta(cursor, "1.2.01", "IVA Crédito Fiscal 21%", "Activo")
     cta_iibb = _asegurar_cuenta(cursor, "1.2.02", "Percepciones IIBB", "Activo")
     cta_iva105 = _asegurar_cuenta(cursor, "1.2.03", "IVA Crédito Fiscal 10.5%", "Activo")
+    cta_perc_iva = _asegurar_cuenta(cursor, "1.2.04", "Percepciones y Retenciones de IVA", "Activo") if perc_iva > 0 else None
     cta_prov = _asegurar_cuenta(cursor, "2.1.01", "Proveedores Varios", "Pasivo")
 
     etiqueta = "Nota de Crédito" if es_nota_credito else "Factura/ND compra"
@@ -296,6 +302,8 @@ def asiento_para_comprobante_compra(
             lineas.append({"cuenta_id": cta_iva105, "debe": 0, "haber": iva105, "concepto_linea": "Reverso IVA CF 10.5%"})
         if iibb > 0:
             lineas.append({"cuenta_id": cta_iibb, "debe": 0, "haber": iibb, "concepto_linea": "Reverso Perc. IIBB"})
+        if perc_iva > 0:
+            lineas.append({"cuenta_id": cta_perc_iva, "debe": 0, "haber": perc_iva, "concepto_linea": "Reverso Perc. IVA"})
     else:
         if neto > 0:
             lineas.append({"cuenta_id": cta_insumos, "debe": neto, "haber": 0, "concepto_linea": "Insumos / gasto"})
@@ -305,6 +313,8 @@ def asiento_para_comprobante_compra(
             lineas.append({"cuenta_id": cta_iva105, "debe": iva105, "haber": 0, "concepto_linea": "IVA CF 10.5%"})
         if iibb > 0:
             lineas.append({"cuenta_id": cta_iibb, "debe": iibb, "haber": 0, "concepto_linea": "Perc. IIBB"})
+        if perc_iva > 0:
+            lineas.append({"cuenta_id": cta_perc_iva, "debe": perc_iva, "haber": 0, "concepto_linea": "Perc. IVA"})
         lineas.append({"cuenta_id": cta_prov, "debe": 0, "haber": total, "concepto_linea": concepto})
 
     # Ajuste de redondeo: diferencia a Proveedores
