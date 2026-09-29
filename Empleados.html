@@ -127,30 +127,63 @@
 
         <div id="k_kpis" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3"></div>
 
-        <div class="grid grid-cols-2 md:grid-cols-6 gap-2 border rounded-lg p-3 mb-3 text-sm bg-white">
-            <div>
-                <label class="text-[10px] font-bold uppercase text-slate-500">Fecha</label>
-                <input id="m_fecha" type="date" class="mt-1 w-full border rounded p-2">
+        <div id="k_sin_emp" class="border rounded-lg p-6 mb-3 text-center text-slate-400 text-sm">Seleccioná un empleado para ver su cuenta y cargar movimientos.</div>
+
+        <div id="k_form" class="hidden">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 border-2 border-emerald-300 rounded-lg p-3 mb-2 text-sm bg-emerald-50/60">
+                <div class="col-span-2 md:col-span-6 flex justify-between items-center">
+                    <span class="text-xs font-extrabold uppercase text-emerald-800">+ Crédito | a favor del empleado</span>
+                    <span class="text-[11px] text-emerald-800">Sueldo, premios, viáticos, SAC, ahorro, ajuste x recibo</span>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Fecha</label>
+                    <input id="mc_fecha" type="date" class="mt-1 w-full border rounded p-2 bg-white">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Concepto</label>
+                    <select id="mc_concepto" class="mt-1 w-full border rounded p-2 bg-white" onchange="alElegirConcepto('c')"></select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Detalle</label>
+                    <input id="mc_detalle" type="text" class="mt-1 w-full border rounded p-2 bg-white" placeholder="Ej: Premio cosecha, Viaticos, Ajuste x Recibo">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Importe</label>
+                    <input id="mc_importe" type="text" data-money class="mt-1 w-full border rounded p-2 text-right font-mono bg-white" value="0,00">
+                </div>
+                <div class="flex items-end">
+                    <button id="mc_btn" onclick="cargarMovimiento('credito')" class="w-full bg-emerald-700 text-white px-2 py-2 rounded font-bold text-xs">Cargar crédito</button>
+                </div>
             </div>
-            <div>
-                <label class="text-[10px] font-bold uppercase text-slate-500">Concepto</label>
-                <select id="m_concepto" class="mt-1 w-full border rounded p-2 bg-white" onchange="alElegirConcepto()"></select>
-            </div>
-            <div class="md:col-span-2">
-                <label class="text-[10px] font-bold uppercase text-slate-500">Detalle</label>
-                <input id="m_detalle" type="text" class="mt-1 w-full border rounded p-2" placeholder="Ej: Imp Casa, Viaticos, Ajuste x Recibo">
-            </div>
-            <div>
-                <label class="text-[10px] font-bold uppercase text-slate-500">Importe</label>
-                <input id="m_importe" type="text" data-money class="mt-1 w-full border rounded p-2 text-right font-mono" value="0,00">
-            </div>
-            <div class="flex items-end gap-1">
-                <button onclick="cargarMovimiento('credito')" class="flex-1 bg-emerald-700 text-white px-2 py-2 rounded font-bold text-xs">Cargar crédito</button>
-                <button onclick="cargarMovimiento('debito')" class="flex-1 bg-rose-700 text-white px-2 py-2 rounded font-bold text-xs">Cargar débito</button>
+
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 border-2 border-rose-300 rounded-lg p-3 mb-3 text-sm bg-rose-50/60">
+                <div class="col-span-2 md:col-span-6 flex justify-between items-center">
+                    <span class="text-xs font-extrabold uppercase text-rose-800">- Débito | se descuenta al empleado</span>
+                    <span class="text-[11px] text-rose-800">Depósito bancario, adelantos, descuentos</span>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Fecha</label>
+                    <input id="md_fecha" type="date" class="mt-1 w-full border rounded p-2 bg-white">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Concepto</label>
+                    <select id="md_concepto" class="mt-1 w-full border rounded p-2 bg-white" onchange="alElegirConcepto('d')"></select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Detalle</label>
+                    <input id="md_detalle" type="text" class="mt-1 w-full border rounded p-2 bg-white" placeholder="Ej: Imp Casa, Adelanto, Descuento">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Importe</label>
+                    <input id="md_importe" type="text" data-money class="mt-1 w-full border rounded p-2 text-right font-mono bg-white" value="0,00">
+                </div>
+                <div class="flex items-end">
+                    <button id="md_btn" onclick="cargarMovimiento('debito')" class="w-full bg-rose-700 text-white px-2 py-2 rounded font-bold text-xs">Cargar débito</button>
+                </div>
             </div>
         </div>
         <p id="m_editando" class="hidden text-xs text-amber-700 mb-2">
-            Editando un movimiento. <button class="underline font-bold" onclick="cancelarEdicion()">Cancelar</button>
+            <span id="m_editando_txt">Editando un movimiento.</span> <button class="underline font-bold" onclick="cancelarEdicion()">Cancelar</button>
         </p>
 
         <div class="overflow-x-auto border rounded-lg">
@@ -343,7 +376,10 @@ function verTab(t) {
 
 async function boot() {
     META = await api('/api/sueldos/meta');
-    document.getElementById('m_concepto').innerHTML = META.conceptos.map(c => `<option value="${esc(c.nombre)}" data-lado="${c.lado}">${esc(c.nombre)}</option>`).join('');
+    const optsLado = lado => '<option value="">Seleccioná...</option>' + META.conceptos.filter(c => c.lado === lado)
+        .map(c => `<option value="${esc(c.nombre)}">${esc(c.nombre)}</option>`).join('');
+    document.getElementById('mc_concepto').innerHTML = optsLado('credito');
+    document.getElementById('md_concepto').innerHTML = optsLado('debito');
     document.getElementById('p_convenio').innerHTML = '<option value="">(sin definir)</option>' + META.convenios.map(c => `<option>${esc(c)}</option>`).join('');
     const mes = mesActual();
     document.getElementById('c_mes').value = mes;
@@ -359,8 +395,10 @@ async function cargarEmpleadosSelect() {
     EMPLEADOS = await api('/api/sueldos/empleados');
     const sel = document.getElementById('k_emp');
     const prev = sel.value;
-    sel.innerHTML = EMPLEADOS.map(e => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('') || '<option value="">Sin empleados activos</option>';
-    if (prev && EMPLEADOS.some(e => String(e.id) === prev)) sel.value = prev;
+    sel.innerHTML = EMPLEADOS.length
+        ? '<option value="">Seleccioná un empleado...</option>' + EMPLEADOS.map(e => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')
+        : '<option value="">Sin empleados activos</option>';
+    sel.value = prev && EMPLEADOS.some(e => String(e.id) === prev) ? prev : '';
 }
 
 /* ---------- conformación masiva ---------- */
@@ -468,9 +506,19 @@ function moverMes(n) {
 async function cargarCuenta() {
     const id = document.getElementById('k_emp').value;
     const mes = document.getElementById('k_mes').value;
-    if (!id || !mes) return;
     cancelarEdicion();
-    document.getElementById('m_fecha').value = finDeMes(mes);
+    document.getElementById('k_sin_emp').classList.toggle('hidden', !!id);
+    document.getElementById('k_form').classList.toggle('hidden', !id);
+    if (!id || !mes) {
+        CUENTA = null;
+        document.getElementById('k_kpis').innerHTML = '';
+        document.getElementById('k_tbody').innerHTML = '';
+        return;
+    }
+    limpiarRenglon('c');
+    limpiarRenglon('d');
+    document.getElementById('mc_fecha').value = finDeMes(mes);
+    document.getElementById('md_fecha').value = finDeMes(mes);
     try { CUENTA = await api(`/api/sueldos/empleados/${id}/mes/${mes}`); }
     catch (e) { alert(e.message); return; }
     const c = CUENTA;
@@ -504,19 +552,32 @@ async function cargarCuenta() {
         </tr>`;
 }
 
-function alElegirConcepto() {
-    const sel = document.getElementById('m_concepto');
-    document.getElementById('m_detalle').value = sel.value;
+function alElegirConcepto(p) {
+    document.getElementById(`m${p}_detalle`).value = document.getElementById(`m${p}_concepto`).value;
 }
+
+function limpiarRenglon(p) {
+    document.getElementById(`m${p}_concepto`).value = '';
+    document.getElementById(`m${p}_detalle`).value = '';
+    document.getElementById(`m${p}_importe`).value = '0,00';
+}
+
+let movEditandoLado = null;
 
 async function cargarMovimiento(lado) {
     const id = document.getElementById('k_emp').value;
     if (!id) return;
-    const importe = num(document.getElementById('m_importe').value);
+    const p = lado === 'credito' ? 'c' : 'd';
+    const importe = num(document.getElementById(`m${p}_importe`).value);
+    const detalle = document.getElementById(`m${p}_detalle`).value.trim() || document.getElementById(`m${p}_concepto`).value;
+    if (!(importe > 0)) { alert('Indicá el importe.'); return; }
+    if (!detalle) { alert('Elegí el concepto o escribí el detalle.'); return; }
+    if (movEditando && movEditandoLado && movEditandoLado !== lado
+        && !confirm(`Este movimiento era un ${movEditandoLado}. ¿Guardarlo como ${lado}?`)) return;
     const body = {
         empleado_id: Number(id),
-        fecha: document.getElementById('m_fecha').value,
-        detalle: document.getElementById('m_detalle').value.trim() || document.getElementById('m_concepto').value,
+        fecha: document.getElementById(`m${p}_fecha`).value,
+        detalle,
         debe: lado === 'credito' ? importe : 0,
         haber: lado === 'debito' ? importe : 0,
     };
@@ -524,8 +585,7 @@ async function cargarMovimiento(lado) {
         if (movEditando) await api('/api/sueldos/movimientos/' + movEditando, jsonBody('PUT', body));
         else await api('/api/sueldos/movimientos', jsonBody('POST', body));
     } catch (e) { alert(e.message); return; }
-    document.getElementById('m_importe').value = '0,00';
-    document.getElementById('m_detalle').value = '';
+    limpiarRenglon(p);
     const mesMov = body.fecha.slice(0, 7);
     if (mesMov !== document.getElementById('k_mes').value) document.getElementById('k_mes').value = mesMov;
     await cargarCuenta();
@@ -534,16 +594,50 @@ async function cargarMovimiento(lado) {
 function editarMovimiento(movId) {
     const f = CUENTA.filas.find(x => x.id === movId);
     if (!f) return;
+    cancelarEdicion();
     movEditando = movId;
-    document.getElementById('m_fecha').value = f.fecha.slice(0, 10);
-    document.getElementById('m_detalle').value = f.detalle || '';
-    document.getElementById('m_importe').value = CampoMoney.format(f.debe || f.haber);
+    movEditandoLado = f.debe ? 'credito' : 'debito';
+    llenarRenglonEdicion(movEditandoLado === 'credito' ? 'c' : 'd', f.fecha, f.detalle, f.debe || f.haber);
+}
+
+function llenarRenglonEdicion(p, fecha, detalle, importe) {
+    const otro = p === 'c' ? 'd' : 'c';
+    limpiarRenglon(otro);
+    document.getElementById(`m${p}_fecha`).value = String(fecha || '').slice(0, 10);
+    const sel = document.getElementById(`m${p}_concepto`);
+    sel.value = [...sel.options].some(o => o.value === detalle) ? detalle : '';
+    document.getElementById(`m${p}_detalle`).value = detalle || '';
+    document.getElementById(`m${p}_importe`).value = CampoMoney.format(importe);
+    document.getElementById(`m${p}_btn`).textContent = p === 'c' ? 'Guardar crédito' : 'Guardar débito';
+    document.getElementById(`m${otro}_btn`).textContent = p === 'c' ? 'Cargar débito' : 'Cargar crédito';
+    const lado = p === 'c' ? 'crédito' : 'débito';
+    const ladoOtro = p === 'c' ? 'débito' : 'crédito';
+    document.getElementById('m_editando_txt').innerHTML =
+        `Editando un ${lado}: modificalo en el renglón ${p === 'c' ? 'verde' : 'rojo'}. ¿Quedó del lado equivocado? <button class="underline font-bold" onclick="pasarAlOtroLado()">Pasarlo a ${ladoOtro}</button> |`;
     document.getElementById('m_editando').classList.remove('hidden');
+    document.getElementById(`m${p}_importe`).focus();
+}
+
+function pasarAlOtroLado() {
+    const p = movEditandoLado === 'credito' ? 'c' : 'd';
+    const otro = p === 'c' ? 'd' : 'c';
+    const fecha = document.getElementById(`m${p}_fecha`).value;
+    const detalle = document.getElementById(`m${p}_detalle`).value;
+    const importe = num(document.getElementById(`m${p}_importe`).value);
+    llenarRenglonEdicion(otro, fecha, detalle, importe);
+    movEditandoLado = otro === 'c' ? 'credito' : 'debito';
+    document.getElementById('m_editando_txt').innerHTML =
+        `Pasando a ${otro === 'c' ? 'crédito' : 'débito'}: revisá el renglón ${otro === 'c' ? 'verde' : 'rojo'} y guardalo. |`;
 }
 
 function cancelarEdicion() {
+    const estaba = !!movEditando;
     movEditando = null;
+    movEditandoLado = null;
     document.getElementById('m_editando').classList.add('hidden');
+    document.getElementById('mc_btn').textContent = 'Cargar crédito';
+    document.getElementById('md_btn').textContent = 'Cargar débito';
+    if (estaba) { limpiarRenglon('c'); limpiarRenglon('d'); }
 }
 
 async function borrarMovimiento(movId) {
@@ -697,11 +791,23 @@ async function cargarDetalle() {
             <div class="border rounded-lg p-2"><div class="text-[10px] uppercase font-bold text-slate-500">Actualizaciones</div><div class="font-mono font-bold">${money(t.aumentos)}</div></div>
             <div class="border rounded-lg p-2 bg-emerald-50"><div class="text-[10px] uppercase font-bold text-emerald-800">Total a cobrar (efectivo)</div><div class="font-mono font-extrabold">${money(t.total_cobrar)}</div></div>
         </div>`;
+    const negativos = DETALLE.empleados.filter(e => Number(e.total_cobrar) < -0.004);
+    const aviso = negativos.length ? `
+        <div class="no-print border-2 border-rose-400 bg-rose-50 rounded-lg p-3 mb-4 text-sm">
+            <div class="font-bold text-rose-800 mb-1">Atención: ${negativos.length} sueldo(s) quedaron en negativo. Revisá si corresponde cargar un Ajuste x Recibo.</div>
+            <table class="text-xs">${negativos.map(e => `
+                <tr>
+                    <td class="pr-4 py-0.5 font-medium">${esc(e.nombre)}</td>
+                    <td class="pr-4 py-0.5 font-mono text-rose-700 text-right">${money(e.total_cobrar)}</td>
+                    <td class="py-0.5"><button class="text-indigo-700 font-bold hover:underline" onclick="irAAjusteRecibo(${e.empleado_id}, '${mes}', ${Math.abs(Number(e.total_cobrar))})">Cargar Ajuste x Recibo</button></td>
+                </tr>`).join('')}
+            </table>
+        </div>` : '';
     const bloques = DETALLE.empleados.map(e => `
         <div class="bloque-emp border-b border-dashed border-slate-400 py-3">
             <div class="flex justify-between items-center mb-1">
                 <span class="font-bold underline text-slate-800">${esc(e.nombre)}</span>
-                <span class="border border-slate-700 px-3 py-1 text-sm">Total a cobrar: <b class="font-mono">${money(e.total_cobrar)}</b></span>
+                <span class="border px-3 py-1 text-sm ${Number(e.total_cobrar) < -0.004 ? 'border-rose-600 bg-rose-50 text-rose-800' : 'border-slate-700'}">Total a cobrar: <b class="font-mono">${money(e.total_cobrar)}</b>${Number(e.total_cobrar) < -0.004 ? ' <span class="no-print text-[11px] font-bold">NEGATIVO</span>' : ''}</span>
             </div>
             <table class="w-full text-xs">
                 <thead class="text-slate-500"><tr>
@@ -719,7 +825,21 @@ async function cargarDetalle() {
                 </tbody>
             </table>
         </div>`).join('');
-    document.getElementById('d_cont').innerHTML = cab + (bloques || '<p class="text-center text-slate-400 p-6">Sin movimientos en el mes.</p>');
+    document.getElementById('d_cont').innerHTML = cab + aviso + (bloques || '<p class="text-center text-slate-400 p-6">Sin movimientos en el mes.</p>');
+    if (negativos.length) {
+        alert(`Hay ${negativos.length} sueldo(s) en negativo en ${titulo}:\n\n`
+            + negativos.map(e => `${e.nombre}: ${money(e.total_cobrar)}`).join('\n')
+            + '\n\nRevisá si corresponde cargar un Ajuste x Recibo (botón en el aviso rojo).');
+    }
+}
+
+async function irAAjusteRecibo(empleadoId, mes, importe) {
+    irACuenta(empleadoId, mes);
+    await cargarCuenta();
+    document.getElementById('mc_concepto').value = 'Ajuste x Recibo';
+    document.getElementById('mc_detalle').value = 'Ajuste x Recibo';
+    document.getElementById('mc_importe').value = CampoMoney.format(importe);
+    document.getElementById('mc_importe').focus();
 }
 
 function exportarDetalleCsv() {

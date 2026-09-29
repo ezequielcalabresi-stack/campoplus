@@ -34,6 +34,7 @@ CONCEPTOS = [
     {"nombre": "Viaticos", "lado": "credito"},
     {"nombre": "Ahorro", "lado": "credito"},
     {"nombre": "Deposito Bancario SAC", "lado": "debito"},
+    {"nombre": "Ajuste x Recibo", "lado": "credito"},
 ]
 
 CONVENIOS = ["UATRE", "Empleados de Comercio", "Camioneros", "Fuera de convenio"]
