@@ -355,7 +355,25 @@
                 <div class="mt-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <h6 class="fw-bold mb-0">Lotes</h6>
-                        <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="agregarFilaLote()">+ Lote</button>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm fw-bold" onclick="document.getElementById('inpArchivoGeo').click()" title="Contornos desde Google Earth (KML / KMZ) o GeoJSON">Importar KML / KMZ</button>
+                            <input type="file" id="inpArchivoGeo" class="d-none" accept=".kml,.kmz,.geojson,.json" multiple onchange="leerArchivosGeo(this)">
+                            <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="agregarFilaLote()">+ Lote</button>
+                        </div>
+                    </div>
+                    <div id="boxImportGeo" class="border rounded p-2 mb-2 bg-light d-none">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small fw-bold" id="importGeoTitulo">Contornos del archivo</span>
+                            <span class="hint">Elegí a qué lote va cada contorno. Los nombres iguales se asignan solos.</span>
+                        </div>
+                        <table class="table table-sm table-bordered mb-2 bg-white">
+                            <thead><tr><th>En el archivo</th><th class="text-end" style="width:110px;">Ha medidas</th><th style="width:260px;">Asignar a</th></tr></thead>
+                            <tbody id="tbodyImportGeo"></tbody>
+                        </table>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="cerrarImportGeo()">Cancelar</button>
+                            <button type="button" class="btn btn-primary btn-sm py-0 fw-bold" onclick="aplicarImportGeo()">Aplicar contornos</button>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered">
@@ -796,6 +814,7 @@ function abrirModalCampo(tipo) {
     document.getElementById('campoLat').value = '';
     document.getElementById('campoLng').value = '';
     if (dibujo) cerrarDibujo();
+    cerrarImportGeo();
     pctEmpresaActual = 100;
     document.getElementById('tbodyLotesNuevos').innerHTML = '';
     document.getElementById('boxArrendador').style.display = tipo === 'arrendado' ? 'block' : 'none';
@@ -1067,6 +1086,175 @@ function borrarContorno(tr) {
     tr.dataset.geojson = '';
     actualizarInfoContorno(tr);
     refrescarMarcadoresLotes(false);
+}
+
+// ---- Importar contornos (KML / KMZ de Google Earth, GeoJSON) ----
+let importGeoItems = [];
+
+function cargarJSZip() {
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    return new Promise((ok, fail) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+        s.onload = () => ok(window.JSZip);
+        s.onerror = () => fail(new Error('No se pudo cargar el lector de KMZ.'));
+        document.head.appendChild(s);
+    });
+}
+
+function anilloKml(texto) {
+    const pts = (texto || '').trim().split(/\s+/).map(t => t.split(',').map(Number))
+        .filter(p => p.length >= 2 && isFinite(p[0]) && isFinite(p[1]))
+        .map(([lng, lat]) => [lat, lng]);
+    if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+    return pts;
+}
+
+function poligonosKml(texto) {
+    const doc = new DOMParser().parseFromString(texto, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) throw new Error('El KML no se pudo leer.');
+    const items = [];
+    [...doc.getElementsByTagNameNS('*', 'Placemark')].forEach((pm, i) => {
+        const nombre = (pm.getElementsByTagNameNS('*', 'name')[0]?.textContent || `Contorno ${i + 1}`).trim();
+        const polys = [...pm.getElementsByTagNameNS('*', 'Polygon')];
+        polys.forEach((pol, j) => {
+            const ext = pol.getElementsByTagNameNS('*', 'outerBoundaryIs')[0] || pol;
+            const coords = ext.getElementsByTagNameNS('*', 'coordinates')[0]?.textContent;
+            const pts = anilloKml(coords);
+            if (pts.length >= 3) items.push({ nombre: polys.length > 1 ? `${nombre} (${j + 1})` : nombre, puntos: pts });
+        });
+    });
+    return items;
+}
+
+function poligonosGeoJson(obj) {
+    const feats = obj.type === 'FeatureCollection' ? obj.features : [obj.type === 'Feature' ? obj : { type: 'Feature', geometry: obj, properties: {} }];
+    const items = [];
+    (feats || []).forEach((f, i) => {
+        const p = f.properties || {};
+        const nombre = String(p.name || p.Name || p.nombre || p.NOMBRE || p.lote || `Contorno ${i + 1}`).trim();
+        const g = f.geometry || {};
+        const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+        polys.forEach((rings, j) => {
+            const pts = (rings[0] || []).map(([lng, lat]) => [lat, lng]);
+            if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+            if (pts.length >= 3) items.push({ nombre: polys.length > 1 ? `${nombre} (${j + 1})` : nombre, puntos: pts });
+        });
+    });
+    return items;
+}
+
+async function leerArchivosGeo(inp) {
+    const items = [];
+    try {
+        for (const f of inp.files) {
+            const ext = f.name.split('.').pop().toLowerCase();
+            if (ext === 'kmz') {
+                const JSZip = await cargarJSZip();
+                const zip = await JSZip.loadAsync(f);
+                const kmls = Object.values(zip.files).filter(z => !z.dir && z.name.toLowerCase().endsWith('.kml'));
+                for (const k of kmls) items.push(...poligonosKml(await k.async('string')));
+            } else if (ext === 'kml') {
+                items.push(...poligonosKml(await f.text()));
+            } else {
+                items.push(...poligonosGeoJson(JSON.parse(await f.text())));
+            }
+        }
+    } catch (e) {
+        alert('No se pudo leer el archivo: ' + e.message);
+        return;
+    } finally {
+        inp.value = '';
+    }
+    if (!items.length) { alert('El archivo no tiene contornos (polígonos). Si en Google Earth son rutas o puntos, hay que dibujarlos como polígono.'); return; }
+    mostrarImportGeo(items);
+}
+
+function normNombreLote(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\blote\b/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+function mostrarImportGeo(items) {
+    importGeoItems = items;
+    const filas = [...document.querySelectorAll('#tbodyLotesNuevos tr')].filter(tr => tr.querySelector('.lote-nom').value.trim() || tr.querySelector('.lote-cod').value.trim());
+    const opciones = filas.map((tr, i) => {
+        const cod = tr.querySelector('.lote-cod').value.trim();
+        const nom = tr.querySelector('.lote-nom').value.trim();
+        return { i, tr, label: cod && cod !== nom ? `${cod} | ${nom}` : (nom || cod), claves: [normNombreLote(cod), normNombreLote(nom)].filter(Boolean) };
+    });
+    const usados = new Set();
+    const fmt = n => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+    document.getElementById('tbodyImportGeo').innerHTML = items.map((it, k) => {
+        const clave = normNombreLote(it.nombre);
+        const match = opciones.find(o => !usados.has(o.i) && clave && o.claves.includes(clave));
+        if (match) usados.add(match.i);
+        const opts = ['<option value="nuevo">Nuevo lote</option>', '<option value="">No importar</option>']
+            .concat(opciones.map(o => `<option value="${o.i}" ${match === o ? 'selected' : ''}>Lote ${escHtml(o.label)}${puntosContorno(o.tr).length ? ' (reemplaza contorno)' : ''}</option>`));
+        return `<tr>
+            <td class="small">${escHtml(it.nombre)}</td>
+            <td class="text-end font-mono small">${fmt(areaHasPoligono(it.puntos))}</td>
+            <td><select class="form-select form-select-sm import-geo-destino" data-k="${k}">${opts.join('')}</select></td>
+        </tr>`;
+    }).join('');
+    const auto = usados.size;
+    document.getElementById('importGeoTitulo').textContent =
+        `${items.length} contorno(s) en el archivo${auto ? ` | ${auto} asignado(s) por nombre` : ''}`;
+    document.getElementById('boxImportGeo').classList.remove('d-none');
+    importGeoFilas = opciones.map(o => o.tr);
+    if (mapCampo) {
+        const todos = items.flatMap(it => it.puntos);
+        mapCampo.fitBounds(todos, { padding: [30, 30], maxZoom: 17 });
+    }
+}
+
+let importGeoFilas = [];
+
+function cerrarImportGeo() {
+    importGeoItems = [];
+    importGeoFilas = [];
+    document.getElementById('boxImportGeo').classList.add('d-none');
+}
+
+function geojsonDePuntos(pts) {
+    const anillo = pts.map(([lat, lng]) => [Number(lng.toFixed(7)), Number(lat.toFixed(7))]);
+    anillo.push(anillo[0]);
+    return JSON.stringify({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [anillo] } });
+}
+
+function aplicarImportGeo() {
+    const destinos = [...document.querySelectorAll('.import-geo-destino')];
+    const repetidos = destinos.map(s => s.value).filter(v => v !== '' && v !== 'nuevo');
+    if (new Set(repetidos).size !== repetidos.length) { alert('Hay dos contornos asignados al mismo lote.'); return; }
+    let n = 0;
+    destinos.forEach(sel => {
+        const it = importGeoItems[Number(sel.dataset.k)];
+        if (!it || sel.value === '') return;
+        let tr;
+        if (sel.value === 'nuevo') {
+            const vacia = [...document.querySelectorAll('#tbodyLotesNuevos tr')].find(r =>
+                !r.querySelector('.lote-nom').value.trim() && !r.querySelector('.lote-cod').value.trim() && !puntosContorno(r).length);
+            if (vacia) vacia.remove();
+            agregarFilaLote({ nombre: it.nombre, codigo: it.nombre.slice(0, 20), superficie_base: Math.round(areaHasPoligono(it.puntos) * 100) / 100 });
+            tr = document.querySelector('#tbodyLotesNuevos tr:last-child');
+        } else {
+            tr = importGeoFilas[Number(sel.value)];
+        }
+        if (!tr) return;
+        tr.dataset.geojson = geojsonDePuntos(it.puntos);
+        if (!tr.querySelector('.lote-lat').value || !tr.querySelector('.lote-lng').value) {
+            const c = L.polygon(it.puntos).getBounds().getCenter();
+            tr.querySelector('.lote-lat').value = c.lat.toFixed(6);
+            tr.querySelector('.lote-lng').value = c.lng.toFixed(6);
+        }
+        actualizarInfoContorno(tr);
+        n++;
+    });
+    cerrarImportGeo();
+    recalcularHasCampo();
+    loteFilaActiva = null;
+    refrescarMarcadoresLotes(false);
+    if (n) alert(`${n} contorno(s) aplicados. Revisá las hectáreas y guardá el campo.`);
 }
 
 function refrescarMarcadoresLotes(enfocar) {
