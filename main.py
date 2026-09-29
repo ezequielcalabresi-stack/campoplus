@@ -115,6 +115,7 @@ _COLS_DTO_VALORES = [
     ("dto_gastos", "REAL"),
     ("dto_mov_gastos_id", "INTEGER"),
     ("dto_acreditado", "REAL"),
+    ("dto_sgr_id", "INTEGER"),
 ]
 
 
@@ -1469,6 +1470,55 @@ def _cargar_mapa_excel_prestamos() -> dict:
     return mapa
 
 
+def _cargar_mapa_flujo_prestamos(cursor, empresa_id: int) -> dict:
+    """Metadatos de cuotas desde flujo_proyeccion_access (misma forma que el mapa del Excel)."""
+    try:
+        cursor.execute(
+            "SELECT * FROM flujo_proyeccion_access WHERE COALESCE(empresa_id,1)=? AND id_access IS NOT NULL;",
+            (empresa_id,),
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
+    except sqlite3.OperationalError:
+        return {}
+    mapa = {}
+    for r in rows:
+        try:
+            id_access = int(r["id_access"])
+        except (TypeError, ValueError):
+            continue
+        tc = float(r.get("tipo_cambio") or 0)
+        cap_usd = float(r.get("capital_usd") or 0)
+        es_usd = "dol" in (r.get("moneda") or "").lower() or cap_usd > 0
+        intereses = float(r.get("intereses") or 0)
+        try:
+            nro_cuota = int(float(r.get("nro_cuota") or 0))
+        except (TypeError, ValueError):
+            nro_cuota = 0
+        mapa[id_access] = {
+            "id_access": id_access,
+            "nro_credito": (r.get("nro_credito") or "").strip(),
+            "nro_cuota": nro_cuota,
+            "tna": 0.0,
+            "tea": 0.0,
+            "amortizacion": (r.get("forma_pago") or "").strip(),
+            "plazo": (r.get("plazo") or "").strip(),
+            "detalle": (r.get("detalle") or "").strip(),
+            "entidad": "",
+            "moneda": "USD" if es_usd else "ARS",
+            "tipo_cambio": tc,
+            "capital_usd": cap_usd,
+            "intereses_usd": round(intereses / tc, 2) if es_usd and tc > 0 else 0.0,
+            "intereses": intereses,
+            "impuestos": float(r.get("impuestos") or 0),
+            "cargos": float(r.get("cargos") or 0),
+            "haber": float(r.get("subtotal") or 0),
+            "fecha_pago": (r.get("fecha_debito") or "").strip(),
+            "fecha_operacion": "",
+            "monto_origen": 0.0,
+        }
+    return mapa
+
+
 def sincronizar_creditos_desde_movimientos_prestamo() -> dict:
     """Arma/actualiza créditos y cuotas desde movimientos préstamo + Excel (TNA/TEA/USD/TC)."""
     empresa_id = get_empresa_activa_id()
@@ -1485,10 +1535,30 @@ def sincronizar_creditos_desde_movimientos_prestamo() -> dict:
         """
     )
     movs = [dict(r) for r in cursor.fetchall()]
+    # Préstamos de terceros (cuentas de pago, no bancarias) suelen venir sin Nº de crédito:
+    # se agrupan por la cuenta y el nombre de la cuenta hace de Nº de crédito.
+    cursor.execute(
+        """
+        SELECT m.*, COALESCE(NULLIF(TRIM(m.cta_cte_nro), ''), TRIM(c.banco)) AS _nro_sintetico
+        FROM movimientos_cta_cte_bancos m
+        JOIN ctas_ctes_bancarias c ON c.id = m.cuenta_id
+        WHERE COALESCE(m.es_prestamo, 0) = 1
+          AND TRIM(COALESCE(m.nro_credito, '')) = ''
+          AND COALESCE(c.es_cuenta_bancaria, 1) = 0
+        ORDER BY m.cuenta_id, COALESCE(m.nro_cuota, 0), m.fecha_cobro, m.id;
+        """
+    )
+    for r in cursor.fetchall():
+        m = dict(r)
+        nro_sint = (m.pop("_nro_sintetico") or "").strip()
+        if nro_sint:
+            m["nro_credito"] = nro_sint
+            movs.append(m)
     if not movs:
         conn.close()
         return {"status": "skip", "message": "No hay movimientos de préstamo etiquetados."}
 
+    flujo_map = None
     from collections import defaultdict
     por_credito = defaultdict(list)
     for m in movs:
@@ -1550,8 +1620,16 @@ def sincronizar_creditos_desde_movimientos_prestamo() -> dict:
             actualizados += 1
             continue
 
+        meta_map = excel_map
+        if not metas and not existente:
+            # Crédito nuevo sin Excel: moneda, TC y capital USD desde la proyección del Access.
+            if flujo_map is None:
+                flujo_map = _cargar_mapa_flujo_prestamos(cursor, empresa_id)
+            meta_map = flujo_map
+            metas = [flujo_map[m.get("id_access")] for m in lista if m.get("id_access") in flujo_map]
+
         es_usd = any(x.get("moneda") == "USD" for x in metas) or any(
-            float(excel_map.get(m.get("id_access"), {}).get("tipo_cambio") or 0) > 0 for m in lista
+            float(meta_map.get(m.get("id_access"), {}).get("tipo_cambio") or 0) > 0 for m in lista
         )
         moneda = "USD" if es_usd else "ARS"
         if es_usd:
@@ -1629,7 +1707,7 @@ def sincronizar_creditos_desde_movimientos_prestamo() -> dict:
 
         for m in lista:
             id_access = m.get("id_access")
-            xa = excel_map.get(id_access) or {}
+            xa = meta_map.get(id_access) or {}
             nro_cuota = int(xa.get("nro_cuota") or m.get("nro_cuota") or 0) or 1
             mov_id = int(m["id"])
             debitado = bool((m.get("fecha_debito") or "").strip())
@@ -1940,6 +2018,7 @@ class ChequeDepositarModel(BaseModel):
     intereses: Optional[float] = None
     gastos: float = 0.0
     importe_acreditado: Optional[float] = None
+    sgr_id: Optional[int] = None
 
 
 class ChequeAplicarPagoModel(BaseModel):
@@ -2421,11 +2500,141 @@ def _margen_dto_valores_usado(cursor, empresa_id: int) -> Dict[int, float]:
         FROM cartera_cheques
         WHERE COALESCE(empresa_id, 1) = ? AND COALESCE(descontado, 0) = 1
           AND cuenta_id IS NOT NULL AND fecha_pago > ?
+          AND COALESCE(dto_sgr_id, 0) = 0
         GROUP BY cuenta_id;
         """,
         (empresa_id, date.today().isoformat()),
     )
     return {int(r["cuenta_id"]): float(r["usado"] or 0) for r in cursor.fetchall()}
+
+
+def _asegurar_tabla_sgr(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sgr_lineas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            nombre TEXT NOT NULL,
+            margen REAL DEFAULT 0,
+            moneda TEXT DEFAULT 'ARS',
+            fecha_vto TEXT DEFAULT '',
+            observaciones TEXT DEFAULT '',
+            activo INTEGER DEFAULT 1
+        );
+        """
+    )
+
+
+def _margen_sgr_usado(cursor, empresa_id: int) -> Dict[int, float]:
+    """Cheques descontados en el Mercado de Capitales con aval SGR, sin vencer, por SGR."""
+    _asegurar_cols_dto_valores(cursor)
+    cursor.execute(
+        """
+        SELECT dto_sgr_id, COALESCE(SUM(monto), 0) AS usado
+        FROM cartera_cheques
+        WHERE COALESCE(empresa_id, 1) = ? AND COALESCE(descontado, 0) = 1
+          AND COALESCE(dto_sgr_id, 0) != 0 AND fecha_pago > ?
+        GROUP BY dto_sgr_id;
+        """,
+        (empresa_id, date.today().isoformat()),
+    )
+    return {int(r["dto_sgr_id"]): float(r["usado"] or 0) for r in cursor.fetchall()}
+
+
+class SgrLineaModel(BaseModel):
+    nombre: str
+    margen: float = 0.0
+    moneda: str = "ARS"
+    fecha_vto: Optional[str] = ""
+    observaciones: Optional[str] = ""
+
+
+@app.get("/api/bancos/sgr")
+def listar_sgr(incluir_inactivas: bool = False):
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _asegurar_tabla_sgr(cursor)
+    cursor.execute(
+        "SELECT * FROM sgr_lineas WHERE COALESCE(empresa_id,1)=?"
+        + ("" if incluir_inactivas else " AND COALESCE(activo,1)=1")
+        + " ORDER BY nombre COLLATE NOCASE;",
+        (empresa_id,),
+    )
+    rows = [dict(r) for r in cursor.fetchall()]
+    usado = _margen_sgr_usado(cursor, empresa_id)
+    conn.close()
+    for r in rows:
+        r["usado"] = round(usado.get(r["id"], 0.0), 2)
+        r["disponible"] = round(float(r.get("margen") or 0) - r["usado"], 2)
+    return rows
+
+
+def _datos_sgr(data: SgrLineaModel) -> tuple:
+    nombre = (data.nombre or "").strip()
+    if not nombre:
+        raise HTTPException(400, "Indicá el nombre de la SGR.")
+    return (
+        nombre, round(float(data.margen or 0), 2), (data.moneda or "ARS").strip().upper() or "ARS",
+        (data.fecha_vto or "").strip(), (data.observaciones or "").strip(),
+    )
+
+
+@app.post("/api/bancos/sgr")
+def crear_sgr(data: SgrLineaModel):
+    vals = _datos_sgr(data)
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _asegurar_tabla_sgr(cursor)
+    cursor.execute(
+        "INSERT INTO sgr_lineas (nombre, margen, moneda, fecha_vto, observaciones, empresa_id, activo) VALUES (?, ?, ?, ?, ?, ?, 1);",
+        (*vals, empresa_id),
+    )
+    nuevo_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"status": "success", "id": nuevo_id}
+
+
+@app.put("/api/bancos/sgr/{sgr_id}")
+def actualizar_sgr(sgr_id: int, data: SgrLineaModel):
+    vals = _datos_sgr(data)
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _asegurar_tabla_sgr(cursor)
+    cursor.execute(
+        "UPDATE sgr_lineas SET nombre=?, margen=?, moneda=?, fecha_vto=?, observaciones=?, activo=1 WHERE id=? AND COALESCE(empresa_id,1)=?;",
+        (*vals, sgr_id, empresa_id),
+    )
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(404, "SGR no encontrada")
+    conn.commit()
+    conn.close()
+    return {"status": "success", "id": sgr_id}
+
+
+@app.delete("/api/bancos/sgr/{sgr_id}")
+def borrar_sgr(sgr_id: int):
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _asegurar_tabla_sgr(cursor)
+    _asegurar_cols_dto_valores(cursor)
+    cursor.execute("SELECT COUNT(*) AS n FROM cartera_cheques WHERE dto_sgr_id = ?;", (sgr_id,))
+    usada = int(cursor.fetchone()["n"] or 0) > 0
+    if usada:
+        cursor.execute("UPDATE sgr_lineas SET activo=0 WHERE id=? AND COALESCE(empresa_id,1)=?;", (sgr_id, empresa_id))
+    else:
+        cursor.execute("DELETE FROM sgr_lineas WHERE id=? AND COALESCE(empresa_id,1)=?;", (sgr_id, empresa_id))
+    conn.commit()
+    conn.close()
+    return {
+        "status": "success",
+        "message": "La SGR tiene cheques descontados: quedó inactiva." if usada else "SGR eliminada.",
+    }
 
 @app.post("/api/bancos/cuentas")
 def crear_cuenta_bancaria(data: CuentaBancariaModel):
@@ -4354,9 +4563,24 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
         if acreditado <= 0 or acreditado > monto + 0.005:
             conn.close()
             raise HTTPException(400, "El importe acreditado tiene que ser mayor a 0 y no superar el valor del cheque.")
-        dto = {"dias": dias, "tasa": tasa, "intereses": intereses, "gastos": gastos, "acreditado": acreditado}
+        sgr = None
+        if data.sgr_id:
+            _asegurar_tabla_sgr(cursor)
+            cursor.execute(
+                "SELECT * FROM sgr_lineas WHERE id = ? AND COALESCE(empresa_id,1) = ?;",
+                (int(data.sgr_id), empresa_id),
+            )
+            sgr = cursor.fetchone()
+            if not sgr:
+                conn.close()
+                raise HTTPException(400, "SGR inválida")
+        dto = {"dias": dias, "tasa": tasa, "intereses": intereses, "gastos": gastos, "acreditado": acreditado,
+               "sgr_id": int(sgr["id"]) if sgr else None, "sgr": sgr["nombre"] if sgr else ""}
 
-    etiqueta = "Dto. Valores Ch." if dto else "Dep. Ch."
+    if dto and dto["sgr_id"]:
+        etiqueta = f"Dto. Valores SGR {dto['sgr']} Ch."
+    else:
+        etiqueta = "Dto. Valores Ch." if dto else "Dep. Ch."
     proveedor = f"{etiqueta} {ch['nro_cheque']} — {ref}"[:120]
     cursor.execute(
         """
@@ -4372,7 +4596,7 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
             ch["nro_cheque"],
             dto["acreditado"] if dto else monto,
             cta["nro_cta_cte"] or "",
-            "Descuento de valores" if dto else "Deposito",
+            ("Descuento de valores SGR" if dto["sgr_id"] else "Descuento de valores") if dto else "Deposito",
         ),
     )
     mov_id = cursor.lastrowid
@@ -4403,27 +4627,34 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
         UPDATE cartera_cheques
         SET estado = 'Depositado', cuenta_id = ?, movimiento_banco_id = ?,
             descontado = 1, dto_fecha = ?, dto_tasa = ?, dto_dias = ?, dto_intereses = ?,
-            dto_gastos = ?, dto_mov_gastos_id = ?, dto_acreditado = ?,
+            dto_gastos = ?, dto_mov_gastos_id = ?, dto_acreditado = ?, dto_sgr_id = ?,
             observaciones = TRIM(COALESCE(observaciones,'') || ?)
         WHERE id = ?;
         """,
         (
             data.cuenta_id, mov_id, fecha, dto["tasa"], dto["dias"], dto["intereses"],
-            dto["gastos"], mov_gastos_id, dto["acreditado"], (" | " + obs) if obs else "", cheque_id,
+            dto["gastos"], mov_gastos_id, dto["acreditado"], dto["sgr_id"], (" | " + obs) if obs else "", cheque_id,
         ),
     )
     conn.commit()
-    cursor.execute("SELECT COALESCE(vta_cpd, 0) AS m FROM ctas_ctes_bancarias WHERE id = ?;", (data.cuenta_id,))
-    margen = float(cursor.fetchone()["m"] or 0)
-    usado = _margen_dto_valores_usado(cursor, empresa_id).get(int(data.cuenta_id), 0.0)
+    if dto["sgr_id"]:
+        cursor.execute("SELECT COALESCE(margen, 0) AS m FROM sgr_lineas WHERE id = ?;", (dto["sgr_id"],))
+        margen = float(cursor.fetchone()["m"] or 0)
+        usado = _margen_sgr_usado(cursor, empresa_id).get(dto["sgr_id"], 0.0)
+    else:
+        cursor.execute("SELECT COALESCE(vta_cpd, 0) AS m FROM ctas_ctes_bancarias WHERE id = ?;", (data.cuenta_id,))
+        margen = float(cursor.fetchone()["m"] or 0)
+        usado = _margen_dto_valores_usado(cursor, empresa_id).get(int(data.cuenta_id), 0.0)
     conn.close()
+    donde = f"con aval SGR {dto['sgr']} (Mercado de Capitales)" if dto["sgr_id"] else f"en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}"
     return {
         "status": "success",
         "movimiento_id": mov_id,
         "descuento": {**dto, "neto": round(monto - costo, 2)},
-        "margen": {"total": margen, "usado": round(usado, 2), "disponible": round(margen - usado, 2)},
+        "margen": {"total": margen, "usado": round(usado, 2), "disponible": round(margen - usado, 2),
+                   "origen": f"SGR {dto['sgr']}" if dto["sgr_id"] else "Vta CPD"},
         "message": (
-            f"Cheque descontado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}. Se acreditan $ "
+            f"Cheque descontado {donde}. Se acreditan en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''} $ "
             + _fmt_ar(dto["acreditado"])
             + (" (total del cheque)" if dto["acreditado"] >= monto - 0.005
                else f" (costo ya descontado $ {_fmt_ar(monto - dto['acreditado'])})")

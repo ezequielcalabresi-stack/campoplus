@@ -334,6 +334,34 @@
                     </table>
                 </div>
             </div>
+            <div class="panel mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h6 class="fw-bold mb-0" style="font-size:14px;">SGR | Mercado de Capitales</h6>
+                        <span class="hint">Márgenes de aval para descontar cheques en el mercado (Bind, DM, Argenpymes, Acindar...). Estos descuentos no usan el Vta CPD del banco.</span>
+                    </div>
+                    <button onclick="abrirSgr()" class="btn-sober-dark">+ Nueva SGR</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>SGR</th>
+                                <th>Moneda</th>
+                                <th>Vencimiento</th>
+                                <th class="text-end">Margen</th>
+                                <th class="text-end" title="Cheques descontados con esta SGR que todavía no vencieron">Usado</th>
+                                <th class="text-end" title="Se libera al llegar la fecha de pago de cada cheque">Disponible</th>
+                                <th>Observaciones</th>
+                                <th class="text-center">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaSgrBody">
+                            <tr><td colspan="8" class="text-center py-4 text-muted">Cargando SGR...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <!-- TAB 3: CRÉDITOS / PRÉSTAMOS -->
@@ -510,6 +538,52 @@
             </div>
         </div>
 
+        <!-- Modal SGR -->
+        <div class="modal fade" id="modalSgr" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title fw-bold" id="sgrTitulo">SGR | Mercado de Capitales</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="sgrId">
+                        <label class="lbl">SGR *</label>
+                        <input type="text" id="sgrNombre" class="form-control form-control-sm mb-2" list="listaSgrSugeridas" placeholder="Ej: Bind Garantías">
+                        <datalist id="listaSgrSugeridas">
+                            <option value="Bind Garantías"></option>
+                            <option value="DM SGR"></option>
+                            <option value="Argenpymes SGR"></option>
+                            <option value="Acindar Pymes SGR"></option>
+                        </datalist>
+                        <div class="row g-2">
+                            <div class="col-5">
+                                <label class="lbl">Margen de aval</label>
+                                <input type="text" id="sgrMargen" class="form-control form-control-sm text-end money-input" data-money inputmode="decimal" value="0,00">
+                            </div>
+                            <div class="col-3">
+                                <label class="lbl">Moneda</label>
+                                <select id="sgrMoneda" class="form-select form-select-sm">
+                                    <option value="ARS">ARS</option>
+                                    <option value="USD">USD</option>
+                                </select>
+                            </div>
+                            <div class="col-4">
+                                <label class="lbl">Vencimiento</label>
+                                <input type="date" id="sgrVto" class="form-control form-control-sm">
+                            </div>
+                        </div>
+                        <label class="lbl mt-2">Observaciones</label>
+                        <input type="text" id="sgrObs" class="form-control form-control-sm" placeholder="ALYC, contacto, condiciones...">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="guardarSgr()">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal depositar -->
         <div class="modal fade" id="modalDepositarCheque" tabindex="-1">
             <div class="modal-dialog">
@@ -533,6 +607,8 @@
                                 <div class="hint" id="depDtoAviso"></div>
                             </div>
                             <div id="depDtoCampos">
+                                <label class="lbl">Descontado en</label>
+                                <select id="depDtoVia" class="form-select form-select-sm mb-2" onchange="delete document.getElementById('depDtoAcredita').dataset.manual; recalcularDtoValores(true)"></select>
                                 <div class="row g-2">
                                     <div class="col-4">
                                         <label class="lbl">Tasa de descuento (TNA %)</label>
@@ -1105,6 +1181,7 @@
                 });
 
                 tbody.innerHTML = htmlTbody || `<tr><td colspan="13" class="text-center py-4 text-muted">No hay cuentas registradas.</td></tr>`;
+                cargarSgr();
 
                 // Selector de conciliación automática
                 const selConc = document.getElementById('selectCuentaConciliacion');
@@ -1118,6 +1195,84 @@
             } catch (e) {
                 console.error("Error al cargar cuentas:", e);
             }
+        }
+
+        let _sgrCache = [];
+
+        async function cargarSgr() {
+            try {
+                _sgrCache = await fetch('/api/bancos/sgr').then(r => r.ok ? r.json() : []);
+            } catch (e) {
+                _sgrCache = [];
+            }
+            const tbody = document.getElementById('tablaSgrBody');
+            if (!tbody) return;
+            const money = n => '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+            const esc = s => String(s || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+            tbody.innerHTML = _sgrCache.map(s => `
+                <tr>
+                    <td class="fw-bold">${esc(s.nombre)}</td>
+                    <td>${esc(s.moneda || 'ARS')}</td>
+                    <td class="font-mono">${s.fecha_vto ? fechaDMY(s.fecha_vto) : ' - '}</td>
+                    <td class="text-end font-mono">${money(s.margen)}</td>
+                    <td class="text-end font-mono">${Number(s.usado || 0) ? `<a href="#" onclick="verDescontadosSgr(${s.id}); return false;">${money(s.usado)}</a>` : money(0)}</td>
+                    <td class="text-end font-mono fw-bold ${Number(s.disponible || 0) < 0 ? 'text-danger' : ''}">${money(s.disponible)}</td>
+                    <td class="small">${esc(s.observaciones)}</td>
+                    <td class="text-center text-nowrap">
+                        <button class="btn-sober py-0 px-2" onclick="abrirSgr(${s.id})">Editar</button>
+                        <button class="btn-sober py-0 px-2" onclick="borrarSgr(${s.id})">Quitar</button>
+                    </td>
+                </tr>`).join('') || '<tr><td colspan="8" class="text-center py-4 text-muted">No hay SGR cargadas.</td></tr>';
+        }
+
+        function abrirSgr(id) {
+            const s = _sgrCache.find(x => x.id === id) || {};
+            document.getElementById('sgrId').value = s.id || '';
+            document.getElementById('sgrTitulo').textContent = s.id ? 'Editar SGR' : 'Nueva SGR';
+            document.getElementById('sgrNombre').value = s.nombre || '';
+            document.getElementById('sgrMargen').value = CampoMoney.format(s.margen || 0);
+            document.getElementById('sgrMoneda').value = s.moneda || 'ARS';
+            document.getElementById('sgrVto').value = (s.fecha_vto || '').slice(0, 10);
+            document.getElementById('sgrObs').value = s.observaciones || '';
+            new bootstrap.Modal(document.getElementById('modalSgr')).show();
+        }
+
+        async function guardarSgr() {
+            const id = document.getElementById('sgrId').value;
+            const body = {
+                nombre: document.getElementById('sgrNombre').value.trim(),
+                margen: CampoMoney.parse(document.getElementById('sgrMargen').value),
+                moneda: document.getElementById('sgrMoneda').value,
+                fecha_vto: document.getElementById('sgrVto').value,
+                observaciones: document.getElementById('sgrObs').value.trim(),
+            };
+            if (!body.nombre) { alert('Indicá el nombre de la SGR.'); return; }
+            const res = await fetch(id ? `/api/bancos/sgr/${id}` : '/api/bancos/sgr', {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'No se pudo guardar la SGR.'); return; }
+            bootstrap.Modal.getInstance(document.getElementById('modalSgr'))?.hide();
+            cargarSgr();
+        }
+
+        async function borrarSgr(id) {
+            const s = _sgrCache.find(x => x.id === id);
+            if (!s || !confirm(`¿Quitar la SGR ${s.nombre}?`)) return;
+            const res = await fetch(`/api/bancos/sgr/${id}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'No se pudo quitar.'); return; }
+            if (data.message) alert(data.message);
+            cargarSgr();
+        }
+
+        async function verDescontadosSgr(sgrId) {
+            document.getElementById('filtroChequesEstado').value = 'descontados';
+            document.querySelector('.nav-link[onclick*="tabCheques"]')?.click();
+            await cargarCheques();
+            renderTablaCheques(_chequesCache.filter(c => Number(c.dto_sgr_id) === Number(sgrId)));
         }
 
         async function marcarTipoCuenta(id, esBancaria) {
@@ -1533,7 +1688,7 @@
                     <td class="font-mono small">${c.fecha_pago || ' - '}</td>
                     <td class="text-end font-mono fw-bold">${money(c.monto)}</td>
                     <td class="text-center">${Number(c.descontado || 0)
-                        ? `<span class="badge bg-info text-dark" title="Tasa ${c.dto_tasa || 0}% | ${c.dto_dias || 0} días | Intereses ${money(c.dto_intereses)} | Gastos ${money(c.dto_gastos)}${c.dto_acreditado != null ? ' | Acreditado ' + money(c.dto_acreditado) : ''}">Descontado</span>`
+                        ? `<span class="badge bg-info text-dark" title="${Number(c.dto_sgr_id || 0) ? 'SGR ' + ((_sgrCache.find(s => s.id === Number(c.dto_sgr_id)) || {}).nombre || c.dto_sgr_id) + ' | ' : ''}Tasa ${c.dto_tasa || 0}% | ${c.dto_dias || 0} días | Intereses ${money(c.dto_intereses)} | Gastos ${money(c.dto_gastos)}${c.dto_acreditado != null ? ' | Acreditado ' + money(c.dto_acreditado) : ''}">${Number(c.dto_sgr_id || 0) ? 'Descontado SGR' : 'Descontado'}</span>`
                         : `<span class="badge ${estBadge}">${c.estado || ''}</span>`}</td>
                     <td class="text-center text-nowrap">${acciones}</td>
                 </tr>`;
@@ -1593,6 +1748,11 @@
                 o.textContent = `${cta.banco || ''} ${cta.nro_cta_cte || ''}`.trim();
                 sel.appendChild(o);
             });
+            await cargarSgr();
+            const via = document.getElementById('depDtoVia');
+            via.innerHTML = '<option value="">Banco (usa el Vta CPD de la cuenta)</option>'
+                + _sgrCache.map(s => `<option value="${s.id}">Mercado de Capitales | SGR ${s.nombre}</option>`).join('');
+            via.value = '';
             recalcularDtoValores();
             new bootstrap.Modal(document.getElementById('modalDepositarCheque')).show();
         }
@@ -1620,9 +1780,13 @@
                 ? CampoMoney.parse(intInp.value)
                 : Math.round(monto * tasa / 100 * (dias || 0) / 365 * 100) / 100;
             const gastos = CampoMoney.parse(document.getElementById('depDtoGastos').value);
+            const neto = monto - intereses - gastos;
+            const sgrId = parseInt(document.getElementById('depDtoVia').value || 0, 10) || null;
+            const sgr = sgrId ? _sgrCache.find(x => x.id === sgrId) : null;
+            // En el mercado el importe llega neto de intereses y gastos; en el banco se acredita el total.
             const acrInp = document.getElementById('depDtoAcredita');
-            const acreditado = acrInp.dataset.manual ? CampoMoney.parse(acrInp.value) : monto;
-            return { dias, aplica, activo, monto, tasa, intereses, gastos, acreditado, neto: monto - intereses - gastos };
+            const acreditado = acrInp.dataset.manual ? CampoMoney.parse(acrInp.value) : (sgr ? neto : monto);
+            return { dias, aplica, activo, monto, tasa, intereses, gastos, acreditado, neto, sgrId, sgr };
         }
 
         function usarNetoDto() {
@@ -1649,18 +1813,29 @@
             document.getElementById('depBtnConfirmar').textContent = d.activo ? 'Descontar' : 'Depositar';
             if (!d.aplica) return;
             document.getElementById('depDtoAviso').textContent =
-                `El cheque se paga el ${fechaDMY(_depCheque.fecha_pago)}: faltan ${d.dias} día(s). Usa el margen de descuento de cheques (Vta CPD) de la cuenta.`;
+                `El cheque se paga el ${fechaDMY(_depCheque.fecha_pago)}: faltan ${d.dias} día(s). `
+                + (d.sgr ? `Usa el margen de aval de la SGR ${d.sgr.nombre}; no afecta el Vta CPD del banco.` : 'Usa el margen de descuento de cheques (Vta CPD) de la cuenta.');
             document.getElementById('depDtoDias').value = d.dias;
             const intInp = document.getElementById('depDtoIntereses');
             if (!intInp.dataset.manual) intInp.value = CampoMoney.format(d.intereses);
             const acrInp = document.getElementById('depDtoAcredita');
-            if (!acrInp.dataset.manual) acrInp.value = CampoMoney.format(d.monto);
+            if (!acrInp.dataset.manual) acrInp.value = CampoMoney.format(d.acreditado);
             document.getElementById('depDtoNeto').value = fmt(d.neto);
             const dif = d.monto - d.acreditado;
-            document.getElementById('depDtoNotaAcredita').innerHTML = dif > 0.005
+            document.getElementById('depDtoNotaAcredita').innerHTML = d.sgr
+                ? `Mercado de Capitales: se acredita el neto ${fmt(d.acreditado)} (costo ${fmt(dif)} ya descontado por la ALYC). Ajustalo al importe real de la liquidación. No se carga otro débito.`
+                : dif > 0.005
                 ? `Se acreditan ${fmt(d.acreditado)}: costo ya descontado ${fmt(dif)} (ALYC / Mercado de Valores). No se carga otro débito.`
                 : 'Se acredita el total del cheque. Si ya te acreditan con gastos descontados (ALYC), modificá el importe. Si no, intereses y gastos son informativos y se cargan al conciliar el extracto.';
             const margenBox = document.getElementById('depDtoMargen');
+            if (d.sgr) {
+                const disp = Number(d.sgr.margen || 0) - Number(d.sgr.usado || 0);
+                const luego = disp - d.monto;
+                margenBox.innerHTML = `Margen SGR ${d.sgr.nombre} ${fmt(d.sgr.margen)} | Usado ${fmt(d.sgr.usado)} | Disponible <b>${fmt(disp)}</b><br>`
+                    + `Después de este cheque: <b class="${luego < 0 ? 'text-danger' : 'text-success'}">${fmt(luego)}</b>`
+                    + (luego < 0 ? ' <span class="text-danger">(supera el margen de la SGR)</span>' : '');
+                return;
+            }
             const cta = _depCuentas.find(x => x.id === cuentaId);
             if (!cta) { margenBox.innerHTML = '<span class="text-muted">Elegí la cuenta para ver el margen disponible.</span>'; return; }
             const margen = Number(cta.vta_cpd || 0);
@@ -1681,10 +1856,15 @@
             if (d.activo) {
                 if (!(d.acreditado > 0) || d.acreditado > d.monto + 0.005) { alert('El importe que se acredita tiene que ser mayor a 0 y no superar el valor del cheque.'); return; }
                 if (!(d.tasa > 0) && !(d.intereses > 0) && d.acreditado >= d.monto - 0.005 && !confirm('No cargaste tasa ni intereses. ¿Descontar igual sin costo?')) return;
-                const cta = _depCuentas.find(x => x.id === cuenta_id);
-                const disp = cta ? Number(cta.vta_cpd || 0) - Number(cta.vta_cpd_usado || 0) : 0;
-                if (d.monto > disp + 0.005 && !confirm('El cheque supera el margen disponible de descuento de la cuenta. ¿Descontar igual?')) return;
-                Object.assign(body, { descuento: true, tasa: d.tasa, intereses: d.intereses, gastos: d.gastos, importe_acreditado: Math.round(d.acreditado * 100) / 100 });
+                if (d.sgr) {
+                    const disp = Number(d.sgr.margen || 0) - Number(d.sgr.usado || 0);
+                    if (d.monto > disp + 0.005 && !confirm(`El cheque supera el margen disponible de la SGR ${d.sgr.nombre}. ¿Descontar igual?`)) return;
+                } else {
+                    const cta = _depCuentas.find(x => x.id === cuenta_id);
+                    const disp = cta ? Number(cta.vta_cpd || 0) - Number(cta.vta_cpd_usado || 0) : 0;
+                    if (d.monto > disp + 0.005 && !confirm('El cheque supera el margen disponible de descuento de la cuenta. ¿Descontar igual?')) return;
+                }
+                Object.assign(body, { descuento: true, tasa: d.tasa, intereses: d.intereses, gastos: d.gastos, importe_acreditado: Math.round(d.acreditado * 100) / 100, sgr_id: d.sgrId });
                 if (d.tasa > 0) localStorage.setItem('campoplus_tasa_dto_' + cuenta_id, String(d.tasa));
             }
             const res = await fetch(`/api/bancos/cheques/${id}/depositar`, {
@@ -1698,7 +1878,7 @@
             let msg = data.message || 'Depositado';
             if (data.margen) {
                 const f = n => '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                msg += `\n\nMargen Vta CPD: ${f(data.margen.total)} | Usado: ${f(data.margen.usado)} | Disponible: ${f(data.margen.disponible)}`;
+                msg += `\n\nMargen ${data.margen.origen || 'Vta CPD'}: ${f(data.margen.total)} | Usado: ${f(data.margen.usado)} | Disponible: ${f(data.margen.disponible)}`;
                 cargarCuentas();
             }
             alert(msg);
