@@ -544,15 +544,15 @@
                                     </div>
                                     <div class="col-4">
                                         <label class="lbl">Intereses</label>
-                                        <input type="number" step="0.01" id="depDtoIntereses" class="form-control form-control-sm text-end" oninput="this.dataset.manual='1'; recalcularDtoValores(true)">
+                                        <input type="text" id="depDtoIntereses" class="form-control form-control-sm text-end money-input" data-money inputmode="decimal" value="0,00" oninput="this.dataset.manual='1'; recalcularDtoValores(true)">
                                     </div>
                                     <div class="col-4">
                                         <label class="lbl">Gastos / IVA</label>
-                                        <input type="number" step="0.01" id="depDtoGastos" class="form-control form-control-sm text-end" value="0" oninput="recalcularDtoValores(true)">
+                                        <input type="text" id="depDtoGastos" class="form-control form-control-sm text-end money-input" data-money inputmode="decimal" value="0,00" oninput="recalcularDtoValores(true)">
                                     </div>
                                     <div class="col-4">
                                         <label class="lbl">Se acredita en la cuenta</label>
-                                        <input type="number" step="0.01" min="0" id="depDtoAcredita" class="form-control form-control-sm text-end fw-bold" oninput="this.dataset.manual='1'; recalcularDtoValores(true)">
+                                        <input type="text" id="depDtoAcredita" class="form-control form-control-sm text-end fw-bold money-input" data-money inputmode="decimal" value="0,00" oninput="this.dataset.manual='1'; recalcularDtoValores(true)">
                                     </div>
                                     <div class="col-4">
                                         <label class="lbl">Neto estimado <a href="#" class="small" onclick="usarNetoDto(); return false;">usar</a></label>
@@ -1576,7 +1576,7 @@
                 `Ch. ${c.nro_cheque} - $ ${Number(c.monto).toLocaleString('es-AR')} - ${c.banco || ''} - ${c.librador || c.cliente_nombre || ''} - Pago ${fechaDMY(c.fecha_pago)}`;
             document.getElementById('depFecha').value = new Date().toISOString().slice(0, 10);
             document.getElementById('depDtoActivo').checked = true;
-            document.getElementById('depDtoGastos').value = '0';
+            document.getElementById('depDtoGastos').value = CampoMoney.format(0);
             document.getElementById('depDtoTasa').value = '';
             delete document.getElementById('depDtoTasa').dataset.cuenta;
             delete document.getElementById('depDtoIntereses').dataset.manual;
@@ -1617,11 +1617,11 @@
             const tasa = parseFloat(document.getElementById('depDtoTasa').value || 0) || 0;
             const intInp = document.getElementById('depDtoIntereses');
             const intereses = intInp.dataset.manual
-                ? (parseFloat(intInp.value || 0) || 0)
+                ? CampoMoney.parse(intInp.value)
                 : Math.round(monto * tasa / 100 * (dias || 0) / 365 * 100) / 100;
-            const gastos = parseFloat(document.getElementById('depDtoGastos').value || 0) || 0;
+            const gastos = CampoMoney.parse(document.getElementById('depDtoGastos').value);
             const acrInp = document.getElementById('depDtoAcredita');
-            const acreditado = acrInp.dataset.manual ? (parseFloat(acrInp.value || 0) || 0) : monto;
+            const acreditado = acrInp.dataset.manual ? CampoMoney.parse(acrInp.value) : monto;
             return { dias, aplica, activo, monto, tasa, intereses, gastos, acreditado, neto: monto - intereses - gastos };
         }
 
@@ -1629,7 +1629,7 @@
             const d = datosDtoValores();
             const inp = document.getElementById('depDtoAcredita');
             inp.dataset.manual = '1';
-            inp.value = (Math.round(d.neto * 100) / 100).toFixed(2);
+            inp.value = CampoMoney.format(d.neto);
             recalcularDtoValores(true);
         }
 
@@ -1652,9 +1652,9 @@
                 `El cheque se paga el ${fechaDMY(_depCheque.fecha_pago)}: faltan ${d.dias} día(s). Usa el margen de descuento de cheques (Vta CPD) de la cuenta.`;
             document.getElementById('depDtoDias').value = d.dias;
             const intInp = document.getElementById('depDtoIntereses');
-            if (!intInp.dataset.manual) intInp.value = d.intereses.toFixed(2);
+            if (!intInp.dataset.manual) intInp.value = CampoMoney.format(d.intereses);
             const acrInp = document.getElementById('depDtoAcredita');
-            if (!acrInp.dataset.manual) acrInp.value = d.monto.toFixed(2);
+            if (!acrInp.dataset.manual) acrInp.value = CampoMoney.format(d.monto);
             document.getElementById('depDtoNeto').value = fmt(d.neto);
             const dif = d.monto - d.acreditado;
             document.getElementById('depDtoNotaAcredita').innerHTML = dif > 0.005
