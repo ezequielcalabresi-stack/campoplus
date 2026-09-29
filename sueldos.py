@@ -337,6 +337,9 @@ def preview_conformacion(conn, emp_id: int, mes: str, porcentaje: float) -> list
             "aumento": _r2(nuevo - base),
             "ya_conformado": bool(existente),
             "sueldo_conformado": _r2(existente["debe"]) if existente else None,
+            "fecha_conformado": existente["fecha"] if existente else "",
+            "porcentaje_conformado": round(float(existente["porcentaje"] or 0) * 100, 2) if existente else None,
+            "indice_conformado": (existente["varios"] or "") if existente else "",
         })
     return out
 
@@ -495,10 +498,14 @@ def borrar_movimiento(conn, emp_id: int, mov_id: int) -> None:
 def detalle_sueldos_mes(conn, emp_id: int, mes: str, solo_activos: bool = True) -> dict:
     mes = mes_valido(mes)
     empleados = []
+    sin_conformar = []
     tot = {"creditos": 0.0, "debitos": 0.0, "depositos_bancarios": 0.0, "total_cobrar": 0.0, "aumentos": 0.0}
     for e in listar_empleados(conn, emp_id, incluir_inactivos=not solo_activos):
         r = resumen_empleado_mes(conn, emp_id, e["id"], mes)
         if not r["filas"]:
+            continue
+        if not r["conformado"]:
+            sin_conformar.append({"empleado_id": e["id"], "nombre": e["nombre"], "movimientos": len(r["filas"])})
             continue
         empleados.append({
             "empleado_id": e["id"],
@@ -515,7 +522,8 @@ def detalle_sueldos_mes(conn, emp_id: int, mes: str, solo_activos: bool = True) 
         for k in ("creditos", "debitos", "depositos_bancarios", "total_cobrar"):
             tot[k] += r[k]
         tot["aumentos"] += r["aumento"]
-    return {"mes": mes, "empleados": empleados, "totales": {k: _r2(v) for k, v in tot.items()}}
+    return {"mes": mes, "empleados": empleados, "sin_conformar": sin_conformar,
+            "totales": {k: _r2(v) for k, v in tot.items()}}
 
 
 # ---------------------------------------------------------------- recibos de convenio

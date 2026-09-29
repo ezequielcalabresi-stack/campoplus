@@ -67,10 +67,16 @@
         </div>
 
         <div class="flex flex-wrap justify-between items-center gap-2 mb-2 text-sm">
-            <div class="flex items-center gap-4">
-                <input id="c_buscar" type="search" class="border rounded p-2 w-64" placeholder="Buscar empleado o convenio..." oninput="renderConf()">
-                <label class="flex items-center gap-2" title="Marca o desmarca los empleados que se ven en la lista"><input type="checkbox" id="c_todos" checked onchange="marcarTodosConf(this.checked)"> Todos</label>
-                <label class="flex items-center gap-2"><input type="checkbox" id="c_reemplazar"> Reemplazar los ya conformados</label>
+            <div class="flex flex-wrap items-center gap-3">
+                <input id="c_buscar" type="search" class="border rounded p-2 w-56" placeholder="Buscar empleado o convenio..." oninput="renderConf()">
+                <select id="c_estado" class="border rounded p-2 bg-white" onchange="renderConf()">
+                    <option value="todos">Todos los estados</option>
+                    <option value="pendientes">Pendientes</option>
+                    <option value="conformados">Conformados</option>
+                </select>
+                <select id="c_convenio" class="border rounded p-2 bg-white" onchange="renderConf()"><option value="*">Todos los convenios</option></select>
+                <label class="flex items-center gap-2" title="Marca o desmarca los pendientes que se ven en la lista. No marca los que tienen el último sueldo viejo."><input type="checkbox" id="c_todos" checked onchange="marcarTodosConf(this.checked)"> Todos</label>
+                <label class="flex items-center gap-2"><input type="checkbox" id="c_reemplazar" onchange="alCambiarReemplazar()"> Reemplazar los ya conformados</label>
             </div>
             <div class="flex items-center gap-3">
                 <span id="c_resumen" class="text-xs text-slate-500"></span>
@@ -419,7 +425,17 @@ async function calcularConf() {
     try {
         CONF = await api(`/api/sueldos/conformacion?mes=${mes}&porcentaje=${pct}`);
     } catch (e) { alert(e.message); return; }
-    CONF.forEach(r => r.incluir = !r.ya_conformado && r.sueldo_anterior > 0);
+    const mesLimite = sumarMes(mes, -2);
+    CONF.forEach(r => {
+        r.viejo = !r.ya_conformado && r.sueldo_anterior > 0 && !!r.fecha_anterior && String(r.fecha_anterior).slice(0, 7) < mesLimite;
+        r.incluir = !r.ya_conformado && r.sueldo_anterior > 0 && !r.viejo;
+    });
+    const selConv = document.getElementById('c_convenio');
+    const prevConv = selConv.value;
+    const convs = [...new Set(CONF.map(r => r.convenio || ''))].sort((a, b) => a.localeCompare(b, 'es'));
+    selConv.innerHTML = '<option value="*">Todos los convenios</option>'
+        + convs.map(c => `<option value="${esc(c)}">${c ? esc(c) : '(sin convenio)'}</option>`).join('');
+    if ([...selConv.options].some(o => o.value === prevConv)) selConv.value = prevConv;
     renderConf();
 }
 
@@ -427,25 +443,69 @@ function normTxt(s) {
     return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
+function confBloqueado(r) {
+    return r.ya_conformado && !document.getElementById('c_reemplazar').checked;
+}
+
 function confVisible(r) {
     const q = normTxt(document.getElementById('c_buscar').value.trim());
+    const estado = document.getElementById('c_estado').value;
+    const conv = document.getElementById('c_convenio').value;
+    if (estado === 'pendientes' && r.ya_conformado) return false;
+    if (estado === 'conformados' && !r.ya_conformado) return false;
+    if (conv !== '*' && (r.convenio || '') !== conv) return false;
     return !q || normTxt(r.nombre).includes(q) || normTxt(r.convenio).includes(q);
 }
 
-function renderConf() {
-    document.getElementById('c_tbody').innerHTML = CONF.map((r, i) => !confVisible(r) ? '' : `
-        <tr class="${r.ya_conformado ? 'bg-emerald-50/50' : ''}">
+function alCambiarReemplazar() {
+    if (!document.getElementById('c_reemplazar').checked) CONF.forEach(r => { if (r.ya_conformado) r.incluir = false; });
+    renderConf();
+}
+
+function filaConf(r, i) {
+    const bloq = confBloqueado(r);
+    const cuenta = `<button class="text-indigo-700 text-xs font-bold hover:underline" onclick="irACuenta(${r.empleado_id}, document.getElementById('c_mes').value)">Cuenta</button>`;
+    const nombre = `${esc(r.nombre)}${r.excluir_indice ? ' <span class="text-[10px] text-amber-700">(sin índice)</span>' : ''}`
+        + (r.viejo ? `<div class="text-[10px] text-amber-700 font-bold">Último sueldo ${fmtFecha(r.fecha_anterior)}: revisá antes de conformarlo (no se marca con "Todos")</div>` : '');
+    if (bloq) {
+        const aum = Math.round((r.sueldo_conformado - r.sueldo_anterior) * 100) / 100;
+        return `
+        <tr class="bg-emerald-50/60 text-slate-600">
+            <td class="p-2 text-center"><input type="checkbox" disabled title="Ya conformado. Tildá 'Reemplazar los ya conformados' para recalcularlo."></td>
+            <td class="p-2 font-medium">${nombre}</td>
+            <td class="p-2 text-xs text-slate-500">${esc(r.convenio)}</td>
+            <td class="p-2 text-right font-mono font-bold text-slate-800">${money(r.sueldo_conformado)}
+                <div class="text-[10px] font-normal text-slate-400">antes ${money(r.sueldo_anterior)}</div></td>
+            <td class="p-2 text-center text-xs font-bold text-slate-800">${fmtFecha(r.fecha_conformado)}
+                <div class="text-[10px] font-normal text-slate-400">${fmtFecha(r.fecha_anterior)}</div></td>
+            <td class="p-2 text-right font-mono text-xs">${(r.porcentaje_conformado || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}%
+                <div class="text-[10px] text-slate-400">${esc(r.indice_conformado || '')}</div></td>
+            <td class="p-2 text-right font-mono">${money(r.sueldo_conformado)}</td>
+            <td class="p-2 text-right font-mono">${money(aum)}</td>
+            <td class="p-2 text-center text-xs"><span class="text-emerald-700 font-bold">Conformado</span></td>
+            <td class="p-2 text-center">${cuenta}</td>
+        </tr>`;
+    }
+    return `
+        <tr class="${r.ya_conformado ? 'bg-emerald-50/50' : 'bg-amber-50/40'}">
             <td class="p-2 text-center"><input type="checkbox" ${r.incluir ? 'checked' : ''} onchange="CONF[${i}].incluir=this.checked; totalesConf()"></td>
-            <td class="p-2 font-medium">${esc(r.nombre)}${r.excluir_indice ? ' <span class="text-[10px] text-amber-700">(sin índice)</span>' : ''}</td>
+            <td class="p-2 font-medium">${nombre}</td>
             <td class="p-2 text-xs text-slate-500">${esc(r.convenio)}</td>
             <td class="p-2 text-right font-mono">${money(r.sueldo_anterior)}</td>
             <td class="p-2 text-center text-xs">${fmtFecha(r.fecha_anterior)}</td>
             <td class="p-2"><input type="text" class="w-20 border rounded p-1 text-right font-mono" value="${String(r.porcentaje).replace('.', ',')}" onchange="cambiarPctFila(${i}, this.value)"></td>
             <td class="p-2"><input type="text" class="w-36 border rounded p-1 text-right font-mono" value="${CampoMoney.format(r.nuevo_sueldo)}" onchange="cambiarNuevoFila(${i}, this.value)"></td>
             <td class="p-2 text-right font-mono">${money(r.aumento)}</td>
-            <td class="p-2 text-center text-xs">${r.ya_conformado ? `<span class="text-emerald-700 font-bold">Conformado ${money(r.sueldo_conformado)}</span>` : '<span class="text-slate-400">Pendiente</span>'}</td>
-            <td class="p-2 text-center"><button class="text-indigo-700 text-xs font-bold hover:underline" onclick="irACuenta(${r.empleado_id}, document.getElementById('c_mes').value)">Cuenta</button></td>
-        </tr>`).join('') || `<tr><td colspan="10" class="p-4 text-center text-slate-400">${CONF.length ? 'Ningún empleado coincide con la búsqueda' : 'Sin empleados activos'}</td></tr>`;
+            <td class="p-2 text-center text-xs">${r.ya_conformado
+                ? `<span class="text-emerald-700 font-bold">Conformado ${money(r.sueldo_conformado)}</span><div class="text-[10px] text-amber-700">se reemplaza si lo tildás</div>`
+                : '<span class="text-amber-700 font-bold">Pendiente</span>'}</td>
+            <td class="p-2 text-center">${cuenta}</td>
+        </tr>`;
+}
+
+function renderConf() {
+    document.getElementById('c_tbody').innerHTML = CONF.map((r, i) => confVisible(r) ? filaConf(r, i) : '').join('')
+        || `<tr><td colspan="10" class="p-4 text-center text-slate-400">${CONF.length ? 'Ningún empleado coincide con los filtros' : 'Sin empleados activos'}</td></tr>`;
     totalesConf();
 }
 
@@ -467,7 +527,14 @@ function cambiarNuevoFila(i, v) {
     renderConf();
 }
 
-function marcarTodosConf(v) { CONF.forEach(r => { if (confVisible(r)) r.incluir = v; }); renderConf(); }
+function marcarTodosConf(v) {
+    CONF.forEach(r => {
+        if (!confVisible(r) || confBloqueado(r)) return;
+        if (v && (r.viejo || !(r.sueldo_anterior > 0))) return;
+        r.incluir = v;
+    });
+    renderConf();
+}
 
 function totalesConf() {
     const sel = CONF.filter(r => r.incluir);
@@ -476,7 +543,7 @@ function totalesConf() {
     document.getElementById('c_tot_aum').textContent = money(sel.reduce((a, r) => a + r.aumento, 0));
     const pend = CONF.filter(r => !r.ya_conformado).length;
     const vis = CONF.filter(confVisible).length;
-    document.getElementById('c_resumen').textContent = `${sel.length} seleccionados | ${pend} pendientes de ${CONF.length} activos`
+    document.getElementById('c_resumen').textContent = `${sel.length} seleccionados | ${CONF.length - pend} conformados | ${pend} pendientes de ${CONF.length} activos`
         + (vis < CONF.length ? ` | mostrando ${vis}` : '');
 }
 
@@ -837,7 +904,14 @@ async function cargarDetalle() {
                 </tbody>
             </table>
         </div>`).join('');
-    document.getElementById('d_cont').innerHTML = cab + aviso + (bloques || '<p class="text-center text-slate-400 p-6">Sin movimientos en el mes.</p>');
+    const sinConf = DETALLE.sin_conformar || [];
+    const notaSinConf = sinConf.length ? `
+        <div class="no-print border border-amber-300 bg-amber-50 rounded-lg p-3 mb-4 text-xs text-amber-900">
+            <b>${sinConf.length} empleado(s) con movimientos en el mes pero sin sueldo conformado</b> (no se incluyen en el detalle):
+            ${sinConf.map(e => `<button class="underline font-bold ml-1" onclick="irACuenta(${e.empleado_id}, '${mes}')">${esc(e.nombre)}</button>`).join(',')}
+        </div>` : '';
+    document.getElementById('d_cont').innerHTML = cab + aviso + notaSinConf
+        + (bloques || '<p class="text-center text-slate-400 p-6">No hay sueldos conformados en el mes. Conformalos desde "Conformación mensual".</p>');
     if (negativos.length) {
         alert(`Hay ${negativos.length} sueldo(s) en negativo en ${titulo}:\n\n`
             + negativos.map(e => `${e.nombre}: ${money(e.total_cobrar)}`).join('\n')
