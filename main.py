@@ -1507,7 +1507,49 @@ def sincronizar_creditos_desde_movimientos_prestamo() -> dict:
             xa = excel_map.get(m.get("id_access"))
             if xa:
                 metas.append(xa)
-        meta0 = metas[0] if metas else {}
+        cursor.execute(
+            "SELECT * FROM creditos_prestamos WHERE TRIM(nro_credito)=? AND COALESCE(empresa_id,1)=? LIMIT 1;",
+            (nro, empresa_id),
+        )
+        existente = cursor.fetchone()
+        if existente and not metas:
+            # Sin Excel (ej. en Render) no hay de donde sacar moneda, tasas ni montos USD:
+            # se conservan los datos cargados y solo se actualizan vinculos y estados de cuotas.
+            credito_id = int(existente["id"])
+            cursor.execute(
+                "UPDATE creditos_prestamos SET cuenta_id=COALESCE(cuenta_id, ?), estado='Activo' WHERE id=?;",
+                (lista[0].get("cuenta_id"), credito_id),
+            )
+            if (existente["moneda"] or "").upper() == "USD":
+                usd_count += 1
+            for m in lista:
+                cursor.execute(
+                    "SELECT id FROM creditos_cuotas WHERE movimiento_banco_id = ? OR (id_access IS NOT NULL AND id_access = ?) LIMIT 1;",
+                    (int(m["id"]), m.get("id_access")),
+                )
+                if cursor.fetchone():
+                    continue
+                haber = float(m.get("haber") or 0)
+                cursor.execute(
+                    """
+                    INSERT INTO creditos_cuotas (
+                        credito_id, nro_cuota, cuenta_id, fecha_pago, capital, total_pagar, total_ars,
+                        nota, estado, movimiento_banco_id, id_access, empresa_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?, ?);
+                    """,
+                    (
+                        credito_id, int(m.get("nro_cuota") or 0) or 1, m.get("cuenta_id"), m.get("fecha_cobro") or "",
+                        0 if (existente["moneda"] or "").upper() == "USD" else haber, haber, haber,
+                        f"Access Id {m.get('id_access')}" if m.get("id_access") else "",
+                        int(m["id"]), m.get("id_access"), empresa_id,
+                    ),
+                )
+                cuotas_ok += 1
+            _refrescar_estados_cuotas_por_debito(cursor, credito_id)
+            _sincronizar_resumen_credito(cursor, credito_id)
+            actualizados += 1
+            continue
+
         es_usd = any(x.get("moneda") == "USD" for x in metas) or any(
             float(excel_map.get(m.get("id_access"), {}).get("tipo_cambio") or 0) > 0 for m in lista
         )
@@ -1549,11 +1591,6 @@ def sincronizar_creditos_desde_movimientos_prestamo() -> dict:
             plazo_n = len(lista)
 
         cuenta_id = lista[0].get("cuenta_id")
-        cursor.execute(
-            "SELECT id FROM creditos_prestamos WHERE TRIM(nro_credito)=? AND COALESCE(empresa_id,1)=? LIMIT 1;",
-            (nro, empresa_id),
-        )
-        existente = cursor.fetchone()
         if existente:
             credito_id = int(existente["id"])
             cursor.execute(
@@ -5307,6 +5344,82 @@ def listar_cuotas_credito(credito_id: int):
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+_CAMPOS_RESTAURAR_CREDITO = (
+    "banco", "entidad_financiera", "origen_detalle", "descripcion", "monto_total", "moneda",
+    "tna", "tea", "amortizacion", "plazo",
+)
+_CAMPOS_RESTAURAR_CUOTA = (
+    "nro_cuota", "fecha_pago", "capital", "intereses", "impuestos", "cargos", "total_pagar",
+    "capital_usd", "intereses_usd", "cargos_usd", "tipo_cambio",
+    "capital_ars", "intereses_ars", "cargos_ars", "total_ars",
+)
+
+
+class RestaurarCreditosModel(BaseModel):
+    creditos: List[dict] = []
+    cuotas: List[dict] = []
+    aplicar: bool = False
+
+
+@app.post("/api/bancos/creditos/restaurar_datos")
+def restaurar_datos_creditos(data: RestaurarCreditosModel):
+    """Repone moneda, tasas y montos de creditos/cuotas por id (no toca estados ni movimientos)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cambios_cred, cambios_cuota, rechazados = 0, 0, []
+    afectados = set()
+
+    def _distinto(a, b) -> bool:
+        if isinstance(a, (int, float)) or isinstance(b, (int, float)):
+            try:
+                return abs(float(a or 0) - float(b or 0)) > 0.005
+            except (TypeError, ValueError):
+                return str(a or "") != str(b or "")
+        return str(a or "").strip() != str(b or "").strip()
+
+    for c in data.creditos:
+        cursor.execute("SELECT * FROM creditos_prestamos WHERE id = ?;", (int(c["id"]),))
+        row = cursor.fetchone()
+        if not row or str(row["nro_credito"] or "").strip() != str(c.get("nro_credito") or "").strip():
+            rechazados.append(f"credito {c.get('id')}")
+            continue
+        sets = {k: c[k] for k in _CAMPOS_RESTAURAR_CREDITO if k in c and _distinto(row[k], c[k])}
+        if sets:
+            cambios_cred += 1
+            afectados.add(int(c["id"]))
+            if data.aplicar:
+                cursor.execute(
+                    f"UPDATE creditos_prestamos SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?;",
+                    (*sets.values(), int(c["id"])),
+                )
+    for q in data.cuotas:
+        cursor.execute("SELECT * FROM creditos_cuotas WHERE id = ?;", (int(q["id"]),))
+        row = cursor.fetchone()
+        if not row or int(row["credito_id"] or 0) != int(q.get("credito_id") or 0):
+            rechazados.append(f"cuota {q.get('id')}")
+            continue
+        sets = {k: q[k] for k in _CAMPOS_RESTAURAR_CUOTA if k in q and _distinto(row[k], q[k])}
+        if sets:
+            cambios_cuota += 1
+            afectados.add(int(row["credito_id"]))
+            if data.aplicar:
+                cursor.execute(
+                    f"UPDATE creditos_cuotas SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?;",
+                    (*sets.values(), int(q["id"])),
+                )
+    if data.aplicar:
+        for cid in afectados:
+            _sincronizar_resumen_credito(cursor, cid)
+        conn.commit()
+    conn.close()
+    return {
+        "aplicado": data.aplicar,
+        "creditos_con_cambios": cambios_cred,
+        "cuotas_con_cambios": cambios_cuota,
+        "rechazados": rechazados,
+    }
+
 
 @app.post("/api/bancos/creditos/{credito_id}/cuotas")
 def guardar_cuotas_credito(credito_id: int, data: CreditoCuotasLoteModel):

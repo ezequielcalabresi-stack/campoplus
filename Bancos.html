@@ -351,8 +351,11 @@
                             <option value="historicos">Históricos</option>
                             <option value="todos">Todos</option>
                         </select>
+                        <select id="filtroBancoCredito" class="form-select form-select-sm" style="width:170px;" onchange="renderCreditos()">
+                            <option value="">Todos los bancos</option>
+                        </select>
                         <select id="filtroMonedaCredito" class="form-select form-select-sm" style="width:140px;" onchange="cargarCreditos()">
-                            <option value="">Todas</option>
+                            <option value="">Todas las monedas</option>
                             <option value="ARS">Pesos ($)</option>
                             <option value="USD">Dólares (USD)</option>
                         </select>
@@ -377,6 +380,7 @@
                         <tbody id="tablaCreditosBody">
                             <tr><td colspan="9" class="text-center py-4 text-muted">Cargando créditos...</td></tr>
                         </tbody>
+                        <tfoot id="tablaCreditosPie"></tfoot>
                     </table>
                 </div>
             </div>
@@ -2175,13 +2179,45 @@
                 if (mon) url += '&moneda=' + encodeURIComponent(mon);
                 const res = await fetch(url);
                 creditosCache = await res.json();
+                const selBanco = document.getElementById('filtroBancoCredito');
+                if (selBanco) {
+                    const actual = selBanco.value;
+                    const bancos = [...new Set(creditosCache.map(bancoCredito))].sort((a, b) => a.localeCompare(b, 'es'));
+                    selBanco.innerHTML = '<option value="">Todos los bancos</option>'
+                        + bancos.map(b => `<option value="${b}">${b}</option>`).join('');
+                    selBanco.value = bancos.includes(actual) ? actual : '';
+                }
+                renderCreditos();
+            } catch (e) { console.error(e); }
+        }
+        function bancoCredito(c) {
+            return (c.entidad_financiera || c.banco || '-').trim();
+        }
+        function renderCreditos() {
                 const tbody = document.getElementById('tablaCreditosBody');
                 if (!tbody) return;
-                if (!creditosCache.length) {
+                const banco = document.getElementById('filtroBancoCredito')?.value || '';
+                const lista = creditosCache.filter(c => !banco || bancoCredito(c) === banco);
+                const pie = document.getElementById('tablaCreditosPie');
+                if (!lista.length) {
                     tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">Sin créditos en este filtro.</td></tr>';
+                    if (pie) pie.innerHTML = '';
                     return;
                 }
-                tbody.innerHTML = creditosCache.map(c => {
+                if (pie) {
+                    const tot = {};
+                    lista.forEach(c => {
+                        const m = (c.moneda || 'ARS').toUpperCase();
+                        tot[m] = tot[m] || { n: 0, monto: 0 };
+                        tot[m].n++;
+                        tot[m].monto += Number(c.monto_total || 0);
+                    });
+                    pie.innerHTML = Object.entries(tot).map(([m, t]) => `<tr class="table-light fw-bold">
+                        <td colspan="3">Total ${m === 'USD' ? 'dólares' : 'pesos'} | ${t.n} crédito(s)${banco ? ' | ' + banco : ''}</td>
+                        <td class="text-end font-mono">${m === 'USD' ? 'U$S ' : '$ '}${t.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td colspan="5"></td></tr>`).join('');
+                }
+                tbody.innerHTML = lista.map(c => {
                     const moneda = (c.moneda || 'ARS').toUpperCase();
                     const sym = moneda === 'USD' ? 'U$S ' : '$ ';
                     const pend = c.cant_pendientes != null ? c.cant_pendientes : ((c.cant_cuotas || 0) - (c.cant_pagadas || 0));
@@ -2202,7 +2238,6 @@
                         </td>
                     </tr>`;
                 }).join('');
-            } catch (e) { console.error(e); }
         }
         function abrirModalCredito() {
             document.getElementById('credId').value = '';
