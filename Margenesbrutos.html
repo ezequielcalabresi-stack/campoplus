@@ -337,7 +337,15 @@
                         Un solo mapa: clic = georreferencia del <strong>campo</strong>; si una fila de lote tiene el foco, el clic va al <strong>lote</strong>.
                         Capas: Satélite / Híbrido / Mapa (arriba a la derecha).
                     </p>
-                    <div id="mapCampo"></div>
+                    <div class="position-relative">
+                        <div id="mapCampo"></div>
+                        <div id="barraDibujo" class="d-none" style="position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:1000;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.35);padding:6px 10px;font-size:12px;">
+                            <span id="barraDibujoTxt" class="fw-bold me-2"></span>
+                            <button type="button" class="btn btn-success btn-sm py-0" onclick="terminarDibujo()">Terminar</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="deshacerPuntoDibujo()">Deshacer punto</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm py-0" onclick="cancelarDibujo()">Cancelar</button>
+                        </div>
+                    </div>
                     <div class="row g-2 mt-2">
                         <div class="col-md-3"><input type="number" step="0.000001" id="campoLat" class="form-control form-control-sm font-mono" placeholder="Lat campo"></div>
                         <div class="col-md-3"><input type="number" step="0.000001" id="campoLng" class="form-control form-control-sm font-mono" placeholder="Lng campo"></div>
@@ -351,12 +359,19 @@
                     </div>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered">
-                            <thead><tr><th>Código</th><th>Nombre</th><th>Has</th><th>Lat</th><th>Lng</th><th></th></tr></thead>
+                            <thead><tr>
+                                <th>Código</th><th>Nombre</th>
+                                <th title="Hectáreas de la empresa: las del contrato, IP1 e IP2">Has Silo Chico</th>
+                                <th class="col-total-lote d-none" title="Hectáreas del lote al 100%, sumando la parte del socio">Has totales (100%)</th>
+                                <th>Lat</th><th>Lng</th><th>Contorno</th><th></th>
+                            </tr></thead>
                             <tbody id="tbodyLotesNuevos"></tbody>
                         </table>
                     </div>
+                    <p class="small fw-bold mb-1" id="lotesTotales"></p>
                     <p class="small text-muted mb-0">La superficie total del campo es la suma de los lotes. Si cambiás las hectáreas de un lote, rigen desde la campaña activa en adelante; las campañas anteriores conservan la superficie que tenían.</p>
-                    <p class="hint mb-0">Las has de lote pueden ajustarse por campaña después. Seleccioná una fila y hacé clic en el mapa de arriba para Lat/Lng.</p>
+                    <p class="hint mb-0">Las has de lote pueden ajustarse por campaña después. Seleccioná una fila y hacé clic en el mapa de arriba para Lat/Lng. Con "Dibujar" marcás el contorno del lote punto por punto sobre el mapa.</p>
+                    <p class="hint mb-0 col-total-lote d-none">Campo en participación: "Has Silo Chico" es la parte de la empresa (contrato, IP1 e IP2). En "Has totales" va el lote completo; si lo dejás vacío se calcula con el % de la empresa.</p>
                 </div>
 
                 <div class="border rounded p-3 mt-3" id="boxParticipacion">
@@ -780,6 +795,8 @@ function abrirModalCampo(tipo) {
     document.getElementById('campoDir').value = '';
     document.getElementById('campoLat').value = '';
     document.getElementById('campoLng').value = '';
+    if (dibujo) cerrarDibujo();
+    pctEmpresaActual = 100;
     document.getElementById('tbodyLotesNuevos').innerHTML = '';
     document.getElementById('boxArrendador').style.display = tipo === 'arrendado' ? 'block' : 'none';
     if (tipo === 'arrendado') {
@@ -829,15 +846,23 @@ function agregarFilaLote(data) {
         <td><input class="form-control form-control-sm lote-cod" value="${data?.codigo||''}" placeholder="L1"></td>
         <td><input class="form-control form-control-sm lote-nom" value="${data?.nombre||''}" placeholder="Lote 1"></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-has" value="${data?.superficie_base||0}" oninput="recalcularHasCampo()"></td>
+        <td class="col-total-lote ${colTotalLoteVisible() ? '' : 'd-none'}"><input type="number" step="0.01" class="form-control form-control-sm font-mono lote-total" value="${Number(data?.superficie_total_lote || 0) || ''}" oninput="recalcularHasCampo()"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lat" value="${data?.lat??''}"></td>
         <td><input type="number" step="0.000001" class="form-control form-control-sm font-mono lote-lng" value="${data?.lng??''}"></td>
+        <td class="text-nowrap">
+            <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="iniciarDibujo(this.closest('tr'))">Dibujar</button>
+            <button type="button" class="btn btn-outline-danger btn-sm py-0 lote-geo-borrar" onclick="borrarContorno(this.closest('tr'))" title="Borrar contorno">×</button>
+            <div class="hint lote-geo-info"></div>
+        </td>
         <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="quitarFilaLote(this)">×</button></td>`;
     if (data?.id) tr.dataset.id = data.id;
+    tr.dataset.geojson = data?.geojson || '';
     tr.addEventListener('focusin', () => resaltarLote(tr));
     tr.querySelectorAll('.lote-lat, .lote-lng, .lote-nom, .lote-cod').forEach(inp => {
         inp.addEventListener('change', () => refrescarMarcadoresLotes(false));
     });
     document.getElementById('tbodyLotesNuevos').appendChild(tr);
+    actualizarInfoContorno(tr);
     recalcularHasCampo();
 }
 
@@ -856,6 +881,44 @@ function recalcularHasCampo() {
     inp.readOnly = total > 0;
     inp.title = total > 0 ? 'Suma de las hectáreas de los lotes' : '';
     if (total > 0) inp.value = total;
+    const fmt = n => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+    let totalLotes = 0;
+    document.querySelectorAll('#tbodyLotesNuevos tr').forEach(tr => {
+        const sug = hasTotalSugerido(tr);
+        const inpT = tr.querySelector('.lote-total');
+        if (inpT) inpT.placeholder = sug ? fmt(sug) : '';
+        if (tr.querySelector('.lote-nom').value.trim()) totalLotes += hasTotalLote(tr);
+    });
+    const el = document.getElementById('lotesTotales');
+    if (!el) return;
+    el.textContent = colTotalLoteVisible() && total > 0
+        ? `Silo Chico: ${fmt(total)} has | Campo al 100%: ${fmt(totalLotes)} has (empresa ${fmt(pctEmpresaActual)}%)`
+        : (total > 0 ? `Total: ${fmt(total)} has` : '');
+}
+
+// % de la empresa en la campaña elegida en "Participación" (100 si no hay socios).
+let pctEmpresaActual = 100;
+
+function colTotalLoteVisible() {
+    return pctEmpresaActual < 100
+        || [...document.querySelectorAll('#tbodyLotesNuevos .lote-total')].some(i => parseFloat(i.value) > 0);
+}
+
+function actualizarColTotalLote() {
+    const ver = colTotalLoteVisible();
+    document.querySelectorAll('#modalCampo .col-total-lote').forEach(el => el.classList.toggle('d-none', !ver));
+    recalcularHasCampo();
+}
+
+function hasTotalSugerido(tr) {
+    const has = parseFloat(tr.querySelector('.lote-has').value || 0) || 0;
+    if (!has || pctEmpresaActual >= 100 || pctEmpresaActual <= 0) return 0;
+    return Math.round(has / (pctEmpresaActual / 100) * 100) / 100;
+}
+
+function hasTotalLote(tr) {
+    const v = parseFloat(tr.querySelector('.lote-total')?.value || 0) || 0;
+    return v > 0 ? v : (hasTotalSugerido(tr) || parseFloat(tr.querySelector('.lote-has').value || 0) || 0);
 }
 
 function quitarFilaLote(btn) {
@@ -885,11 +948,149 @@ function resaltarLote(tr) {
     refrescarMarcadoresLotes(true);
 }
 
+// ---- Contorno de lotes (polígono GeoJSON dibujado sobre el mapa) ----
+let dibujo = null;  // { tr, puntos: [[lat, lng]], capa }
+let capasContorno = [];
+
+function areaHasPoligono(latlngs) {
+    // Área geodésica aproximada (esfera WGS84), en hectáreas.
+    if (!latlngs || latlngs.length < 3) return 0;
+    const R = 6378137, rad = Math.PI / 180;
+    let area = 0;
+    for (let i = 0; i < latlngs.length; i++) {
+        const [lat1, lng1] = latlngs[i];
+        const [lat2, lng2] = latlngs[(i + 1) % latlngs.length];
+        area += (lng2 - lng1) * rad * (2 + Math.sin(lat1 * rad) + Math.sin(lat2 * rad));
+    }
+    return Math.abs(area * R * R / 2) / 10000;
+}
+
+function puntosContorno(tr) {
+    try {
+        const g = JSON.parse(tr.dataset.geojson || '');
+        const geom = g.type === 'Feature' ? g.geometry : g;
+        if (!geom || geom.type !== 'Polygon') return [];
+        const anillo = geom.coordinates[0] || [];
+        const pts = anillo.map(([lng, lat]) => [lat, lng]);
+        if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+        return pts;
+    } catch (e) {
+        return [];
+    }
+}
+
+function actualizarInfoContorno(tr) {
+    const pts = puntosContorno(tr);
+    const info = tr.querySelector('.lote-geo-info');
+    tr.querySelector('.lote-geo-borrar').classList.toggle('d-none', !pts.length);
+    if (!pts.length) { info.innerHTML = ''; return; }
+    const ha = Math.round(areaHasPoligono(pts) * 100) / 100;
+    const fmt = n => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+    info.innerHTML = `${fmt(ha)} ha medidas `
+        + `<a href="#" onclick="usarAreaContorno(this.closest('tr')); return false;" title="Pasar la superficie medida a las hectáreas del lote">usar</a>`;
+}
+
+function usarAreaContorno(tr) {
+    const ha = Math.round(areaHasPoligono(puntosContorno(tr)) * 100) / 100;
+    if (!ha) return;
+    const destino = colTotalLoteVisible() ? tr.querySelector('.lote-total') : tr.querySelector('.lote-has');
+    destino.value = ha;
+    recalcularHasCampo();
+}
+
+function iniciarDibujo(tr) {
+    if (!mapCampo) return;
+    if (dibujo) cancelarDibujo();
+    resaltarLote(tr);
+    dibujo = { tr, puntos: [], capa: null };
+    mapCampo.doubleClickZoom.disable();
+    mapCampo.getContainer().style.cursor = 'crosshair';
+    document.getElementById('barraDibujo').classList.remove('d-none');
+    actualizarBarraDibujo();
+    const pts = puntosContorno(tr);
+    if (pts.length) mapCampo.fitBounds(pts, { padding: [30, 30], maxZoom: 17 });
+}
+
+function actualizarBarraDibujo() {
+    if (!dibujo) return;
+    const nom = (dibujo.tr.querySelector('.lote-cod').value || dibujo.tr.querySelector('.lote-nom').value || 'lote').trim();
+    const n = dibujo.puntos.length;
+    const ha = areaHasPoligono(dibujo.puntos);
+    document.getElementById('barraDibujoTxt').textContent =
+        `Contorno ${nom}: ${n} punto(s)${n >= 3 ? ` | ${ha.toLocaleString('es-AR', { maximumFractionDigits: 2 })} ha` : ' | clic en cada vértice'}`;
+    if (dibujo.capa) mapCampo.removeLayer(dibujo.capa);
+    dibujo.capa = n >= 3
+        ? L.polygon(dibujo.puntos, { color: '#facc15', weight: 3, dashArray: '6 4', fillOpacity: 0.15 }).addTo(mapCampo)
+        : L.polyline(dibujo.puntos, { color: '#facc15', weight: 3, dashArray: '6 4' }).addTo(mapCampo);
+}
+
+function deshacerPuntoDibujo() {
+    if (!dibujo) return;
+    dibujo.puntos.pop();
+    actualizarBarraDibujo();
+}
+
+function cerrarDibujo() {
+    if (dibujo?.capa) mapCampo.removeLayer(dibujo.capa);
+    dibujo = null;
+    if (mapCampo) {
+        mapCampo.doubleClickZoom.enable();
+        mapCampo.getContainer().style.cursor = '';
+    }
+    document.getElementById('barraDibujo').classList.add('d-none');
+}
+
+function cancelarDibujo() {
+    cerrarDibujo();
+    refrescarMarcadoresLotes(false);
+}
+
+function terminarDibujo() {
+    if (!dibujo) return;
+    if (dibujo.puntos.length < 3) { alert('Marcá al menos 3 puntos del contorno.'); return; }
+    const tr = dibujo.tr;
+    const anillo = dibujo.puntos.map(([lat, lng]) => [Number(lng.toFixed(7)), Number(lat.toFixed(7))]);
+    anillo.push(anillo[0]);
+    tr.dataset.geojson = JSON.stringify({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [anillo] } });
+    if (!tr.querySelector('.lote-lat').value || !tr.querySelector('.lote-lng').value) {
+        const c = L.polygon(dibujo.puntos).getBounds().getCenter();
+        tr.querySelector('.lote-lat').value = c.lat.toFixed(6);
+        tr.querySelector('.lote-lng').value = c.lng.toFixed(6);
+    }
+    cerrarDibujo();
+    actualizarInfoContorno(tr);
+    refrescarMarcadoresLotes(false);
+}
+
+function borrarContorno(tr) {
+    if (!confirm('¿Borrar el contorno de este lote?')) return;
+    tr.dataset.geojson = '';
+    actualizarInfoContorno(tr);
+    refrescarMarcadoresLotes(false);
+}
+
 function refrescarMarcadoresLotes(enfocar) {
     if (!mapCampo) return;
     markersLotes.forEach(m => mapCampo.removeLayer(m));
     markersLotes = [];
+    capasContorno.forEach(c => mapCampo.removeLayer(c));
+    capasContorno = [];
     const pts = [];
+    document.querySelectorAll('#tbodyLotesNuevos tr').forEach(tr => {
+        const contorno = puntosContorno(tr);
+        if (!contorno.length) return;
+        const activo = tr === loteFilaActiva;
+        const pol = L.polygon(contorno, {
+            color: activo ? '#dc2626' : '#38bdf8', weight: activo ? 3 : 2, fillOpacity: activo ? 0.2 : 0.1,
+        }).addTo(mapCampo);
+        pol.on('click', e => {
+            if (dibujo) return;
+            L.DomEvent.stopPropagation(e);
+            resaltarLote(tr);
+        });
+        capasContorno.push(pol);
+        pts.push(...contorno);
+    });
     document.querySelectorAll('#tbodyLotesNuevos tr').forEach(tr => {
         const lat = parseFloat(tr.querySelector('.lote-lat')?.value);
         const lng = parseFloat(tr.querySelector('.lote-lng')?.value);
@@ -954,7 +1155,16 @@ function initMaps() {
     if (!mapCampo) {
         mapCampo = L.map(el, { maxZoom: 19 }).setView(center, 7);
         addMapBaseLayers(mapCampo, true);
+        mapCampo.on('dblclick', () => { if (dibujo && dibujo.puntos.length >= 3) terminarDibujo(); });
         mapCampo.on('click', e => {
+            if (dibujo) {
+                const ult = dibujo.puntos[dibujo.puntos.length - 1];
+                // El doble clic para terminar dispara dos clics en el mismo lugar.
+                if (ult && mapCampo.latLngToContainerPoint(ult).distanceTo(e.containerPoint) < 4) return;
+                dibujo.puntos.push([e.latlng.lat, e.latlng.lng]);
+                actualizarBarraDibujo();
+                return;
+            }
             const lat = e.latlng.lat.toFixed(6);
             const lng = e.latlng.lng.toFixed(6);
             // Si hay fila de lote activa → georreferencia el lote; si no → el campo
@@ -983,13 +1193,16 @@ async function guardarCampo() {
         if (!nom) return;
         const lat = tr.querySelector('.lote-lat').value;
         const lng = tr.querySelector('.lote-lng').value;
+        const totalCargado = parseFloat(tr.querySelector('.lote-total').value || 0) || 0;
         lotes.push({
             id: tr.dataset.id ? parseInt(tr.dataset.id, 10) : null,
             codigo: tr.querySelector('.lote-cod').value.trim(),
             nombre: nom,
             superficie_base: parseFloat(tr.querySelector('.lote-has').value || 0),
+            superficie_total_lote: totalCargado || (colTotalLoteVisible() ? hasTotalSugerido(tr) : 0),
             lat: lat !== '' ? parseFloat(lat) : null,
             lng: lng !== '' ? parseFloat(lng) : null,
+            geojson: tr.dataset.geojson || '',
             orden: i
         });
     });
@@ -1163,6 +1376,8 @@ function recalcularPctEmpresa() {
     const el = document.getElementById('partPctEmpresa');
     el.innerHTML = `Le corresponde a la empresa: <b>${pct.toLocaleString('es-AR', { maximumFractionDigits: 2 })}%</b>`;
     el.classList.toggle('text-danger', pct <= 0);
+    pctEmpresaActual = pct > 0 ? pct : 100;
+    actualizarColTotalLote();
 }
 
 async function guardarParticipacion() {

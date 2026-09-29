@@ -36,10 +36,20 @@ class LoteAgroModel(BaseModel):
     codigo: Optional[str] = ""
     nombre: str
     superficie_base: float = 0.0
+    # Hectáreas del lote al 100% cuando se trabaja con socios (superficie_base = parte de la empresa).
+    superficie_total_lote: Optional[float] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
-    geojson: Optional[str] = ""
+    # None = conservar el contorno guardado; "" = borrarlo.
+    geojson: Optional[str] = None
     orden: int = 0
+
+
+def _asegurar_cols_lotes(cur) -> None:
+    cur.execute("PRAGMA table_info(lotes_agro);")
+    cols = {r[1] for r in cur.fetchall()}
+    if cols and "superficie_total_lote" not in cols:
+        cur.execute("ALTER TABLE lotes_agro ADD COLUMN superficie_total_lote REAL DEFAULT 0;")
 
 
 class ContratoArrendamientoModel(BaseModel):
@@ -177,19 +187,21 @@ def _sincronizar_lotes_campo(cur, campo_id: int, lotes: List["LoteAgroModel"]) -
             cur.execute(
                 """
                 UPDATE lotes_agro SET codigo=?, nombre=?, superficie_base=?, lat=?, lng=?, orden=?,
-                       geojson=CASE WHEN ?<>'' THEN ? ELSE geojson END
+                       geojson=CASE WHEN ? IS NULL THEN geojson ELSE ? END,
+                       superficie_total_lote=COALESCE(?, superficie_total_lote)
                 WHERE id=?;
                 """,
                 (lote.codigo or "", nombre, lote.superficie_base, lote.lat, lote.lng, orden,
-                 lote.geojson or "", lote.geojson or "", int(lote.id)),
+                 lote.geojson, lote.geojson, lote.superficie_total_lote, int(lote.id)),
             )
         else:
             cur.execute(
                 """
-                INSERT INTO lotes_agro (campo_id, codigo, nombre, superficie_base, lat, lng, geojson, orden)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                INSERT INTO lotes_agro (campo_id, codigo, nombre, superficie_base, lat, lng, geojson, orden, superficie_total_lote)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
-                (campo_id, lote.codigo or "", nombre, lote.superficie_base, lote.lat, lote.lng, lote.geojson or "", orden),
+                (campo_id, lote.codigo or "", nombre, lote.superficie_base, lote.lat, lote.lng, lote.geojson or "", orden,
+                 lote.superficie_total_lote or 0),
             )
     for lote_id in existentes - enviados:
         cur.execute("UPDATE lotes_agro SET baja=1 WHERE id=?;", (lote_id,))
@@ -575,15 +587,17 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             )
             campo_id = cur.lastrowid
             if data.lotes:
+                _asegurar_cols_lotes(cur)
                 for i, lote in enumerate(data.lotes):
                     cur.execute(
                         """
-                        INSERT INTO lotes_agro (campo_id, codigo, nombre, superficie_base, lat, lng, geojson, orden)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                        INSERT INTO lotes_agro (campo_id, codigo, nombre, superficie_base, lat, lng, geojson, orden, superficie_total_lote)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                         """,
                         (
                             campo_id, lote.codigo or "", lote.nombre, lote.superficie_base,
                             lote.lat, lote.lng, lote.geojson or "", lote.orden if lote.orden else i,
+                            lote.superficie_total_lote or 0,
                         ),
                     )
                 _recalcular_superficie_campo(cur, campo_id)
@@ -628,6 +642,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                 ),
             )
             if data.lotes is not None:
+                _asegurar_cols_lotes(cur)
                 _sincronizar_lotes_campo(cur, campo_id, data.lotes)
             _recalcular_superficie_campo(cur, campo_id)
             if tipo == "arrendado" and data.sync_proveedor:
@@ -664,14 +679,15 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         if not cur.fetchone():
             conn.close()
             raise HTTPException(status_code=404, detail="Campo no encontrado")
+        _asegurar_cols_lotes(cur)
         cur.execute(
             """
-            INSERT INTO lotes_agro (campo_id, codigo, nombre, superficie_base, lat, lng, geojson, orden)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            INSERT INTO lotes_agro (campo_id, codigo, nombre, superficie_base, lat, lng, geojson, orden, superficie_total_lote)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 campo_id, data.codigo or "", data.nombre, data.superficie_base,
-                data.lat, data.lng, data.geojson or "", data.orden,
+                data.lat, data.lng, data.geojson or "", data.orden, data.superficie_total_lote or 0,
             ),
         )
         lid = cur.lastrowid
@@ -693,14 +709,18 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         anterior = float(row["superficie_base"] or 0)
         if abs(float(data.superficie_base or 0) - anterior) > 1e-6:
             _registrar_superficie_lote(cur, lote_id, anterior, float(data.superficie_base or 0))
+        _asegurar_cols_lotes(cur)
         cur.execute(
             """
-            UPDATE lotes_agro SET codigo=?, nombre=?, superficie_base=?, lat=?, lng=?, geojson=?, orden=?
+            UPDATE lotes_agro SET codigo=?, nombre=?, superficie_base=?, lat=?, lng=?,
+                   geojson=CASE WHEN ? IS NULL THEN geojson ELSE ? END, orden=?,
+                   superficie_total_lote=COALESCE(?, superficie_total_lote)
             WHERE id=?;
             """,
             (
                 data.codigo or "", data.nombre, data.superficie_base,
-                data.lat, data.lng, data.geojson or "", data.orden, lote_id,
+                data.lat, data.lng, data.geojson, data.geojson, data.orden,
+                data.superficie_total_lote, lote_id,
             ),
         )
         total = _recalcular_superficie_campo(cur, campo_id)
