@@ -68,7 +68,8 @@
 
         <div class="flex flex-wrap justify-between items-center gap-2 mb-2 text-sm">
             <div class="flex items-center gap-4">
-                <label class="flex items-center gap-2"><input type="checkbox" id="c_todos" checked onchange="marcarTodosConf(this.checked)"> Todos</label>
+                <input id="c_buscar" type="search" class="border rounded p-2 w-64" placeholder="Buscar empleado o convenio..." oninput="renderConf()">
+                <label class="flex items-center gap-2" title="Marca o desmarca los empleados que se ven en la lista"><input type="checkbox" id="c_todos" checked onchange="marcarTodosConf(this.checked)"> Todos</label>
                 <label class="flex items-center gap-2"><input type="checkbox" id="c_reemplazar"> Reemplazar los ya conformados</label>
             </div>
             <div class="flex items-center gap-3">
@@ -422,8 +423,17 @@ async function calcularConf() {
     renderConf();
 }
 
+function normTxt(s) {
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function confVisible(r) {
+    const q = normTxt(document.getElementById('c_buscar').value.trim());
+    return !q || normTxt(r.nombre).includes(q) || normTxt(r.convenio).includes(q);
+}
+
 function renderConf() {
-    document.getElementById('c_tbody').innerHTML = CONF.map((r, i) => `
+    document.getElementById('c_tbody').innerHTML = CONF.map((r, i) => !confVisible(r) ? '' : `
         <tr class="${r.ya_conformado ? 'bg-emerald-50/50' : ''}">
             <td class="p-2 text-center"><input type="checkbox" ${r.incluir ? 'checked' : ''} onchange="CONF[${i}].incluir=this.checked; totalesConf()"></td>
             <td class="p-2 font-medium">${esc(r.nombre)}${r.excluir_indice ? ' <span class="text-[10px] text-amber-700">(sin índice)</span>' : ''}</td>
@@ -435,7 +445,7 @@ function renderConf() {
             <td class="p-2 text-right font-mono">${money(r.aumento)}</td>
             <td class="p-2 text-center text-xs">${r.ya_conformado ? `<span class="text-emerald-700 font-bold">Conformado ${money(r.sueldo_conformado)}</span>` : '<span class="text-slate-400">Pendiente</span>'}</td>
             <td class="p-2 text-center"><button class="text-indigo-700 text-xs font-bold hover:underline" onclick="irACuenta(${r.empleado_id}, document.getElementById('c_mes').value)">Cuenta</button></td>
-        </tr>`).join('') || '<tr><td colspan="10" class="p-4 text-center text-slate-400">Sin empleados activos</td></tr>';
+        </tr>`).join('') || `<tr><td colspan="10" class="p-4 text-center text-slate-400">${CONF.length ? 'Ningún empleado coincide con la búsqueda' : 'Sin empleados activos'}</td></tr>`;
     totalesConf();
 }
 
@@ -457,7 +467,7 @@ function cambiarNuevoFila(i, v) {
     renderConf();
 }
 
-function marcarTodosConf(v) { CONF.forEach(r => r.incluir = v); renderConf(); }
+function marcarTodosConf(v) { CONF.forEach(r => { if (confVisible(r)) r.incluir = v; }); renderConf(); }
 
 function totalesConf() {
     const sel = CONF.filter(r => r.incluir);
@@ -465,7 +475,9 @@ function totalesConf() {
     document.getElementById('c_tot_nuevo').textContent = money(sel.reduce((a, r) => a + r.nuevo_sueldo, 0));
     document.getElementById('c_tot_aum').textContent = money(sel.reduce((a, r) => a + r.aumento, 0));
     const pend = CONF.filter(r => !r.ya_conformado).length;
-    document.getElementById('c_resumen').textContent = `${sel.length} seleccionados | ${pend} pendientes de ${CONF.length}`;
+    const vis = CONF.filter(confVisible).length;
+    document.getElementById('c_resumen').textContent = `${sel.length} seleccionados | ${pend} pendientes de ${CONF.length} activos`
+        + (vis < CONF.length ? ` | mostrando ${vis}` : '');
 }
 
 async function conformar() {
@@ -922,6 +934,7 @@ async function guardarEmpleado(ev) {
     limpiarFormEmpleado();
     await cargarPadron();
     await cargarEmpleadosSelect();
+    if (CONF.length) await calcularConf();
     return false;
 }
 
