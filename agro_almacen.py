@@ -1060,6 +1060,136 @@ def _nro_ot_en_uso(cursor, empresa_id: int, nro: str) -> bool:
     return False
 
 
+# ---- Participación con otras sociedades (por campo y campaña) ----
+
+def asegurar_schema_participaciones(cursor) -> None:
+    """Las bases por empresa se clonan una sola vez: se completa acá lo que falte."""
+    cambios = False
+    cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='campo_participaciones';"
+    )
+    if not cursor.fetchone():
+        cursor.execute(
+            """
+            CREATE TABLE campo_participaciones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                campo_id INTEGER NOT NULL,
+                campania_id INTEGER NOT NULL,
+                socio_nombre TEXT DEFAULT '',
+                socio_cuit TEXT DEFAULT '',
+                porcentaje REAL DEFAULT 0
+            );
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_campo_part ON campo_participaciones(empresa_id, campo_id, campania_id);"
+        )
+        cambios = True
+    for tabla, columnas in (
+        ("ot_destinos", (("participacion_pct", "REAL DEFAULT 100"), ("socios_txt", "TEXT DEFAULT ''"))),
+        ("ot_consumos", (("aporte_pct", "REAL DEFAULT 100"), ("participacion_pct", "REAL DEFAULT 100"))),
+    ):
+        existentes = {r[1] for r in cursor.execute(f"PRAGMA table_info({tabla});").fetchall()}
+        if not existentes:
+            continue
+        for col, ddl in columnas:
+            if col not in existentes:
+                cursor.execute(f"ALTER TABLE {tabla} ADD COLUMN {col} {ddl};")
+                cambios = True
+    if cambios:
+        cursor.connection.commit()
+
+
+def participacion_campo(cursor, empresa_id: int, campo_id: Optional[int], campania_id: Optional[int]) -> Dict[str, Any]:
+    """% de la empresa y socios del campo en la campaña. Sin carga propia, toma la
+    última campaña anterior que tenga carga. Una fila sin socio marca 'sin participación'."""
+    vacio = {"pct_empresa": 100.0, "socios": [], "socios_txt": "", "campania_id_origen": None, "campania_codigo_origen": ""}
+    if not campo_id or not campania_id:
+        return vacio
+    cursor.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,))
+    r = cursor.fetchone()
+    codigo = (r["codigo"] if r else "") or ""
+    cursor.execute(
+        """
+        SELECT p.campania_id, ca.codigo
+        FROM campo_participaciones p
+        JOIN campanias_agro ca ON ca.id = p.campania_id
+        WHERE p.empresa_id=? AND p.campo_id=? AND (p.campania_id=? OR ca.codigo <= ?)
+        ORDER BY CASE WHEN p.campania_id=? THEN 0 ELSE 1 END, ca.codigo DESC
+        LIMIT 1;
+        """,
+        (empresa_id, campo_id, campania_id, codigo, campania_id),
+    )
+    origen = cursor.fetchone()
+    if not origen:
+        return vacio
+    cursor.execute(
+        """
+        SELECT socio_nombre, socio_cuit, porcentaje FROM campo_participaciones
+        WHERE empresa_id=? AND campo_id=? AND campania_id=?
+          AND TRIM(COALESCE(socio_nombre,'')) != '' AND COALESCE(porcentaje,0) > 0
+        ORDER BY id;
+        """,
+        (empresa_id, campo_id, origen["campania_id"]),
+    )
+    socios = [dict(x) for x in cursor.fetchall()]
+    pct_socios = sum(float(s["porcentaje"] or 0) for s in socios)
+    return {
+        "pct_empresa": round(100.0 - pct_socios, 4),
+        "socios": socios,
+        "socios_txt": "; ".join(f"{s['socio_nombre']} {float(s['porcentaje']):g}%" for s in socios),
+        "campania_id_origen": int(origen["campania_id"]),
+        "campania_codigo_origen": origen["codigo"] or "",
+    }
+
+
+def guardar_participacion_campo(
+    cursor, empresa_id: int, campo_id: int, campania_id: int, socios: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    limpios = []
+    for s in socios or []:
+        nombre = (s.get("socio_nombre") or "").strip()
+        pct = float(s.get("porcentaje") or 0)
+        if not nombre and pct <= 0:
+            continue
+        if not nombre:
+            raise ValueError("Indicá el nombre de cada sociedad participante.")
+        if pct <= 0 or pct >= 100:
+            raise ValueError(f"El % de {nombre} tiene que estar entre 0 y 100.")
+        limpios.append({"socio_nombre": nombre, "socio_cuit": (s.get("socio_cuit") or "").strip(), "porcentaje": pct})
+    total = sum(s["porcentaje"] for s in limpios)
+    if total >= 100:
+        raise ValueError("La suma de los socios tiene que dejar un % para la empresa.")
+    cursor.execute(
+        "DELETE FROM campo_participaciones WHERE empresa_id=? AND campo_id=? AND campania_id=?;",
+        (empresa_id, campo_id, campania_id),
+    )
+    for s in limpios or [{"socio_nombre": "", "socio_cuit": "", "porcentaje": 0}]:
+        cursor.execute(
+            """
+            INSERT INTO campo_participaciones (empresa_id, campo_id, campania_id, socio_nombre, socio_cuit, porcentaje)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            (empresa_id, campo_id, campania_id, s["socio_nombre"], s["socio_cuit"], s["porcentaje"]),
+        )
+    return participacion_campo(cursor, empresa_id, campo_id, campania_id)
+
+
+def participaciones_campania(cursor, empresa_id: int, campania_id: int) -> Dict[int, Dict[str, Any]]:
+    """Participación vigente en la campaña de cada campo que la tenga."""
+    cursor.execute(
+        "SELECT DISTINCT campo_id FROM campo_participaciones WHERE empresa_id=?;",
+        (empresa_id,),
+    )
+    res = {}
+    for r in cursor.fetchall():
+        p = participacion_campo(cursor, empresa_id, int(r["campo_id"]), campania_id)
+        if p["pct_empresa"] < 100:
+            res[int(r["campo_id"])] = p
+    return res
+
+
 def emitir_ot_consumiendo_almacen(
     cursor,
     *,
@@ -1083,10 +1213,12 @@ def emitir_ot_consumiendo_almacen(
     """
     Emite la OT: registra las líneas y la salida física del almacén, sin costo.
     El costo se asigna después con costear_linea_ot. No se bloquea por falta de stock.
-    cada consumo: {item_id, cantidad?, dosis_por_ha?}
+    cada consumo: {item_id, cantidad?, dosis_por_ha?, aporte_pct?}
     destinos: [{campo_id, lote_id, superficie_has, cultivo}]; la cantidad de cada
     consumo se reparte entre los destinos en proporción a sus hectáreas.
+    En campos con participación, superficie_has son las hectáreas físicas del lote.
     """
+    asegurar_schema_participaciones(cursor)
     consumos = consumos or []
     fecha = (fecha or datetime.now().strftime("%Y-%m-%d"))[:10]
     fecha_aplic = (fecha_aplicacion or fecha)[:10]
@@ -1203,19 +1335,26 @@ def _crear_lineas_ot(
     destinos: List[Dict[str, Any]],
     consumos: List[Dict[str, Any]],
 ):
-    """Graba destinos, salidas de almacén, ot_consumos y líneas de costos de una OT."""
+    """Graba destinos, salidas de almacén, ot_consumos y líneas de costos de una OT.
+    En campos con participación: el almacén descuenta lo que aporta la empresa
+    (aporte_pct del consumo) y la línea de costos lleva lo que le corresponde
+    según su % en el campo; la cantidad física queda en ot_consumos."""
     campania_codigo = ""
     if campania_id:
         cursor.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,))
         r = cursor.fetchone()
         campania_codigo = (r["codigo"] if r else "") or ""
     for i, d in enumerate(destinos):
+        part = participacion_campo(cursor, empresa_id, d["campo_id"], campania_id)
+        d["participacion_pct"] = part["pct_empresa"]
         cursor.execute(
             """
-            INSERT INTO ot_destinos (ot_id, orden, campo_id, lote_id, superficie_has, cultivo)
-            VALUES (?, ?, ?, ?, ?, ?);
+            INSERT INTO ot_destinos (ot_id, orden, campo_id, lote_id, superficie_has, cultivo,
+                                     participacion_pct, socios_txt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """,
-            (ot_id, i, d["campo_id"], d["lote_id"], d["superficie_has"], d["cultivo"]),
+            (ot_id, i, d["campo_id"], d["lote_id"], d["superficie_has"], d["cultivo"],
+             part["pct_empresa"], part["socios_txt"]),
         )
         d["id"] = cursor.lastrowid
     total_has = sum(d["superficie_has"] for d in destinos)
@@ -1254,6 +1393,10 @@ def _crear_lineas_ot(
             continue
         tipo_item = item.get("tipo") or "producto"
         es_lab = tipo_item == "laboreo"
+        aporte_pedido = c.get("aporte_pct")
+        aporte_pedido = 100.0 if aporte_pedido is None or aporte_pedido == "" else float(aporte_pedido)
+        if aporte_pedido < 0 or aporte_pedido > 100:
+            raise ValueError(f"El % de aporte de «{item.get('nombre')}» tiene que estar entre 0 y 100.")
 
         if total_has > 0:
             partes = [round(cant * d["superficie_has"] / total_has, 6) for d in destinos]
@@ -1266,33 +1409,44 @@ def _crear_lineas_ot(
         for d, cant_d in zip(destinos, partes):
             if cant_d <= 0:
                 continue
-            stock = round(stock - cant_d, 6)
-            cursor.execute(
-                "UPDATE almacen_items SET stock_cantidad=? WHERE id=?;",
-                (stock, item_id),
-            )
-            cursor.execute(
-                """
-                INSERT INTO almacen_movimientos
-                (empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, importe_neto,
-                 stock_resultante, costo_prom_resultante, campania_id, lote_id, ot_id, observaciones)
-                VALUES (?, ?, ?, 'egreso_ot', ?, 0, 0, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    empresa_id, item_id, fecha_aplic, cant_d,
-                    stock, float(item.get("costo_promedio_neto") or 0),
-                    campania_id, d["lote_id"], ot_id, f"Consumo OT {nro}",
-                ),
-            )
-            mov_id = cursor.lastrowid
+            part_pct = float(d.get("participacion_pct") or 100)
+            aporte = aporte_pedido if part_pct < 100 else 100.0
+            cant_stock = round(cant_d * aporte / 100, 6)
+            cant_emp = round(cant_d * part_pct / 100, 6)
+            mov_id = None
+            if cant_stock > 0:
+                stock = round(stock - cant_stock, 6)
+                cursor.execute(
+                    "UPDATE almacen_items SET stock_cantidad=? WHERE id=?;",
+                    (stock, item_id),
+                )
+                obs = f"Consumo OT {nro}"
+                if part_pct < 100:
+                    obs += f" (aporte {aporte:g}% de {cant_d:g})"
+                cursor.execute(
+                    """
+                    INSERT INTO almacen_movimientos
+                    (empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, importe_neto,
+                     stock_resultante, costo_prom_resultante, campania_id, lote_id, ot_id, observaciones)
+                    VALUES (?, ?, ?, 'egreso_ot', ?, 0, 0, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        empresa_id, item_id, fecha_aplic, cant_stock,
+                        stock, float(item.get("costo_promedio_neto") or 0),
+                        campania_id, d["lote_id"], ot_id, obs,
+                    ),
+                )
+                mov_id = cursor.lastrowid
             cursor.execute(
                 """
                 INSERT INTO ot_consumos
                 (ot_id, item_id, tipo_item, dosis_por_ha, cantidad, unidad,
-                 costo_unitario_neto, costo_total_neto, movimiento_id, destino_id)
-                VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?);
+                 costo_unitario_neto, costo_total_neto, movimiento_id, destino_id,
+                 aporte_pct, participacion_pct)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?);
                 """,
-                (ot_id, item_id, tipo_item, dosis, cant_d, item.get("unidad") or "", mov_id, d["id"]),
+                (ot_id, item_id, tipo_item, dosis, cant_d, item.get("unidad") or "", mov_id, d["id"],
+                 aporte, part_pct),
             )
             consumo_id = cursor.lastrowid
             cursor.execute(
@@ -1306,12 +1460,13 @@ def _crear_lineas_ot(
                 (
                     empresa_id, campania_codigo, d["cultivo"] or "",
                     int(nro) if nro.isdigit() else None,
-                    d["campo_nombre"], d["lote_nombre"], float(d["superficie_has"] or 0), fecha,
+                    d["campo_nombre"], d["lote_nombre"],
+                    round(float(d["superficie_has"] or 0) * part_pct / 100, 4), fecha,
                     (item.get("nombre") or "") if es_lab else "",
                     (labor_cultural or tipo_labor or "") if es_lab else "",
                     (contratista_nombre or "") if es_lab else "",
                     "" if es_lab else (item.get("nombre") or ""),
-                    item.get("categoria") or "", dosis, cant_d, fecha_aplic,
+                    item.get("categoria") or "", dosis, cant_emp, fecha_aplic,
                     item.get("unidad") or "", item_id, ot_id, consumo_id,
                 ),
             )
@@ -1321,7 +1476,7 @@ def _crear_lineas_ot(
             sin_stock.append({
                 "nombre": item.get("nombre"),
                 "stock_previo": round(stock_previo, 4),
-                "pedido": round(cant, 4),
+                "pedido": round(stock_previo - stock, 4),
                 "unidad": item.get("unidad") or "",
             })
 
@@ -1392,6 +1547,7 @@ def editar_ot(
     destinos: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Corrige una OT emitida y no confirmada: rehace stock y líneas, conservando el costeo."""
+    asegurar_schema_participaciones(cursor)
     cursor.execute("SELECT * FROM ordenes_trabajo WHERE id=? AND empresa_id=?;", (ot_id, empresa_id))
     ot = cursor.fetchone()
     if not ot:
@@ -1491,6 +1647,7 @@ def confirmar_ot(cursor, empresa_id: int, ot_id: int, confirmar: bool = True) ->
 
 def detalle_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
     """Cabecera, destinos y consumos (agrupados por ítem) para cargar la OT en el formulario."""
+    asegurar_schema_participaciones(cursor)
     cursor.execute("SELECT * FROM ordenes_trabajo WHERE id=? AND empresa_id=?;", (ot_id, empresa_id))
     ot = cursor.fetchone()
     if not ot:
@@ -1499,6 +1656,7 @@ def detalle_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
     cursor.execute(
         """
         SELECT d.campo_id, d.lote_id, d.superficie_has, d.cultivo,
+               COALESCE(d.participacion_pct, 100) AS participacion_pct, COALESCE(d.socios_txt, '') AS socios_txt,
                c.nombre AS campo_nombre, l.nombre AS lote_nombre
         FROM ot_destinos d
         LEFT JOIN campos_agro c ON c.id = d.campo_id
@@ -1517,6 +1675,7 @@ def detalle_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
         """
         SELECT oc.item_id, MAX(oc.tipo_item) AS tipo_item, MAX(oc.unidad) AS unidad,
                MAX(oc.dosis_por_ha) AS dosis_por_ha, SUM(oc.cantidad) AS cantidad,
+               COALESCE(MAX(CASE WHEN COALESCE(oc.participacion_pct, 100) < 100 THEN oc.aporte_pct END), 100) AS aporte_pct,
                MAX(i.nombre) AS nombre, MIN(oc.id) AS orden
         FROM ot_consumos oc
         LEFT JOIN almacen_items i ON i.id = oc.item_id
@@ -1638,6 +1797,7 @@ def listar_lineas_ot(
     ultimas_ot: int = 40,
 ) -> List[Dict[str, Any]]:
     """Líneas de OT (Access + nuevas) agrupables por Nº de orden, para costear."""
+    asegurar_schema_participaciones(cursor)
     where = " WHERE m.empresa_id=? AND m.nro_orden IS NOT NULL "
     params: List[Any] = [empresa_id]
     if nro_orden:
@@ -1670,9 +1830,13 @@ def listar_lineas_ot(
                m.producto, m.dosis_ha, m.cantidad_total, m.unidad, m.precio, m.tc,
                m.costo_ars, m.costo_usd, m.moneda_costo, m.origen_costo, m.proveedor,
                m.nro_remito, m.fecha_compra, m.almacen_item_id, m.ot_id, m.id_access,
-               o.estado AS estado_ot
+               o.estado AS estado_ot,
+               oc.cantidad AS cantidad_fisica,
+               COALESCE(oc.participacion_pct, 100) AS participacion_pct,
+               COALESCE(oc.aporte_pct, 100) AS aporte_pct
         FROM margenes_access m
         LEFT JOIN ordenes_trabajo o ON o.id = m.ot_id
+        LEFT JOIN ot_consumos oc ON oc.id = m.ot_consumo_id
         {where} {anuladas} AND m.nro_orden IN ({marcas})
         ORDER BY m.nro_orden DESC, CASE WHEN TRIM(COALESCE(m.producto,''))='' THEN 0 ELSE 1 END, m.id;
         """,
@@ -1683,11 +1847,25 @@ def listar_lineas_ot(
 
 def opciones_costeo_linea(cursor, empresa_id: int, linea_id: int) -> Dict[str, Any]:
     """Compras del almacén y facturas del contratista para elegir el costo de una línea."""
+    asegurar_schema_participaciones(cursor)
     cursor.execute("SELECT * FROM margenes_access WHERE id=? AND empresa_id=?;", (linea_id, empresa_id))
     r = cursor.fetchone()
     if not r:
         raise ValueError("Línea de OT no encontrada.")
     linea = dict(r)
+    linea["cantidad_fisica"] = None
+    linea["participacion_pct"] = 100.0
+    linea["aporte_pct"] = 100.0
+    if linea.get("ot_consumo_id"):
+        cursor.execute(
+            "SELECT cantidad, participacion_pct, aporte_pct FROM ot_consumos WHERE id=?;",
+            (linea["ot_consumo_id"],),
+        )
+        oc = cursor.fetchone()
+        if oc:
+            linea["cantidad_fisica"] = oc["cantidad"]
+            linea["participacion_pct"] = float(oc["participacion_pct"] if oc["participacion_pct"] is not None else 100)
+            linea["aporte_pct"] = float(oc["aporte_pct"] if oc["aporte_pct"] is not None else 100)
     es_lab = _es_linea_laboreo(linea)
     item = _item_de_linea(cursor, empresa_id, linea)
     fecha = (linea.get("fecha_aplicacion") or linea.get("fecha_orden") or "")[:10]
@@ -1852,12 +2030,20 @@ def costear_linea_ot(
         )
         cursor.execute(
             """
-            UPDATE almacen_movimientos
-            SET precio_unitario_neto=?, importe_neto=?, precio_unitario_usd=?
-            WHERE id=(SELECT movimiento_id FROM ot_consumos WHERE id=?);
+            SELECT m.id, m.cantidad FROM almacen_movimientos m
+            JOIN ot_consumos oc ON oc.movimiento_id = m.id
+            WHERE oc.id=?;
             """,
-            (precio_ars, costo_ars, precio_usd, linea["ot_consumo_id"]),
+            (linea["ot_consumo_id"],),
         )
+        mov = cursor.fetchone()
+        if mov:
+            cant_mov = abs(float(mov["cantidad"] or 0))
+            importe_mov = costo_ars if abs(cant_mov - cant) < 1e-6 else round(cant_mov * precio_ars, 2)
+            cursor.execute(
+                "UPDATE almacen_movimientos SET precio_unitario_neto=?, importe_neto=?, precio_unitario_usd=? WHERE id=?;",
+                (precio_ars, importe_mov, precio_usd, mov["id"]),
+            )
     if linea.get("ot_id"):
         _recalcular_totales_ot(cursor, int(linea["ot_id"]))
     return {
@@ -1906,7 +2092,9 @@ def anular_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
 
 
 def costos_por_lote_campania(cursor, campania_id: int, empresa_id: int) -> List[Dict[str, Any]]:
-    """Resumen de costos netos imputados por OT a cada lote de la campaña."""
+    """Resumen de costos netos imputados por OT a cada lote de la campaña.
+    En campos con participación cuenta solo las hectáreas que le corresponden a la empresa."""
+    asegurar_schema_participaciones(cursor)
     filtro = """
         FROM ordenes_trabajo ot
         LEFT JOIN ot_destinos d ON d.ot_id = ot.id
@@ -1917,7 +2105,8 @@ def costos_por_lote_campania(cursor, campania_id: int, empresa_id: int) -> List[
         f"""
         SELECT COALESCE(d.lote_id, ot.lote_id) AS lote_id,
                COALESCE(d.campo_id, ot.campo_id) AS campo_id,
-               COALESCE(SUM(COALESCE(d.superficie_has, ot.superficie_has)),0) AS has_trabajadas
+               COALESCE(SUM(COALESCE(d.superficie_has, ot.superficie_has)
+                            * COALESCE(d.participacion_pct, 100) / 100.0), 0) AS has_trabajadas
         {filtro}
         GROUP BY 1, 2;
         """,
@@ -1974,3 +2163,159 @@ def costos_por_lote_campania(cursor, campania_id: int, empresa_id: int) -> List[
         rows.append(g)
     rows.sort(key=lambda x: ((x["campo_nombre"] or "").lower(), (x["lote_nombre"] or "").lower()))
     return rows
+
+
+def resumen_participacion_campania(cursor, empresa_id: int, campania_id: int) -> Dict[str, Any]:
+    """Qué aportó y qué le corresponde a la empresa en los campos con participación.
+    Solo toma líneas costeadas; diferencia > 0 = el socio le debe a la empresa."""
+    asegurar_schema_participaciones(cursor)
+    cursor.execute(
+        """
+        SELECT o.id AS ot_id, o.nro_ot, o.fecha, o.fecha_aplicacion,
+               d.campo_id, d.lote_id, c.nombre AS campo, l.nombre AS lote,
+               d.superficie_has AS has_fisicas, d.cultivo,
+               COALESCE(d.participacion_pct, 100) AS participacion_pct,
+               COALESCE(d.socios_txt, '') AS socios_txt,
+               oc.id AS consumo_id, oc.tipo_item, oc.cantidad, oc.unidad,
+               COALESCE(oc.aporte_pct, 100) AS aporte_pct,
+               i.nombre AS item,
+               m.cantidad_total AS cantidad_empresa, m.costo_usd, m.costo_ars,
+               m.proveedor, m.nro_remito
+        FROM ot_consumos oc
+        JOIN ordenes_trabajo o ON o.id = oc.ot_id
+        JOIN ot_destinos d ON d.id = oc.destino_id
+        LEFT JOIN campos_agro c ON c.id = d.campo_id
+        LEFT JOIN lotes_agro l ON l.id = d.lote_id
+        LEFT JOIN almacen_items i ON i.id = oc.item_id
+        LEFT JOIN margenes_access m ON m.ot_consumo_id = oc.id
+        WHERE o.empresa_id=? AND o.campania_id=? AND COALESCE(o.estado,'') != 'Anulada'
+          AND COALESCE(d.participacion_pct, 100) < 100
+        ORDER BY c.nombre COLLATE NOCASE, o.fecha, o.nro_ot, l.nombre COLLATE NOCASE, oc.id;
+        """,
+        (empresa_id, campania_id),
+    )
+    lineas: List[Dict[str, Any]] = []
+    pendientes: List[Dict[str, Any]] = []
+    grupos: Dict[Any, Dict[str, Any]] = {}
+    for r in cursor.fetchall():
+        x = dict(r)
+        costo_usd = float(x.get("costo_usd") or 0)
+        costo_ars = float(x.get("costo_ars") or 0)
+        cant_emp = float(x.get("cantidad_empresa") or 0)
+        cant = float(x.get("cantidad") or 0)
+        if not (costo_usd or costo_ars) or cant_emp <= 0:
+            pendientes.append({k: x.get(k) for k in ("nro_ot", "campo", "lote", "item", "tipo_item")})
+            continue
+        part = float(x["participacion_pct"])
+        aporte = float(x["aporte_pct"])
+        for mon, costo in (("usd", costo_usd), ("ars", costo_ars)):
+            total = cant * costo / cant_emp
+            x[f"total_{mon}"] = round(total, 2)
+            x[f"aporte_empresa_{mon}"] = round(total * aporte / 100, 2)
+            x[f"corresponde_empresa_{mon}"] = round(total * part / 100, 2)
+            x[f"aporte_socio_{mon}"] = round(x[f"total_{mon}"] - x[f"aporte_empresa_{mon}"], 2)
+            x[f"corresponde_socio_{mon}"] = round(x[f"total_{mon}"] - x[f"corresponde_empresa_{mon}"], 2)
+            x[f"diferencia_{mon}"] = round(x[f"aporte_empresa_{mon}"] - x[f"corresponde_empresa_{mon}"], 2)
+        lineas.append(x)
+        g = grupos.setdefault((x.get("campo") or "", x["socios_txt"]), {
+            "campo": x.get("campo") or "", "socios_txt": x["socios_txt"],
+            "participacion_pct": part, "lineas": 0,
+            **{f"{k}_{mon}": 0.0 for k in ("total", "aporte_empresa", "corresponde_empresa",
+                                           "aporte_socio", "corresponde_socio", "diferencia")
+               for mon in ("usd", "ars")},
+        })
+        g["lineas"] += 1
+        for k in list(g.keys()):
+            if k.endswith("_usd") or k.endswith("_ars"):
+                g[k] = round(g[k] + x[k], 2)
+    return {
+        "campania_id": campania_id,
+        "lineas": lineas,
+        "resumen": sorted(grupos.values(), key=lambda g: (g["campo"].lower(), g["socios_txt"].lower())),
+        "pendientes": pendientes,
+    }
+
+
+def excel_participacion_campania(cursor, empresa_id: int, campania_id: int) -> bytes:
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    data = resumen_participacion_campania(cursor, empresa_id, campania_id)
+    cursor.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,))
+    r = cursor.fetchone()
+    codigo = (r["codigo"] if r else "") or ""
+    empresa = "Empresa"
+    try:
+        cursor.execute("SELECT razon_social FROM empresas WHERE id=?;", (empresa_id,))
+        r = cursor.fetchone()
+        if r and (r["razon_social"] or "").strip():
+            empresa = r["razon_social"].strip()
+    except sqlite3.Error:
+        pass
+
+    wb = Workbook()
+    negrita = Font(bold=True)
+    fondo = PatternFill("solid", fgColor="E2E8F0")
+    money = '#,##0.00'
+
+    def encabezado(ws, fila, titulos):
+        for col, t in enumerate(titulos, 1):
+            celda = ws.cell(row=fila, column=col, value=t)
+            celda.font = negrita
+            celda.fill = fondo
+            celda.alignment = Alignment(wrap_text=True, vertical="center")
+
+    def anchos(ws, valores):
+        for i, w in enumerate(valores, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws = wb.active
+    ws.title = "Resumen"
+    ws["A1"] = f"Participación con otras sociedades | Campaña {codigo} | {empresa}"
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A2"] = "Solo líneas costeadas. Diferencia positiva: el socio le debe a la empresa; negativa: la empresa le debe al socio."
+    cols = ["Campo", "Socios", f"% {empresa}", "Líneas",
+            "Total U$S", f"Aportó {empresa} U$S", f"Corresponde {empresa} U$S", "Diferencia U$S",
+            "Total $", f"Aportó {empresa} $", f"Corresponde {empresa} $", "Diferencia $"]
+    encabezado(ws, 4, cols)
+    fila = 5
+    for g in data["resumen"]:
+        valores = [g["campo"], g["socios_txt"], g["participacion_pct"], g["lineas"],
+                   g["total_usd"], g["aporte_empresa_usd"], g["corresponde_empresa_usd"], g["diferencia_usd"],
+                   g["total_ars"], g["aporte_empresa_ars"], g["corresponde_empresa_ars"], g["diferencia_ars"]]
+        for col, v in enumerate(valores, 1):
+            c = ws.cell(row=fila, column=col, value=v)
+            if col >= 5:
+                c.number_format = money
+        fila += 1
+    if data["pendientes"]:
+        fila += 1
+        ws.cell(row=fila, column=1, value=f"Líneas sin costear (no incluidas): {len(data['pendientes'])}").font = negrita
+    anchos(ws, [22, 30, 11, 8, 14, 16, 18, 15, 16, 18, 20, 16])
+
+    ws2 = wb.create_sheet("Detalle")
+    cols2 = ["OT", "Fecha", "Campo", "Lote", "Cultivo", "Has físicas", "Tipo", "Producto / labor",
+             "Cantidad física", "Unidad", f"% aporte {empresa}", f"% {empresa} en el campo", "Socios",
+             "Total U$S", f"Aportó {empresa} U$S", f"Corresponde {empresa} U$S", "Diferencia U$S",
+             "Total $", f"Aportó {empresa} $", f"Corresponde {empresa} $", "Diferencia $"]
+    encabezado(ws2, 1, cols2)
+    for fila, x in enumerate(data["lineas"], 2):
+        f = (x.get("fecha_aplicacion") or x.get("fecha") or "")[:10]
+        valores = [x.get("nro_ot"), "/".join(reversed(f.split("-"))) if f else "", x.get("campo"), x.get("lote"),
+                   x.get("cultivo"), x.get("has_fisicas"),
+                   "Labor" if x.get("tipo_item") == "laboreo" else "Producto", x.get("item"),
+                   x.get("cantidad"), x.get("unidad"), x.get("aporte_pct"), x.get("participacion_pct"), x.get("socios_txt"),
+                   x["total_usd"], x["aporte_empresa_usd"], x["corresponde_empresa_usd"], x["diferencia_usd"],
+                   x["total_ars"], x["aporte_empresa_ars"], x["corresponde_empresa_ars"], x["diferencia_ars"]]
+        for col, v in enumerate(valores, 1):
+            c = ws2.cell(row=fila, column=col, value=v)
+            if col >= 14:
+                c.number_format = money
+    anchos(ws2, [8, 11, 18, 14, 12, 11, 10, 30, 13, 8, 12, 12, 26, 13, 15, 17, 14, 15, 17, 19, 15])
+    ws2.freeze_panes = "A2"
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

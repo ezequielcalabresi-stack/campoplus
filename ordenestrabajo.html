@@ -19,6 +19,8 @@
         .tabla-opc tr.posterior td { color:#94a3b8; }
         .tabla-opc td, .tabla-opc th { font-size:12.5px; }
         .badge-estado { font-size:11px; }
+        .sin-part .col-aporte { display:none; }
+        .cons-aporte { max-width:90px; margin-left:auto; }
     </style>
 <script src="/campoplus-firma.js?v=2"></script>
     <script src="/campoplus-fechas.js"></script>
@@ -40,6 +42,7 @@
     <ul class="nav nav-tabs mb-3">
         <li class="nav-item"><button class="nav-link active" id="tabBtnEmitir" onclick="mostrarTab('emitir')">Emitir OT</button></li>
         <li class="nav-item"><button class="nav-link" id="tabBtnCostear" onclick="mostrarTab('costear')">Costear OT <span class="badge bg-warning text-dark" id="badgePend"></span></button></li>
+        <li class="nav-item"><button class="nav-link" id="tabBtnPart" onclick="mostrarTab('part')">Participación con socios</button></li>
     </ul>
 
     <!-- ===================== EMITIR ===================== -->
@@ -97,7 +100,7 @@
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <div>
                     <h5 class="fw-bold mb-0">Campos y lotes de la orden</h5>
-                    <span class="hint">La misma OT puede aplicarse a varios lotes o campos. Cada producto se reparte según las hectáreas de cada lote.</span>
+                    <span class="hint">La misma OT puede aplicarse a varios lotes o campos. Cada producto se reparte según las hectáreas de cada lote. En campos en participación se cargan las hectáreas totales del lote.</span>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="agregarDestino()">+ Campo / lote</button>
             </div>
@@ -108,7 +111,8 @@
                             <th>Campo</th>
                             <th>Lote</th>
                             <th class="text-end" style="width:130px;">Has afectadas</th>
-                            <th style="width:180px;">Cultivo</th>
+                            <th style="width:230px;">Participación</th>
+                            <th style="width:170px;">Cultivo</th>
                             <th style="width:40px;"></th>
                         </tr>
                     </thead>
@@ -117,7 +121,7 @@
                         <tr class="table-light">
                             <td colspan="2" class="text-end fw-bold">Total has</td>
                             <td class="text-end font-mono fw-bold" id="totalHas">0</td>
-                            <td colspan="2"></td>
+                            <td colspan="3" class="small" id="totalHasPart"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -137,8 +141,24 @@
             </div>
             <datalist id="dlProductos"></datalist>
             <datalist id="dlLabores"></datalist>
+            <div id="barraAportes" class="alert alert-info py-2 small d-none">
+                <div class="fw-bold mb-1">Campo en participación: ¿cuánto aporta <span class="lbl-empresa">la empresa</span>?</div>
+                <div class="d-flex flex-wrap gap-3 align-items-center">
+                    <span>Labores:
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('laboreo', 100)">100%</button>
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0 btn-aporte-part" onclick="setAporte('laboreo', 'part')"></button>
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('laboreo', 0)">0%</button>
+                    </span>
+                    <span>Productos:
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('producto', 100)">100%</button>
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0 btn-aporte-part" onclick="setAporte('producto', 'part')"></button>
+                        <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="setAporte('producto', 0)">0%</button>
+                    </span>
+                </div>
+                <div class="hint mt-1">El almacén descuenta solo lo que aporta la empresa. El costo de la campaña toma lo que le corresponde según su % en el campo; la diferencia se ve en "Participación con socios".</div>
+            </div>
             <div class="table-responsive">
-                <table class="table table-sm table-bordered align-middle mb-0">
+                <table class="table table-sm table-bordered align-middle mb-0 sin-part" id="tablaConsumosT">
                     <thead class="table-light">
                         <tr>
                             <th style="width:120px;">Tipo</th>
@@ -146,6 +166,7 @@
                             <th class="text-center" style="width:110px;">Dosis / ha</th>
                             <th class="text-end" style="width:130px;">Cantidad</th>
                             <th style="width:60px;">Un.</th>
+                            <th class="text-end col-aporte" style="width:120px;">% aporta <span class="lbl-empresa">la empresa</span></th>
                             <th class="text-end" style="width:150px;">Stock actual</th>
                             <th style="width:40px;"></th>
                         </tr>
@@ -206,6 +227,50 @@
                         </tr>
                     </thead>
                     <tbody id="tablaLineas"><tr><td colspan="9" class="text-muted text-center py-3">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== PARTICIPACIÓN ===================== -->
+    <div id="tabPart" class="d-none">
+        <div class="main-card">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="small fw-bold">Campaña</label>
+                    <select id="pCampania" class="form-select form-select-sm" onchange="cargarParticipacionResumen()"></select>
+                </div>
+                <div class="col-md-9 text-end">
+                    <button class="btn btn-sm btn-dark fw-bold" onclick="cargarParticipacionResumen()">Actualizar</button>
+                    <button class="btn btn-sm btn-success fw-bold" onclick="descargarExcelParticipacion()">Descargar Excel</button>
+                </div>
+            </div>
+            <p class="hint mt-2 mb-0">Campos trabajados con otras sociedades: qué aportó cada una (labores y productos) y qué le corresponde según su %. Solo se incluyen las líneas ya costeadas. Diferencia positiva: el socio le debe a la empresa; negativa: la empresa le debe al socio. Es informativo: no genera asientos ni facturas.</p>
+        </div>
+        <div class="main-card">
+            <h6 class="fw-bold">Resumen por campo</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Campo</th><th>Socios</th><th class="text-end">% empresa</th>
+                            <th class="text-end">Total U$S</th><th class="text-end">Aportó U$S</th><th class="text-end">Corresponde U$S</th><th class="text-end">Diferencia U$S</th>
+                            <th class="text-end">Total $</th><th class="text-end">Aportó $</th><th class="text-end">Corresponde $</th><th class="text-end">Diferencia $</th></tr>
+                    </thead>
+                    <tbody id="tablaPartResumen"><tr><td colspan="11" class="text-muted text-center py-3"> - </td></tr></tbody>
+                </table>
+            </div>
+            <div class="small mt-2" id="partPendientes"></div>
+        </div>
+        <div class="main-card">
+            <h6 class="fw-bold">Detalle por OT</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>OT</th><th>Fecha</th><th>Campo | Lote</th><th>Producto / labor</th><th class="text-end">Cantidad física</th>
+                            <th class="text-end">% aporte</th><th class="text-end">% campo</th>
+                            <th class="text-end">Total U$S</th><th class="text-end">Diferencia U$S</th><th class="text-end">Total $</th><th class="text-end">Diferencia $</th></tr>
+                    </thead>
+                    <tbody id="tablaPartDetalle"><tr><td colspan="11" class="text-muted text-center py-3"> - </td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -334,6 +399,8 @@ let lineasCache = [];
 let mcLinea = null;
 let mcOrigen = { origen: 'manual', mov_ingreso_id: null };
 let modalCosteo = null;
+let partCache = {};
+let empresaNombre = 'la empresa';
 
 function moneyAr(n, dec) {
     const d = dec == null ? 2 : dec;
@@ -359,9 +426,16 @@ function ordenarDestinos(lista) {
 function mostrarTab(t) {
     document.getElementById('tabEmitir').classList.toggle('d-none', t !== 'emitir');
     document.getElementById('tabCostear').classList.toggle('d-none', t !== 'costear');
+    document.getElementById('tabPart').classList.toggle('d-none', t !== 'part');
     document.getElementById('tabBtnEmitir').classList.toggle('active', t === 'emitir');
     document.getElementById('tabBtnCostear').classList.toggle('active', t === 'costear');
+    document.getElementById('tabBtnPart').classList.toggle('active', t === 'part');
     if (t === 'costear') cargarLineas();
+    if (t === 'part') cargarParticipacionResumen();
+}
+
+function pctAr(n) {
+    return Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 }) + '%';
 }
 
 async function init() {
@@ -395,6 +469,15 @@ async function init() {
     const selC = document.getElementById('selCampania');
     selC.innerHTML = (camps || []).map(c => `<option value="${c.id}" data-codigo="${esc(c.codigo)}">Campaña ${esc(c.codigo)}</option>`).join('')
         || '<option value="">Sin campaña</option>';
+    const activa = (camps || []).find(c => Number(c.activa || 0) === 1);
+    if (activa) selC.value = String(activa.id);
+    document.getElementById('pCampania').innerHTML = selC.innerHTML;
+    document.getElementById('pCampania').value = selC.value;
+    empresaActiva().then(emp => {
+        if (emp && emp.razon_social) empresaNombre = emp.razon_social;
+        document.querySelectorAll('.lbl-empresa').forEach(el => { el.textContent = empresaNombre; });
+        actualizarParticipacionUI();
+    });
     renderHist(ots || []);
     llenarTiposLabor();
     agregarDestino();
@@ -430,6 +513,7 @@ async function agregarDestino(d) {
         </select></td>
         <td><select class="form-select form-select-sm dest-lote" onchange="onDestLoteChange(this)"></select></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm font-mono text-end dest-has" value="0" oninput="recalcularLineas()"></td>
+        <td class="small dest-part"></td>
         <td><input class="form-control form-control-sm dest-cultivo"></td>
         <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="quitarDestino(this)">x</button></td>`;
     document.getElementById('tablaDestinos').appendChild(tr);
@@ -461,10 +545,18 @@ async function onDestCampoChange(sel, sinAutocompletar) {
     if (!sinAutocompletar) onDestLoteChange(selLote);
 }
 
+function partDeCampo(campoId) {
+    return partCache[String(campoId || '')] || null;
+}
+
 function onDestLoteChange(selLote) {
     const tr = selLote.closest('tr');
     const opt = selLote.selectedOptions[0];
-    tr.querySelector('.dest-has').value = opt ? (opt.dataset.has || 0) : 0;
+    const hasLote = opt ? Number(opt.dataset.has || 0) : 0;
+    const p = partDeCampo(tr.querySelector('.dest-campo').value);
+    tr.querySelector('.dest-has').value = p && p.pct_empresa > 0
+        ? Math.round(hasLote * 100 / p.pct_empresa * 100) / 100
+        : hasLote;
     const loteId = opt ? parseInt(opt.value, 10) : 0;
     const pl = planCache.find(p => p.lote_id === loteId);
     tr.querySelector('.dest-cultivo').value = pl ? (pl.cultivo_planificado || pl.cultivo_sugerido || '') : '';
@@ -544,9 +636,62 @@ function onContratistaInput() {
 async function cargarPlanCampania() {
     const id = document.getElementById('selCampania').value;
     planCache = [];
-    if (!id) return;
-    const res = await fetch(`/api/agro/campanias/${id}/plan`);
-    planCache = res.ok ? await res.json() : [];
+    partCache = {};
+    if (id) {
+        const [plan, part] = await Promise.all([
+            fetch(`/api/agro/campanias/${id}/plan`).then(r => r.ok ? r.json() : []).catch(() => []),
+            fetch(`/api/agro/campanias/${id}/participaciones`).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        ]);
+        planCache = plan || [];
+        partCache = part || {};
+    }
+    actualizarParticipacionUI();
+}
+
+function actualizarParticipacionUI() {
+    let hayPart = false;
+    let pctRef = null;
+    let hasEmp = 0;
+    let hasTot = 0;
+    document.querySelectorAll('#tablaDestinos tr').forEach(tr => {
+        const p = partDeCampo(tr.querySelector('.dest-campo').value);
+        const has = parseFloat(tr.querySelector('.dest-has').value || 0) || 0;
+        const cell = tr.querySelector('.dest-part');
+        hasTot += has;
+        tr.dataset.part = p ? p.pct_empresa : 100;
+        if (!p) {
+            cell.innerHTML = '<span class="text-muted">-</span>';
+            hasEmp += has;
+            return;
+        }
+        hayPart = true;
+        if (pctRef == null) pctRef = p.pct_empresa;
+        hasEmp += has * p.pct_empresa / 100;
+        cell.innerHTML = `<span class="badge bg-info-subtle text-info-emphasis border">${esc(empresaNombre)} ${pctAr(p.pct_empresa)}</span>
+            <div class="hint">${esc(p.socios_txt)}</div>
+            <div class="hint">Le corresponden ${numAr(Math.round(has * p.pct_empresa) / 100)} de ${numAr(has)} has</div>`;
+    });
+    document.getElementById('tablaConsumosT').classList.toggle('sin-part', !hayPart);
+    document.getElementById('barraAportes').classList.toggle('d-none', !hayPart);
+    document.querySelectorAll('.btn-aporte-part').forEach(b => {
+        b.textContent = pctRef != null ? pctAr(pctRef) : '';
+        b.classList.toggle('d-none', pctRef == null || pctRef === 100);
+    });
+    document.getElementById('totalHasPart').innerHTML = hayPart
+        ? `Le corresponden a ${esc(empresaNombre)}: <b class="font-mono">${numAr(Math.round(hasEmp * 100) / 100)}</b> de ${numAr(Math.round(hasTot * 100) / 100)} has`
+        : '';
+}
+
+function setAporte(tipo, valor) {
+    let v = valor;
+    if (valor === 'part') {
+        const tr = [...document.querySelectorAll('#tablaDestinos tr')].find(t => Number(t.dataset.part || 100) < 100);
+        v = tr ? Number(tr.dataset.part) : 100;
+    }
+    document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
+        if (tr.querySelector('.cons-tipo').value === tipo) tr.querySelector('.cons-aporte').value = v;
+    });
+    recalcularLineas();
 }
 
 function itemPorNombre(nombre, tipo) {
@@ -572,6 +717,7 @@ function agregarLinea(tipoInicial) {
         <td><input type="number" step="0.001" class="form-control form-control-sm font-mono text-end cons-dosis" value="${tipo==='laboreo'?'1':'0'}" oninput="recalcularLineas()"></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm font-mono text-end cons-cant" value="0"></td>
         <td class="cons-un small"></td>
+        <td class="col-aporte"><input type="number" step="1" min="0" max="100" class="form-control form-control-sm font-mono text-end cons-aporte" value="100" oninput="recalcularLineas()" title="Qué % de esta labor o producto pone la empresa en los campos en participación"></td>
         <td class="text-end font-mono small cons-stock"></td>
         <td><button type="button" class="btn btn-danger btn-sm py-0" onclick="this.closest('tr').remove();">x</button></td>`;
     document.getElementById('tablaConsumos').appendChild(tr);
@@ -613,6 +759,10 @@ function onItemChange(inp) {
 function recalcularLineas() {
     const has = totalHas();
     document.getElementById('totalHas').textContent = numAr(has);
+    actualizarParticipacionUI();
+    const hasPart = [...document.querySelectorAll('#tablaDestinos tr')]
+        .filter(tr => Number(tr.dataset.part || 100) < 100)
+        .reduce((s, tr) => s + (parseFloat(tr.querySelector('.dest-has').value || 0) || 0), 0);
     document.querySelectorAll('#tablaConsumos tr').forEach(tr => {
         const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
         const cantInp = tr.querySelector('.cons-cant');
@@ -622,7 +772,10 @@ function recalcularLineas() {
         const st = tr.querySelector('.cons-stock');
         const it = itemsCache.find(i => String(i.id) === tr.dataset.itemId);
         if (it && it.tipo !== 'laboreo') {
-            const falta = parseFloat(cantInp.value || 0) > Number(it.stock_cantidad || 0) + 1e-6;
+            const cant = parseFloat(cantInp.value || 0);
+            const aporte = Math.min(100, Math.max(0, parseFloat(tr.querySelector('.cons-aporte').value || 0) || 0));
+            const deAlmacen = has > 0 ? cant * (1 - (hasPart / has) * (1 - aporte / 100)) : cant;
+            const falta = deAlmacen > Number(it.stock_cantidad || 0) + 1e-6;
             st.classList.toggle('text-danger', falta);
             st.title = falta ? 'El almacén no tiene esa cantidad cargada. Se emite igual y el stock queda negativo.' : '';
         }
@@ -656,10 +809,13 @@ async function emitirOT() {
         const item_id = parseInt(tr.dataset.itemId || 0, 10);
         const dosis = parseFloat(tr.querySelector('.cons-dosis').value || 0);
         const cantidad = parseFloat(tr.querySelector('.cons-cant').value || 0);
+        const aporteTxt = tr.querySelector('.cons-aporte').value;
+        const aporte_pct = aporteTxt === '' ? 100 : parseFloat(aporteTxt);
         if (nombre && !item_id) invalidos.push(nombre);
-        if (item_id && cantidad > 0) consumos.push({ item_id, dosis_por_ha: dosis, cantidad });
+        if (!(aporte_pct >= 0 && aporte_pct <= 100)) invalidos.push(nombre + ' (el % de aporte tiene que estar entre 0 y 100)');
+        if (item_id && cantidad > 0) consumos.push({ item_id, dosis_por_ha: dosis, cantidad, aporte_pct });
     });
-    if (invalidos.length) return alert('Estos ítems no están en el almacén (elegilos de la lista):\n' + invalidos.join('\n'));
+    if (invalidos.length) return alert('Revisá estos ítems (elegilos de la lista del almacén):\n' + invalidos.join('\n'));
     if (!consumos.length) return alert('Agregá al menos un producto o labor con cantidad.');
     const contTxt = document.getElementById('contratista').value.trim();
     const prov = proveedorPorTexto(contTxt);
@@ -792,6 +948,7 @@ async function editarOT(id) {
         const dosis = Number(c.dosis_por_ha || 0);
         const cant = Number(c.cantidad || 0);
         tr.querySelector('.cons-dosis').value = dosis;
+        tr.querySelector('.cons-aporte').value = c.aporte_pct == null ? 100 : Number(c.aporte_pct);
         const cantInp = tr.querySelector('.cons-cant');
         cantInp.value = Math.round(cant * 1000) / 1000;
         if (!(dosis > 0 && Math.abs(dosis * has - cant) < 0.001)) cantInp.dataset.manual = '1';
@@ -899,7 +1056,9 @@ function renderLineas() {
         const nombre = (esLab
             ? `<span class="badge bg-warning-subtle text-warning-emphasis border me-1">Labor</span>${esc(l.laboreo || l.labor_cultural || '')}${l.contratista ? ` <span class="hint">| ${esc(l.contratista)}</span>` : ''}`
             : `<span class="badge bg-primary-subtle text-primary-emphasis border me-1">Prod.</span>${esc(l.producto)}`)
-            + (multiLote ? `<div class="hint">${esc(l.campo || '')}${l.lote ? ' | ' + esc(l.lote) : ''} | ${numAr(l.cantidad_has)} has</div>` : '');
+            + (multiLote ? `<div class="hint">${esc(l.campo || '')}${l.lote ? ' | ' + esc(l.lote) : ''} | ${numAr(l.cantidad_has)} has</div>` : '')
+            + (Number(l.participacion_pct ?? 100) < 100
+                ? `<div class="hint text-info-emphasis">Participación: le corresponde ${pctAr(l.participacion_pct)} de ${numAr(l.cantidad_fisica)} ${esc(l.unidad || '')} | aportó ${pctAr(l.aporte_pct)}</div>` : '');
         const origenTxt = costeada ? esc([l.proveedor, l.nro_remito].filter(Boolean).join(' | ') || l.origen_costo || '') : '';
         html += `<tr class="${costeada ? 'linea-costeada' : ''}">
             <td>${nombre}</td>
@@ -927,7 +1086,9 @@ async function abrirCosteo(id) {
     document.getElementById('mcTitulo').textContent = `OT ${l.nro_orden} | ${nombre}`;
     document.getElementById('mcSub').textContent =
         `${l.campo || ''}${l.lote ? ' | ' + l.lote : ''} | ${numAr(l.cantidad_has)} has | dosis ${numAr(l.dosis_ha)} | cantidad ${numAr(l.cantidad_total)} ${l.unidad || ''} | aplicación ${fechaAr(l.fecha_aplicacion || l.fecha_orden)}`
-        + (d.item ? '' : ' | (sin ítem de almacén asociado)');
+        + (d.item ? '' : ' | (sin ítem de almacén asociado)')
+        + (Number(l.participacion_pct ?? 100) < 100
+            ? ` | Participación: le corresponde ${pctAr(l.participacion_pct)} de ${numAr(l.cantidad_fisica)} ${l.unidad || ''} (aportó ${pctAr(l.aporte_pct)})` : '');
     document.getElementById('mcIngTitulo').textContent = d.es_laboreo
         ? 'Labores cargadas en el almacén (de esta labor o del contratista)'
         : 'Compras de este producto en el almacén (las posteriores a la aplicación se ven en gris)';
@@ -961,7 +1122,7 @@ async function abrirCosteo(id) {
     if (d.es_laboreo) {
         fw.classList.remove('d-none');
         document.getElementById('mcCuit').textContent = d.contratista_cuit ? ('CUIT ' + d.contratista_cuit) : '(contratista sin CUIT en proveedores)';
-        const cant = Number(l.cantidad_total || 0) || Number(l.cantidad_has || 0);
+        const cant = cantidadFactura(l);
         document.getElementById('mcFacturas').innerHTML = (d.facturas || []).length
             ? d.facturas.map((f, i) => `
                 <tr>
@@ -1007,10 +1168,15 @@ function usarIngreso(i) {
     mcPreview();
 }
 
+function cantidadFactura(l) {
+    if (Number(l.participacion_pct ?? 100) < 100 && Number(l.cantidad_fisica || 0) > 0) return Number(l.cantidad_fisica);
+    return Number(l.cantidad_total || 0) || Number(l.cantidad_has || 0);
+}
+
 function usarFactura(i) {
     const f = mcLinea.facturas[i];
     const l = mcLinea.linea;
-    const cant = Number(l.cantidad_total || 0) || Number(l.cantidad_has || 0);
+    const cant = cantidadFactura(l);
     if (!cant) return;
     document.getElementById('mcPrecio').value = Math.round(f.neto_usar / cant * 100) / 100;
     document.getElementById('mcMoneda').value = 'ARS';
@@ -1074,6 +1240,87 @@ async function guardarCosteo() {
     await cargarLineas();
     actualizarBadgePendientes();
     fetch('/api/agro/ot?limit=30').then(r => r.json()).then(renderHist).catch(() => {});
+}
+
+// ===================== PARTICIPACIÓN CON SOCIOS =====================
+function celdaDif(v) {
+    const n = Number(v || 0);
+    const cls = n > 0.004 ? 'text-success' : (n < -0.004 ? 'text-danger' : 'text-muted');
+    return `<td class="text-end font-mono fw-bold ${cls}">${moneyAr(n)}</td>`;
+}
+
+async function cargarParticipacionResumen() {
+    const id = document.getElementById('pCampania').value;
+    const tbR = document.getElementById('tablaPartResumen');
+    const tbD = document.getElementById('tablaPartDetalle');
+    const pend = document.getElementById('partPendientes');
+    if (!id) {
+        tbR.innerHTML = '<tr><td colspan="11" class="text-muted text-center py-3">Seleccioná una campaña.</td></tr>';
+        tbD.innerHTML = '';
+        pend.textContent = '';
+        return;
+    }
+    tbR.innerHTML = '<tr><td colspan="11" class="text-muted text-center py-3">Cargando...</td></tr>';
+    const res = await fetch(`/api/agro/campanias/${id}/participacion_resumen`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        tbR.innerHTML = `<tr><td colspan="11" class="text-danger text-center py-3">${esc(errMsg(d, 'No se pudo cargar el resumen'))}</td></tr>`;
+        return;
+    }
+    const resumen = d.resumen || [];
+    tbR.innerHTML = resumen.length ? resumen.map(g => `
+        <tr>
+            <td class="fw-bold">${esc(g.campo)}</td>
+            <td class="small">${esc(g.socios_txt)}</td>
+            <td class="text-end font-mono">${pctAr(g.participacion_pct)}</td>
+            <td class="text-end font-mono">${moneyAr(g.total_usd)}</td>
+            <td class="text-end font-mono">${moneyAr(g.aporte_empresa_usd)}</td>
+            <td class="text-end font-mono">${moneyAr(g.corresponde_empresa_usd)}</td>
+            ${celdaDif(g.diferencia_usd)}
+            <td class="text-end font-mono">${moneyAr(g.total_ars)}</td>
+            <td class="text-end font-mono">${moneyAr(g.aporte_empresa_ars)}</td>
+            <td class="text-end font-mono">${moneyAr(g.corresponde_empresa_ars)}</td>
+            ${celdaDif(g.diferencia_ars)}
+        </tr>`).join('')
+        : '<tr><td colspan="11" class="text-muted text-center py-3">No hay líneas costeadas en campos con participación para esta campaña.</td></tr>';
+    const p = d.pendientes || [];
+    pend.innerHTML = p.length
+        ? `<span class="text-warning-emphasis fw-bold">${p.length} línea(s) en campos con participación todavía sin costear</span> (OT ${[...new Set(p.map(x => x.nro_ot))].map(esc).join(', ')}): no están incluidas.`
+        : '';
+    const lineas = d.lineas || [];
+    tbD.innerHTML = lineas.length ? lineas.map(x => `
+        <tr>
+            <td class="font-mono fw-bold">${esc(x.nro_ot)}</td>
+            <td>${fechaAr(x.fecha_aplicacion || x.fecha)}</td>
+            <td>${esc(x.campo || '')}${x.lote ? ' | ' + esc(x.lote) : ''}</td>
+            <td>${x.tipo_item === 'laboreo' ? '<span class="badge bg-warning-subtle text-warning-emphasis border me-1">Labor</span>' : '<span class="badge bg-primary-subtle text-primary-emphasis border me-1">Prod.</span>'}${esc(x.item || '')}</td>
+            <td class="text-end font-mono">${numAr(x.cantidad)} ${esc(x.unidad || '')}</td>
+            <td class="text-end font-mono">${pctAr(x.aporte_pct)}</td>
+            <td class="text-end font-mono">${pctAr(x.participacion_pct)}</td>
+            <td class="text-end font-mono">${moneyAr(x.total_usd)}</td>
+            ${celdaDif(x.diferencia_usd)}
+            <td class="text-end font-mono">${moneyAr(x.total_ars)}</td>
+            ${celdaDif(x.diferencia_ars)}
+        </tr>`).join('')
+        : '<tr><td colspan="11" class="text-muted text-center py-3"> - </td></tr>';
+}
+
+async function descargarExcelParticipacion() {
+    const sel = document.getElementById('pCampania');
+    if (!sel.value) return alert('Seleccioná una campaña.');
+    const res = await fetch(`/api/agro/campanias/${sel.value}/participacion_resumen.xlsx`);
+    if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        return alert(errMsg(d, 'No se pudo generar el Excel'));
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `participacion_${(sel.selectedOptions[0]?.dataset.codigo || sel.value)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 
 // ===================== PDF / ENVIAR =====================
@@ -1153,16 +1400,21 @@ function generarPdfOt(d, emp) {
     });
 
     const totHas = (d.destinos || []).reduce((s, x) => s + Number(x.superficie_has || 0), 0);
+    const conPart = (d.destinos || []).some(x => Number(x.participacion_pct ?? 100) < 100);
+    const nomEmp = emp.razon_social || 'Empresa';
     doc.setFont('helvetica', 'bold').setFontSize(11);
     doc.text('Campos y lotes', M, doc.lastAutoTable.finalY + 7);
+    const partTxt = x => Number(x.participacion_pct ?? 100) < 100
+        ? `${nomEmp} ${pctAr(x.participacion_pct)}${x.socios_txt ? ' | ' + x.socios_txt : ''}` : '';
     doc.autoTable({
         startY: doc.lastAutoTable.finalY + 9, margin: { left: M, right: M },
         headStyles: { fillColor: [30, 41, 59] }, footStyles: { fillColor: [226, 232, 240], textColor: 20 },
         styles: { fontSize: 9.5 },
-        columnStyles: { 3: { halign: 'right' } },
-        head: [['Campo', 'Lote', 'Cultivo', { content: 'Has', styles: { halign: 'right' } }]],
-        body: (d.destinos || []).map(x => [x.campo_nombre || '', x.lote_nombre || '', x.cultivo || '', numAr(x.superficie_has)]),
-        foot: [[{ content: 'Total has', colSpan: 3, styles: { halign: 'right' } }, { content: numAr(totHas), styles: { halign: 'right' } }]],
+        columnStyles: conPart ? { 4: { halign: 'right' } } : { 3: { halign: 'right' } },
+        head: [['Campo', 'Lote', 'Cultivo', ...(conPart ? ['Participación'] : []), { content: 'Has', styles: { halign: 'right' } }]],
+        body: (d.destinos || []).map(x => [x.campo_nombre || '', x.lote_nombre || '', x.cultivo || '',
+            ...(conPart ? [partTxt(x)] : []), numAr(x.superficie_has)]),
+        foot: [[{ content: 'Total has', colSpan: conPart ? 4 : 3, styles: { halign: 'right' } }, { content: numAr(totHas), styles: { halign: 'right' } }]],
     });
 
     doc.setFont('helvetica', 'bold').setFontSize(11);
@@ -1170,12 +1422,14 @@ function generarPdfOt(d, emp) {
     doc.autoTable({
         startY: doc.lastAutoTable.finalY + 9, margin: { left: M, right: M },
         headStyles: { fillColor: [30, 41, 59] }, styles: { fontSize: 9.5 },
-        columnStyles: { 2: { halign: 'right' }, 4: { halign: 'right' } },
+        columnStyles: conPart ? { 2: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } } : { 2: { halign: 'right' }, 4: { halign: 'right' } },
         head: [['Tipo', 'Producto / labor', { content: 'Dosis por ha', styles: { halign: 'right' } }, 'Unidad',
-            { content: 'Cantidad total', styles: { halign: 'right' } }]],
+            { content: 'Cantidad total', styles: { halign: 'right' } },
+            ...(conPart ? [{ content: 'Aporta ' + nomEmp, styles: { halign: 'right' } }] : [])]],
         body: (d.consumos || []).map(c => [
             c.tipo_item === 'laboreo' ? 'Labor' : 'Producto', c.nombre || '',
             numAr(c.dosis_por_ha), c.unidad || '', numAr(c.cantidad),
+            ...(conPart ? [pctAr(c.aporte_pct ?? 100)] : []),
         ]),
     });
 

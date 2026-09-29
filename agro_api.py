@@ -272,6 +272,18 @@ class OtConsumoModel(BaseModel):
     item_id: int
     dosis_por_ha: float = 0.0
     cantidad: float = 0.0
+    aporte_pct: Optional[float] = None
+
+
+class SocioParticipacionModel(BaseModel):
+    socio_nombre: str = ""
+    socio_cuit: Optional[str] = ""
+    porcentaje: float = 0.0
+
+
+class ParticipacionCampoModel(BaseModel):
+    campania_id: int
+    socios: List[SocioParticipacionModel] = []
 
 
 class OtDestinoModel(BaseModel):
@@ -834,6 +846,12 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         editar_ot,
         confirmar_ot,
         detalle_ot,
+        asegurar_schema_participaciones,
+        participacion_campo,
+        guardar_participacion_campo,
+        participaciones_campania,
+        resumen_participacion_campania,
+        excel_participacion_campania,
     )
 
     try:
@@ -1268,6 +1286,71 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         rows = costos_por_lote_campania(cur, campania_id, empresa_id)
         conn.close()
         return rows
+
+    @app.get("/api/agro/campos/{campo_id}/participacion")
+    def api_campo_participacion(campo_id: int, campania_id: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        asegurar_schema_participaciones(cur)
+        data = participacion_campo(cur, empresa_id, campo_id, campania_id)
+        conn.close()
+        return data
+
+    @app.put("/api/agro/campos/{campo_id}/participacion")
+    def api_campo_participacion_guardar(campo_id: int, data: ParticipacionCampoModel):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        asegurar_schema_participaciones(cur)
+        try:
+            result = guardar_participacion_campo(
+                cur, empresa_id, campo_id, data.campania_id, [s.dict() for s in data.socios]
+            )
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, str(e))
+        conn.close()
+        return result
+
+    @app.get("/api/agro/campanias/{campania_id}/participaciones")
+    def api_campania_participaciones(campania_id: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        asegurar_schema_participaciones(cur)
+        data = participaciones_campania(cur, empresa_id, campania_id)
+        conn.close()
+        return {str(k): v for k, v in data.items()}
+
+    @app.get("/api/agro/campanias/{campania_id}/participacion_resumen")
+    def api_campania_participacion_resumen(campania_id: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        data = resumen_participacion_campania(cur, empresa_id, campania_id)
+        conn.close()
+        return data
+
+    @app.get("/api/agro/campanias/{campania_id}/participacion_resumen.xlsx")
+    def api_campania_participacion_excel(campania_id: int):
+        from fastapi.responses import Response
+
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,))
+        r = cur.fetchone()
+        codigo = (r["codigo"] if r else "") or str(campania_id)
+        contenido = excel_participacion_campania(cur, empresa_id, campania_id)
+        conn.close()
+        return Response(
+            content=contenido,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="participacion_{codigo}.xlsx"'},
+        )
 
     @app.post("/api/agro/importar_tablas")
     def api_importar_tablas_agro(forzar: int = 0):
