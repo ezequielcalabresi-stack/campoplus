@@ -548,14 +548,14 @@
                                     </div>
                                     <div class="col-4">
                                         <label class="lbl">Se acredita en la cuenta</label>
-                                        <input type="text" id="depDtoAcredita" class="form-control form-control-sm text-end fw-bold" readonly>
+                                        <input type="number" step="0.01" min="0" id="depDtoAcredita" class="form-control form-control-sm text-end fw-bold" oninput="this.dataset.manual='1'; recalcularDtoValores(true)">
                                     </div>
                                     <div class="col-4">
-                                        <label class="lbl">Neto estimado</label>
+                                        <label class="lbl">Neto estimado <a href="#" class="small" onclick="usarNetoDto(); return false;">usar</a></label>
                                         <input type="text" id="depDtoNeto" class="form-control form-control-sm text-end text-muted" readonly>
                                     </div>
                                 </div>
-                                <div class="hint mt-1">Se acredita el total del cheque. Intereses y gastos son informativos: el banco los debita aparte y se cargan al conciliar el extracto.</div>
+                                <div class="hint mt-1" id="depDtoNotaAcredita"></div>
                                 <div class="small mt-2" id="depDtoMargen"></div>
                             </div>
                         </div>
@@ -1529,7 +1529,7 @@
                     <td class="font-mono small">${c.fecha_pago || ' - '}</td>
                     <td class="text-end font-mono fw-bold">${money(c.monto)}</td>
                     <td class="text-center">${Number(c.descontado || 0)
-                        ? `<span class="badge bg-info text-dark" title="Tasa ${c.dto_tasa || 0}% | ${c.dto_dias || 0} días | Intereses ${money(c.dto_intereses)} | Gastos ${money(c.dto_gastos)}">Descontado</span>`
+                        ? `<span class="badge bg-info text-dark" title="Tasa ${c.dto_tasa || 0}% | ${c.dto_dias || 0} días | Intereses ${money(c.dto_intereses)} | Gastos ${money(c.dto_gastos)}${c.dto_acreditado != null ? ' | Acreditado ' + money(c.dto_acreditado) : ''}">Descontado</span>`
                         : `<span class="badge ${estBadge}">${c.estado || ''}</span>`}</td>
                     <td class="text-center text-nowrap">${acciones}</td>
                 </tr>`;
@@ -1576,6 +1576,7 @@
             document.getElementById('depDtoTasa').value = '';
             delete document.getElementById('depDtoTasa').dataset.cuenta;
             delete document.getElementById('depDtoIntereses').dataset.manual;
+            delete document.getElementById('depDtoAcredita').dataset.manual;
             const sel = document.getElementById('depCuentaId');
             sel.innerHTML = '<option value="">Cargando...</option>';
             const ctas = await fetch('/api/bancos/cuentas?tipo=bancarias').then(r => r.ok ? r.json() : []).catch(() => []);
@@ -1615,7 +1616,17 @@
                 ? (parseFloat(intInp.value || 0) || 0)
                 : Math.round(monto * tasa / 100 * (dias || 0) / 365 * 100) / 100;
             const gastos = parseFloat(document.getElementById('depDtoGastos').value || 0) || 0;
-            return { dias, aplica, activo, monto, tasa, intereses, gastos, neto: monto - intereses - gastos };
+            const acrInp = document.getElementById('depDtoAcredita');
+            const acreditado = acrInp.dataset.manual ? (parseFloat(acrInp.value || 0) || 0) : monto;
+            return { dias, aplica, activo, monto, tasa, intereses, gastos, acreditado, neto: monto - intereses - gastos };
+        }
+
+        function usarNetoDto() {
+            const d = datosDtoValores();
+            const inp = document.getElementById('depDtoAcredita');
+            inp.dataset.manual = '1';
+            inp.value = (Math.round(d.neto * 100) / 100).toFixed(2);
+            recalcularDtoValores(true);
         }
 
         function recalcularDtoValores(soloTotales) {
@@ -1638,8 +1649,13 @@
             document.getElementById('depDtoDias').value = d.dias;
             const intInp = document.getElementById('depDtoIntereses');
             if (!intInp.dataset.manual) intInp.value = d.intereses.toFixed(2);
-            document.getElementById('depDtoAcredita').value = fmt(d.monto);
+            const acrInp = document.getElementById('depDtoAcredita');
+            if (!acrInp.dataset.manual) acrInp.value = d.monto.toFixed(2);
             document.getElementById('depDtoNeto').value = fmt(d.neto);
+            const dif = d.monto - d.acreditado;
+            document.getElementById('depDtoNotaAcredita').innerHTML = dif > 0.005
+                ? `Se acreditan ${fmt(d.acreditado)}: costo ya descontado ${fmt(dif)} (ALYC / Mercado de Valores). No se carga otro débito.`
+                : 'Se acredita el total del cheque. Si ya te acreditan con gastos descontados (ALYC), modificá el importe. Si no, intereses y gastos son informativos y se cargan al conciliar el extracto.';
             const margenBox = document.getElementById('depDtoMargen');
             const cta = _depCuentas.find(x => x.id === cuentaId);
             if (!cta) { margenBox.innerHTML = '<span class="text-muted">Elegí la cuenta para ver el margen disponible.</span>'; return; }
@@ -1659,11 +1675,12 @@
             const d = datosDtoValores();
             const body = { cuenta_id, fecha: document.getElementById('depFecha').value };
             if (d.activo) {
-                if (!(d.tasa > 0) && !(d.intereses > 0) && !confirm('No cargaste tasa ni intereses. ¿Descontar igual sin costo?')) return;
+                if (!(d.acreditado > 0) || d.acreditado > d.monto + 0.005) { alert('El importe que se acredita tiene que ser mayor a 0 y no superar el valor del cheque.'); return; }
+                if (!(d.tasa > 0) && !(d.intereses > 0) && d.acreditado >= d.monto - 0.005 && !confirm('No cargaste tasa ni intereses. ¿Descontar igual sin costo?')) return;
                 const cta = _depCuentas.find(x => x.id === cuenta_id);
                 const disp = cta ? Number(cta.vta_cpd || 0) - Number(cta.vta_cpd_usado || 0) : 0;
                 if (d.monto > disp + 0.005 && !confirm('El cheque supera el margen disponible de descuento de la cuenta. ¿Descontar igual?')) return;
-                Object.assign(body, { descuento: true, tasa: d.tasa, intereses: d.intereses, gastos: d.gastos });
+                Object.assign(body, { descuento: true, tasa: d.tasa, intereses: d.intereses, gastos: d.gastos, importe_acreditado: Math.round(d.acreditado * 100) / 100 });
                 if (d.tasa > 0) localStorage.setItem('campoplus_tasa_dto_' + cuenta_id, String(d.tasa));
             }
             const res = await fetch(`/api/bancos/cheques/${id}/depositar`, {

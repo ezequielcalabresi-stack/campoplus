@@ -114,7 +114,12 @@ _COLS_DTO_VALORES = [
     ("dto_intereses", "REAL"),
     ("dto_gastos", "REAL"),
     ("dto_mov_gastos_id", "INTEGER"),
+    ("dto_acreditado", "REAL"),
 ]
+
+
+def _fmt_ar(v) -> str:
+    return f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _asegurar_cols_dto_valores(cursor) -> None:
@@ -1897,6 +1902,7 @@ class ChequeDepositarModel(BaseModel):
     tasa: float = 0.0
     intereses: Optional[float] = None
     gastos: float = 0.0
+    importe_acreditado: Optional[float] = None
 
 
 class ChequeAplicarPagoModel(BaseModel):
@@ -4307,7 +4313,11 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
             else round(monto * tasa / 100 * dias / 365, 2)
         )
         gastos = round(float(data.gastos or 0), 2)
-        dto = {"dias": dias, "tasa": tasa, "intereses": intereses, "gastos": gastos}
+        acreditado = round(float(data.importe_acreditado), 2) if data.importe_acreditado is not None else monto
+        if acreditado <= 0 or acreditado > monto + 0.005:
+            conn.close()
+            raise HTTPException(400, "El importe acreditado tiene que ser mayor a 0 y no superar el valor del cheque.")
+        dto = {"dias": dias, "tasa": tasa, "intereses": intereses, "gastos": gastos, "acreditado": acreditado}
 
     etiqueta = "Dto. Valores Ch." if dto else "Dep. Ch."
     proveedor = f"{etiqueta} {ch['nro_cheque']} — {ref}"[:120]
@@ -4323,7 +4333,7 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
             fecha,
             proveedor,
             ch["nro_cheque"],
-            monto,
+            dto["acreditado"] if dto else monto,
             cta["nro_cta_cte"] or "",
             "Descuento de valores" if dto else "Deposito",
         ),
@@ -4356,13 +4366,13 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
         UPDATE cartera_cheques
         SET estado = 'Depositado', cuenta_id = ?, movimiento_banco_id = ?,
             descontado = 1, dto_fecha = ?, dto_tasa = ?, dto_dias = ?, dto_intereses = ?,
-            dto_gastos = ?, dto_mov_gastos_id = ?,
+            dto_gastos = ?, dto_mov_gastos_id = ?, dto_acreditado = ?,
             observaciones = TRIM(COALESCE(observaciones,'') || ?)
         WHERE id = ?;
         """,
         (
             data.cuenta_id, mov_id, fecha, dto["tasa"], dto["dias"], dto["intereses"],
-            dto["gastos"], mov_gastos_id, (" | " + obs) if obs else "", cheque_id,
+            dto["gastos"], mov_gastos_id, dto["acreditado"], (" | " + obs) if obs else "", cheque_id,
         ),
     )
     conn.commit()
@@ -4376,11 +4386,11 @@ def depositar_cheque(cheque_id: int, data: ChequeDepositarModel):
         "descuento": {**dto, "neto": round(monto - costo, 2)},
         "margen": {"total": margen, "usado": round(usado, 2), "disponible": round(margen - usado, 2)},
         "message": (
-            f"Cheque descontado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}. Se acredita el total $ "
-            + f"{monto:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            + ". Intereses y gastos estimados $ "
-            + f"{costo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            + " (se cargan al conciliar el extracto)."
+            f"Cheque descontado en {cta['banco'] or ''} {cta['nro_cta_cte'] or ''}. Se acreditan $ "
+            + _fmt_ar(dto["acreditado"])
+            + (" (total del cheque)" if dto["acreditado"] >= monto - 0.005
+               else f" (costo ya descontado $ {_fmt_ar(monto - dto['acreditado'])})")
+            + f". Intereses y gastos estimados $ {_fmt_ar(costo)}."
         ),
     }
 
