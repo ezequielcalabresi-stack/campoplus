@@ -805,6 +805,17 @@ async function guardarEmpleado(ev) {
     return false;
 }
 
+document.getElementById('p_form').addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' || ev.target.tagName === 'BUTTON' || ev.target.tagName === 'TEXTAREA') return;
+    ev.preventDefault();
+    const campos = [...ev.currentTarget.querySelectorAll('input:not([type=hidden]):not(#p_inactivos), select, button:not([type=button])')]
+        .filter(el => !el.disabled && el.offsetParent !== null);
+    const sig = campos[campos.indexOf(ev.target) + 1];
+    if (!sig) return;
+    sig.focus();
+    if (sig.tagName === 'INPUT' && sig.type === 'text') sig.select();
+});
+
 boot().catch(e => { console.error(e); alert('No se pudo cargar el módulo de sueldos: ' + e.message); });
 </script>
 </body>
