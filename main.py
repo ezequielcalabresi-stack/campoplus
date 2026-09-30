@@ -9292,6 +9292,13 @@ class _StaticSinMayusculas(StaticFiles):
             actual = os.path.join(actual, real)
         return "/".join(reales)
 
+    @staticmethod
+    def _sin_cache(resp, path: str):
+        # Sin esto el navegador reutiliza HTML/JS viejos después de cada deploy.
+        if path == "" or path.endswith("/") or path.lower().endswith((".html", ".js", ".css")):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     async def get_response(self, path, scope):
         try:
             resp = await super().get_response(path, scope)
@@ -9300,10 +9307,10 @@ class _StaticSinMayusculas(StaticFiles):
                 raise
             resp = None
         if resp is not None and resp.status_code != 404:
-            return resp
+            return self._sin_cache(resp, path)
         real = self._nombre_real(path)
         if real and real != path:
-            return await super().get_response(real, scope)
+            return self._sin_cache(await super().get_response(real, scope), real)
         if resp is not None:
             return resp
         raise HTTPException(status_code=404, detail="Not Found")
