@@ -15,6 +15,7 @@ import io
 from datetime import date, datetime, timedelta
 from motor_contable import (
     init_contabilidad,
+    aplicar_centro_costo_credito,
     asiento_para_movimiento_banco,
     asiento_para_comprobante_compra,
     asiento_para_factura_venta,
@@ -842,6 +843,7 @@ def init_db():
         ("cuenta_id", "INTEGER"),
         ("estado", "TEXT DEFAULT 'Activo'"),
         ("observaciones", "TEXT"),
+        ("centro_costo", "TEXT DEFAULT '1'"),
     ]:
         if col not in cols_cred:
             cursor.execute(f"ALTER TABLE creditos_prestamos ADD COLUMN {col} {ddl};")
@@ -1859,6 +1861,18 @@ def _refrescar_estados_cuotas_por_debito(cursor, credito_id: int):
         "UPDATE creditos_prestamos SET estado = ? WHERE id = ?;",
         ("Historico" if pend == 0 else "Activo", credito_id),
     )
+    _reaplicar_centro_sp_credito(cursor, credito_id)
+
+
+def _reaplicar_centro_sp_credito(cursor, credito_id: int) -> None:
+    """Cuotas vinculadas después de marcar el crédito S/P: sus asientos también salen de la contabilidad oficial."""
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(creditos_prestamos);").fetchall()}
+    if "centro_costo" not in cols:
+        return
+    cursor.execute("SELECT centro_costo FROM creditos_prestamos WHERE id = ?;", (credito_id,))
+    r = cursor.fetchone()
+    if r and str(r["centro_costo"] or "").strip().upper() == "SP":
+        aplicar_centro_costo_credito(cursor, credito_id, "SP")
 
 init_db()
 importar_movimientos_bancarios_historicos()
@@ -2141,6 +2155,7 @@ class CreditoModel(BaseModel):
     monto_cuota: float = 0.0
     observaciones: Optional[str] = ""
     estado: str = "Activo"
+    centro_costo: Optional[str] = None  # '1' oficial | 'SP' sin partida; None conserva el actual
 
 class CreditoCuotaModel(BaseModel):
     nro_cuota: int
@@ -5300,12 +5315,24 @@ def _aplicar_tasas_credito(row: dict) -> dict:
     row["tea"] = _normalizar_tasa_pct(row.get("tea"))
     return row
 
+def _asegurar_centro_costo_credito(cursor) -> None:
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(creditos_prestamos);").fetchall()}
+    if "centro_costo" not in cols:
+        cursor.execute("ALTER TABLE creditos_prestamos ADD COLUMN centro_costo TEXT DEFAULT '1';")
+
+
+def _centro_credito(valor: Optional[str]) -> str:
+    return "SP" if str(valor or "").strip().upper() in ("SP", "S/P", "SIN_PARTIDA", "SIN PARTIDA") else "1"
+
+
 @app.get("/api/bancos/creditos")
 def listar_creditos(moneda: Optional[str] = None, estado: Optional[str] = "activos"):
     """Lista créditos. Por defecto solo Activos (cuotas pendientes = flujo proyectado)."""
     empresa_id = get_empresa_activa_id()
     conn = get_db()
     cursor = conn.cursor()
+    _asegurar_centro_costo_credito(cursor)
+    conn.commit()
 
     q = """
         SELECT c.*,
@@ -5344,6 +5371,8 @@ def listar_creditos(moneda: Optional[str] = None, estado: Optional[str] = "activ
 def obtener_credito(credito_id: int):
     conn = get_db()
     cursor = conn.cursor()
+    _asegurar_centro_costo_credito(cursor)
+    conn.commit()
     cursor.execute("SELECT * FROM creditos_prestamos WHERE id = ?;", (credito_id,))
     row = cursor.fetchone()
     if not row:
@@ -5563,14 +5592,16 @@ def registrar_credito(data: CreditoModel):
     origen = (data.origen_detalle or data.descripcion or "").strip()
     tna = _normalizar_tasa_pct(data.tna)
     tea = _normalizar_tasa_pct(data.tea)
+    centro = _centro_credito(data.centro_costo)
+    _asegurar_centro_costo_credito(cursor)
     cursor.execute(
         """
         INSERT INTO creditos_prestamos (
             banco, entidad_financiera, nro_credito, origen_detalle, descripcion,
             monto_total, moneda, tna, tea, amortizacion, plazo, fecha_operacion,
             fecha_vencimiento_proxima, cuenta_id, total_cuotas, cuotas_pagadas,
-            monto_cuota, observaciones, estado, empresa_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            monto_cuota, observaciones, estado, empresa_id, centro_costo
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """,
         (
             entidad, entidad, data.nro_credito.strip(), origen, origen,
@@ -5578,22 +5609,32 @@ def registrar_credito(data: CreditoModel):
             data.plazo or data.total_cuotas or 0, data.fecha_operacion or "",
             data.fecha_vencimiento_proxima or "", data.cuenta_id,
             data.total_cuotas or data.plazo or 0, data.cuotas_pagadas,
-            data.monto_cuota, data.observaciones or "", data.estado or "Activo", empresa_id,
+            data.monto_cuota, data.observaciones or "", data.estado or "Activo", empresa_id, centro,
         ),
     )
     nuevo_id = cursor.lastrowid
+    movidos = aplicar_centro_costo_credito(cursor, nuevo_id, centro) if centro == "SP" else 0
     conn.commit()
     conn.close()
-    return {"status": "success", "id": nuevo_id, "message": "Crédito registrado."}
+    msg = "Crédito registrado."
+    if centro == "SP":
+        msg += " Centro S/P: sin asientos en la contabilidad oficial."
+        if movidos:
+            msg += f" {movidos} asiento(s) existentes pasaron al centro S/P."
+    return {"status": "success", "id": nuevo_id, "message": msg}
 
 @app.put("/api/bancos/creditos/{credito_id}")
 def actualizar_credito(credito_id: int, data: CreditoModel):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM creditos_prestamos WHERE id = ?;", (credito_id,))
-    if not cursor.fetchone():
+    _asegurar_centro_costo_credito(cursor)
+    cursor.execute("SELECT id, centro_costo FROM creditos_prestamos WHERE id = ?;", (credito_id,))
+    previo = cursor.fetchone()
+    if not previo:
         conn.close()
         raise HTTPException(status_code=404, detail="Crédito no encontrado.")
+    centro_prev = _centro_credito(previo["centro_costo"])
+    centro = centro_prev if data.centro_costo is None else _centro_credito(data.centro_costo)
     entidad = (data.entidad_financiera or data.banco or "").strip()
     moneda = (data.moneda or "ARS").strip().upper()
     moneda = "USD" if moneda in ("DOLARES", "DÓLARES", "U$S", "USD") else "ARS"
@@ -5606,7 +5647,7 @@ def actualizar_credito(credito_id: int, data: CreditoModel):
             banco=?, entidad_financiera=?, nro_credito=?, origen_detalle=?, descripcion=?,
             monto_total=?, moneda=?, tna=?, tea=?, amortizacion=?, plazo=?, fecha_operacion=?,
             fecha_vencimiento_proxima=?, cuenta_id=?, total_cuotas=?, cuotas_pagadas=?,
-            monto_cuota=?, observaciones=?, estado=?
+            monto_cuota=?, observaciones=?, estado=?, centro_costo=?
         WHERE id=?;
         """,
         (
@@ -5615,12 +5656,22 @@ def actualizar_credito(credito_id: int, data: CreditoModel):
             data.plazo or data.total_cuotas or 0, data.fecha_operacion or "",
             data.fecha_vencimiento_proxima or "", data.cuenta_id,
             data.total_cuotas or data.plazo or 0, data.cuotas_pagadas,
-            data.monto_cuota, data.observaciones or "", data.estado or "Activo", credito_id,
+            data.monto_cuota, data.observaciones or "", data.estado or "Activo", centro, credito_id,
         ),
     )
+    movidos = aplicar_centro_costo_credito(cursor, credito_id, centro)
     conn.commit()
     conn.close()
-    return {"status": "success", "message": "Crédito actualizado."}
+    msg = "Crédito actualizado."
+    if centro != centro_prev:
+        msg += (
+            " Pasó al centro S/P: sin asientos en la contabilidad oficial."
+            if centro == "SP"
+            else " Volvió al centro 1: sus asientos vuelven a la contabilidad oficial."
+        )
+    if movidos:
+        msg += f" {movidos} asiento(s) cambiaron de centro."
+    return {"status": "success", "message": msg, "asientos_movidos": movidos}
 
 @app.delete("/api/bancos/creditos/{credito_id}")
 def eliminar_credito(credito_id: int):
@@ -5807,6 +5858,7 @@ def guardar_cuotas_credito(credito_id: int, data: CreditoCuotasLoteModel):
                     vinculados += 1
 
     _sincronizar_resumen_credito(cursor, credito_id)
+    _reaplicar_centro_sp_credito(cursor, credito_id)
     conn.commit()
     conn.close()
     return {

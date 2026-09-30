@@ -1044,6 +1044,14 @@
                             <label class="lbl">Cta cte bancaria asociada (proyección de cuotas)</label>
                             <select id="credCuentaId" class="form-select"></select>
                         </div>
+                        <div class="col-md-12">
+                            <label class="lbl">Centro de costos</label>
+                            <select id="credCentroCosto" class="form-select">
+                                <option value="1">1 - Contabilidad oficial (genera asientos)</option>
+                                <option value="SP">S/P - Sin partida (solo gestión, sin asientos oficiales)</option>
+                            </select>
+                            <div class="form-text">S/P: el crédito y sus cuotas se siguen viendo en gestión y flujo de fondos, pero no van al libro diario ni al balance. Los asientos ya generados pasan al centro S/P (no se borran) y vuelven si lo cambiás a 1.</div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer py-2">
@@ -2404,7 +2412,7 @@
                     const cuotas = `${c.cant_pagadas || c.cuotas_pagadas || 0}/${c.cant_cuotas || c.total_cuotas || c.plazo || 0}`;
                     return `<tr>
                         <td class="font-mono fw-bold">${c.nro_credito || '-'}</td>
-                        <td>${c.entidad_financiera || c.banco || '-'}</td>
+                        <td>${c.entidad_financiera || c.banco || '-'}${String(c.centro_costo || '').toUpperCase() === 'SP' ? ' <span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="Centro S/P: sin asientos en la contabilidad oficial">S/P</span>' : ''}</td>
                         <td><span class="badge ${moneda === 'USD' ? 'bg-warning text-dark' : 'bg-secondary'}">${moneda}</span></td>
                         <td class="text-end font-mono">${sym}${Number(c.monto_total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
                         <td class="font-mono small">${Number(c.tna || 0).toFixed(2)}% / ${Number(c.tea || 0).toFixed(2)}%</td>
@@ -2428,6 +2436,7 @@
             document.getElementById('credTea').value = '0';
             document.getElementById('credPlazo').value = '0';
             document.getElementById('credFechaOp').value = new Date().toISOString().split('T')[0];
+            document.getElementById('credCentroCosto').value = '1';
             popularListasCredito();
             toggleLabelsMonedaCredito();
             new bootstrap.Modal(document.getElementById('modalCredito')).show();
@@ -2448,6 +2457,7 @@
             document.getElementById('credAmort').value = c.amortizacion || '';
             document.getElementById('credPlazo').value = c.plazo || c.total_cuotas || 0;
             document.getElementById('credFechaOp').value = c.fecha_operacion || '';
+            document.getElementById('credCentroCosto').value = String(c.centro_costo || '').toUpperCase() === 'SP' ? 'SP' : '1';
             document.getElementById('credCuentaId').innerHTML = opcionesCuentasCredito(c.cuenta_id);
             toggleLabelsMonedaCredito();
             new bootstrap.Modal(document.getElementById('modalCredito')).show();
@@ -2465,7 +2475,8 @@
                 plazo: parseInt(document.getElementById('credPlazo').value, 10) || 0,
                 total_cuotas: parseInt(document.getElementById('credPlazo').value, 10) || 0,
                 fecha_operacion: document.getElementById('credFechaOp').value,
-                cuenta_id: document.getElementById('credCuentaId').value ? parseInt(document.getElementById('credCuentaId').value, 10) : null
+                cuenta_id: document.getElementById('credCuentaId').value ? parseInt(document.getElementById('credCuentaId').value, 10) : null,
+                centro_costo: document.getElementById('credCentroCosto').value
             };
             if (!payload.entidad_financiera || !payload.nro_credito || payload.monto_total <= 0) {
                 return alert('Completá entidad, Nº de crédito y monto.');

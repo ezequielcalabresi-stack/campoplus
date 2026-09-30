@@ -617,6 +617,119 @@ def proveedor_omite_asiento_oficial(cursor, proveedor: str) -> bool:
     return False
 
 
+def _nro_prestamo_movimiento(mov: Dict[str, Any]) -> str:
+    """Nº de crédito del movimiento; en cuentas no bancarias sin Nº, la cuenta hace de Nº (como al sincronizar)."""
+    nro = str(mov.get("nro_credito") or "").strip()
+    if nro:
+        return nro
+    if int(mov.get("es_cuenta_bancaria") if mov.get("es_cuenta_bancaria") is not None else 1) == 0:
+        return str(mov.get("cta_cte_nro") or "").strip() or str(mov.get("banco") or "").strip()
+    return ""
+
+
+def ids_movimientos_credito(cursor, credito_id: int) -> List[int]:
+    """Movimientos de banco / cuenta de pago que pertenecen al crédito (cuotas vinculadas o Nº de crédito)."""
+    cursor.execute(
+        "SELECT id, nro_credito, COALESCE(empresa_id, 1) AS empresa_id FROM creditos_prestamos WHERE id = ?;",
+        (credito_id,),
+    )
+    cred = cursor.fetchone()
+    if not cred:
+        return []
+    nro = str(cred["nro_credito"] or "").strip()
+    ids = {
+        int(r[0])
+        for r in cursor.execute(
+            "SELECT movimiento_banco_id FROM creditos_cuotas WHERE credito_id = ? AND movimiento_banco_id IS NOT NULL;",
+            (credito_id,),
+        ).fetchall()
+    }
+    if nro:
+        cursor.execute(
+            """
+            SELECT m.id, m.nro_credito, m.cta_cte_nro, b.banco, b.es_cuenta_bancaria
+            FROM movimientos_cta_cte_bancos m
+            JOIN ctas_ctes_bancarias b ON b.id = m.cuenta_id
+            WHERE COALESCE(m.es_prestamo, 0) = 1
+              AND COALESCE(b.empresa_id, 1) = ?
+              AND (TRIM(COALESCE(m.nro_credito, '')) = ? OR TRIM(COALESCE(m.nro_credito, '')) = '');
+            """,
+            (int(cred["empresa_id"]), nro),
+        )
+        for r in cursor.fetchall():
+            if _nro_prestamo_movimiento(dict(r)) == nro:
+                ids.add(int(r["id"]))
+    return sorted(ids)
+
+
+def movimiento_de_credito_sp(cursor, mov_id: Optional[int]) -> bool:
+    """True si el movimiento pertenece a un crédito marcado Centro de Costos S/P."""
+    if not mov_id:
+        return False
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(creditos_prestamos);").fetchall()}
+    if "centro_costo" not in cols:
+        return False
+    cursor.execute(
+        """
+        SELECT c.id FROM creditos_cuotas q
+        JOIN creditos_prestamos c ON c.id = q.credito_id
+        WHERE q.movimiento_banco_id = ? AND COALESCE(c.centro_costo, '1') = 'SP'
+        LIMIT 1;
+        """,
+        (int(mov_id),),
+    )
+    if cursor.fetchone():
+        return True
+    cursor.execute(
+        """
+        SELECT m.es_prestamo, m.nro_credito, m.cta_cte_nro, b.banco, b.es_cuenta_bancaria,
+               COALESCE(b.empresa_id, 1) AS empresa_id
+        FROM movimientos_cta_cte_bancos m
+        LEFT JOIN ctas_ctes_bancarias b ON b.id = m.cuenta_id
+        WHERE m.id = ?;
+        """,
+        (int(mov_id),),
+    )
+    mov = cursor.fetchone()
+    if not mov or not int(mov["es_prestamo"] or 0):
+        return False
+    nro = _nro_prestamo_movimiento(dict(mov))
+    if not nro:
+        return False
+    cursor.execute(
+        """
+        SELECT 1 FROM creditos_prestamos
+        WHERE TRIM(COALESCE(nro_credito, '')) = ? AND COALESCE(empresa_id, 1) = ?
+          AND COALESCE(centro_costo, '1') = 'SP'
+        LIMIT 1;
+        """,
+        (nro, int(mov["empresa_id"])),
+    )
+    return cursor.fetchone() is not None
+
+
+def aplicar_centro_costo_credito(cursor, credito_id: int, centro: str) -> int:
+    """Pasa los asientos ya generados por las cuotas del crédito al centro indicado ('SP' o '1').
+    No borra nada: los asientos S/P quedan fuera del diario y del balance oficial y vuelven al desmarcar."""
+    centro = "SP" if str(centro or "").strip().upper() in ("SP", "S/P") else "1"
+    ids = ids_movimientos_credito(cursor, credito_id)
+    if not ids:
+        return 0
+    marcas = ",".join("?" for _ in ids)
+    cursor.execute(
+        f"""
+        UPDATE asientos_contables SET centro_costo = ?
+        WHERE COALESCE(centro_costo, '1') != ?
+          AND id IN (
+              SELECT asiento_id FROM movimientos_cta_cte_bancos
+              WHERE id IN ({marcas}) AND COALESCE(asiento_id, 0) > 0
+          );
+        """,
+        (centro, centro, *ids),
+    )
+    return cursor.rowcount or 0
+
+
 def asiento_para_movimiento_banco(
     cursor,
     *,
@@ -710,6 +823,8 @@ def asiento_para_movimiento_banco(
         )
 
     if proveedor_omite_asiento_oficial(cursor, proveedor):
+        return None
+    if movimiento_de_credito_sp(cursor, origen_id):
         return None
 
     if tipo in ("deposito", "depósito"):
