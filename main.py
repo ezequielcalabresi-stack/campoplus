@@ -230,20 +230,26 @@ def get_empresa_activa_id() -> int:
         pedida = empresa_ctx.get()
         conn = get_db()
         cursor = conn.cursor()
-        if pedida:
-            cursor.execute("SELECT id FROM empresas WHERE id = ?;", (int(pedida),))
-            if cursor.fetchone():
-                cursor.execute(
-                    "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
-                    (int(pedida),),
-                )
-                conn.commit()
-                conn.close()
-                return int(pedida)
-        cursor = conn.cursor()
         cursor.execute("SELECT empresa_activa_id FROM configuracion_empresa WHERE id = 1;")
         cfg = cursor.fetchone()
         emp_id = int(cfg["empresa_activa_id"]) if cfg and cfg["empresa_activa_id"] is not None else None
+        if pedida:
+            cursor.execute("SELECT id FROM empresas WHERE id = ?;", (int(pedida),))
+            if cursor.fetchone():
+                # Se llama varias veces por request (también desde middlewares): escribir sólo si cambia,
+                # y sin esperar si otra conexión del mismo request tiene la base tomada.
+                if emp_id != int(pedida):
+                    try:
+                        conn.execute("PRAGMA busy_timeout=500;")
+                        cursor.execute(
+                            "UPDATE configuracion_empresa SET empresa_activa_id = ? WHERE id = 1;",
+                            (int(pedida),),
+                        )
+                        conn.commit()
+                    except sqlite3.OperationalError:
+                        pass
+                conn.close()
+                return int(pedida)
 
         if emp_id is not None:
             cursor.execute("SELECT id FROM empresas WHERE id = ?;", (emp_id,))

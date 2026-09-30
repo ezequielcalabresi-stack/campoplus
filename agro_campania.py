@@ -233,8 +233,12 @@ def init_agro_schema(cursor) -> None:
             orden_rotacion INTEGER DEFAULT 0
         );
     """)
+    cursor.execute("SELECT codigo FROM cultivos_ref;")
+    existentes = {r[0] for r in cursor.fetchall()}
     for i, nombre in enumerate(ROTACION_IDEAL, start=1):
         codigo = nombre.upper().replace(" ", "_").replace("ª", "A")
+        if codigo in existentes:
+            continue
         cursor.execute(
             "INSERT OR IGNORE INTO cultivos_ref (codigo, nombre, orden_rotacion) VALUES (?, ?, ?);",
             (codigo, nombre, i),

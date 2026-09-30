@@ -271,17 +271,19 @@ def resolver_contexto(master_path: str, token: str, cuenta_header: str):
     cuenta_id = None
     if superadmin and header.isdigit() and int(header) > 0:
         cuenta_id = int(header)
-        cur.execute(
-            "UPDATE sesiones_usuario SET cuenta_activa_id = ? WHERE token = ?;",
-            (cuenta_id, token),
-        )
-        conn.commit()
+        if ses["cuenta_activa_id"] != cuenta_id:
+            cur.execute(
+                "UPDATE sesiones_usuario SET cuenta_activa_id = ? WHERE token = ?;",
+                (cuenta_id, token),
+            )
+            conn.commit()
     elif superadmin and header == "0":
-        cur.execute(
-            "UPDATE sesiones_usuario SET cuenta_activa_id = NULL WHERE token = ?;",
-            (token,),
-        )
-        conn.commit()
+        if ses["cuenta_activa_id"] is not None:
+            cur.execute(
+                "UPDATE sesiones_usuario SET cuenta_activa_id = NULL WHERE token = ?;",
+                (token,),
+            )
+            conn.commit()
         cuenta_id = 1
     elif superadmin and ses["cuenta_activa_id"]:
         cuenta_id = int(ses["cuenta_activa_id"])
