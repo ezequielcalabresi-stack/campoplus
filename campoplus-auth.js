@@ -351,10 +351,33 @@
     else body.appendChild(bar);
   }
 
+  /** Foto de fondo común a todas las pantallas; si /fondo.jpg no existe no cambia nada. */
+  function aplicarFondo() {
+    if (document.getElementById("campoplusFondo")) return;
+    var url = "/fondo.jpg?v=1";
+    var img = new Image();
+    img.onload = function () {
+      var st = document.createElement("style");
+      st.textContent =
+        "body{background-color:transparent!important}" +
+        "#campoplusFondo{position:fixed;inset:-24px;z-index:-1;pointer-events:none;" +
+        "background:url('" + url + "') center/cover no-repeat;filter:blur(5px) saturate(.9)}" +
+        "#campoplusFondo::after{content:'';position:absolute;inset:0;background:rgba(241,245,249,.55)}" +
+        "@media print{#campoplusFondo{display:none}}";
+      document.head.appendChild(st);
+      var capa = document.createElement("div");
+      capa.id = "campoplusFondo";
+      document.body.insertBefore(capa, document.body.firstChild);
+    };
+    img.src = url;
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", injectFormBrand);
+    document.addEventListener("DOMContentLoaded", aplicarFondo);
   } else {
     injectFormBrand();
+    aplicarFondo();
   }
 
   if (esPaginaAreaEmpresa()) {
