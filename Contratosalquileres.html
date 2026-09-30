@@ -401,6 +401,49 @@
     </div>
 </div>
 
+<!-- Modal editar venta -->
+<div id="modalVentaCc" class="fixed inset-0 bg-black/40 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-5">
+        <div class="flex justify-between items-start mb-3">
+            <div>
+                <h3 class="text-lg font-bold">Editar venta</h3>
+                <p class="text-xs text-slate-500" id="evSub"></p>
+            </div>
+            <button type="button" class="text-slate-500 text-xl font-bold" onclick="cerrarEditarVentaCc()">×</button>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Tn vendidas</label>
+                <input type="number" step="0.001" id="evTns" class="w-full border rounded-md p-2 text-right font-mono font-bold" oninput="recalcEditarVentaCc()">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Precio pizarra ($/tn)</label>
+                <input id="evPrecio" class="w-full border rounded-md p-2 text-right font-mono" onfocus="onMoneyFocus(this)" onblur="onMoneyBlur(this); recalcEditarVentaCc()">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha pizarra</label>
+                <input type="date" id="evFechaPizarra" class="w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha pago</label>
+                <input type="date" id="evFechaPago" class="w-full border rounded-md p-2">
+            </div>
+            <div class="col-span-2">
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Detalle</label>
+                <input id="evDetalle" class="w-full border rounded-md p-2">
+            </div>
+            <div class="col-span-2 text-right text-sm">Total: <b id="evTotal" class="font-mono">$ 0,00</b></div>
+        </div>
+        <div class="flex justify-between mt-4 gap-2">
+            <button type="button" onclick="borrarVentaCc(_ventaEditId, true)" class="px-4 py-2 border border-rose-300 text-rose-700 rounded-lg text-sm font-bold">Borrar venta</button>
+            <div class="flex gap-2">
+                <button type="button" onclick="cerrarEditarVentaCc()" class="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+                <button type="button" id="btnGuardarVentaCc" onclick="guardarEditarVentaCc()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold disabled:opacity-60">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal detalle -->
 <div id="modalContrato" class="fixed inset-0 bg-black/40 z-50 hidden items-center justify-center p-4">
     <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-5">
@@ -430,6 +473,8 @@
 
 <script>
 let cuotasMem = [];
+let _ccRows = {};
+let _ventaEditId = null;
 
 function num(v) { const n = parseFloat(String(v).replace(/\./g,'').replace(',','.')); return Number.isFinite(n) ? n : 0; }
 function fmt(n, d=2) { return Number(n||0).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
@@ -1065,6 +1110,7 @@ async function cargarCc() {
         tb.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-slate-400">Sin movimientos de CC.</td></tr>`;
         return;
     }
+    _ccRows = Object.fromEntries(rows.map(r => [r.id, r]));
     const ordenados = [...rows].sort((a, b) => String(a.fecha_pago || a.fecha_pizarra || '').localeCompare(String(b.fecha_pago || b.fecha_pizarra || '')) || (a.id || 0) - (b.id || 0));
     let saldo = 0;
     tb.innerHTML = ordenados.map(r => {
@@ -1082,7 +1128,7 @@ async function cargarCc() {
             <td class="p-2 text-right font-mono">${r.precio_pizarra ? fmt(r.precio_pizarra) : ''}</td>
             <td class="p-2 text-right font-mono">${r.importe_total ? '$ ' + fmt(r.importe_total) : ''}</td>
             <td class="p-2 text-xs text-slate-600">${esc(r.varios || r.actividad_gestion || '')}</td>
-            <td class="p-2 text-center">${debe > 0 && !haber ? `<button type="button" class="text-rose-600 font-bold hover:text-rose-800" title="Borrar esta venta" onclick="borrarVentaCc(${r.id})">×</button>` : ''}</td>
+            <td class="p-2 text-center whitespace-nowrap">${debe > 0 && !haber ? `<button type="button" class="text-slate-600 hover:text-slate-900 px-1" title="Editar esta venta" onclick="abrirEditarVentaCc(${r.id})">✎</button><button type="button" class="text-rose-600 font-bold hover:text-rose-800 px-1" title="Borrar esta venta" onclick="borrarVentaCc(${r.id})">×</button>` : ''}</td>
         </tr>`;
     }).join('');
     const sc = document.getElementById('scrollCc');
@@ -1094,11 +1140,67 @@ async function cargarCc() {
     }
 }
 
-async function borrarVentaCc(id) {
+function abrirEditarVentaCc(id) {
+    const r = _ccRows[id];
+    if (!r) return;
+    _ventaEditId = id;
+    document.getElementById('evSub').textContent = `${r.locador || ''} · ${r.campania_codigo || ''} · ${r.grano || ''}`;
+    document.getElementById('evTns').value = Number(r.debe || 0);
+    document.getElementById('evPrecio').value = formatMoney(r.precio_pizarra || 0);
+    document.getElementById('evFechaPizarra').value = String(r.fecha_pizarra || '').slice(0, 10);
+    document.getElementById('evFechaPago').value = String(r.fecha_pago || '').slice(0, 10);
+    document.getElementById('evDetalle').value = r.varios || '';
+    recalcEditarVentaCc();
+    const m = document.getElementById('modalVentaCc');
+    m.classList.remove('hidden');
+    m.classList.add('flex');
+}
+
+function cerrarEditarVentaCc() {
+    const m = document.getElementById('modalVentaCc');
+    m.classList.add('hidden');
+    m.classList.remove('flex');
+    _ventaEditId = null;
+}
+
+function recalcEditarVentaCc() {
+    const tot = num(document.getElementById('evTns').value) * parseMoney(document.getElementById('evPrecio').value);
+    document.getElementById('evTotal').textContent = '$ ' + formatMoney(tot);
+}
+
+async function guardarEditarVentaCc() {
+    const body = {
+        tns_vendidas: Number(document.getElementById('evTns').value) || 0,
+        precio_pizarra: parseMoney(document.getElementById('evPrecio').value),
+        fecha_pizarra: document.getElementById('evFechaPizarra').value,
+        fecha_pago: document.getElementById('evFechaPago').value,
+        detalle: document.getElementById('evDetalle').value.trim(),
+    };
+    if (body.tns_vendidas <= 0) return alert('Indicá las toneladas vendidas.');
+    const btn = document.getElementById('btnGuardarVentaCc');
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/agro/alquileres_cc/' + _ventaEditId, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { alert(data.detail || 'No se pudo guardar.'); return; }
+    } finally {
+        btn.disabled = false;
+    }
+    cerrarEditarVentaCc();
+    await cargarCc();
+    await cargarVisorArrendadores();
+    if (document.getElementById('panelVentas').style.display !== 'none') await cargarSaldosVenta();
+}
+
+async function borrarVentaCc(id, desdeModal) {
+    if (!id) return;
     if (!confirm('¿Borrar esta venta de la cta cte del arrendador? Si tiene asiento contable, también se borra.')) return;
     const res = await fetch('/api/agro/alquileres_cc/' + id, { method: 'DELETE' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { alert(data.detail || 'No se pudo borrar.'); return; }
+    if (desdeModal) cerrarEditarVentaCc();
     await cargarCc();
     await cargarVisorArrendadores();
     if (document.getElementById('panelVentas').style.display !== 'none') await cargarSaldosVenta();

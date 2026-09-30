@@ -364,6 +364,14 @@ class AlquilerVentaModel(BaseModel):
     confirmar_duplicado: bool = False
 
 
+class AlquilerVentaEditModel(BaseModel):
+    tns_vendidas: float
+    precio_pizarra: float = 0
+    fecha_pizarra: Optional[str] = ""
+    fecha_pago: Optional[str] = ""
+    detalle: Optional[str] = ""
+
+
 def _guardar_contrato_campo(cursor, campo_id: int, empresa_id: int, contrato: ContratoArrendamientoModel) -> int:
     cursor.execute(
         """
@@ -1877,6 +1885,53 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             "fecha_pago": fecha_pago,
             "message": f"Venta registrada · {tns} tn · saldo restante {saldo_post} tn. {msg_asiento}",
         }
+
+    @app.put("/api/agro/alquileres_cc/{mov_id}")
+    def api_alquileres_cc_editar_venta(mov_id: int, data: AlquilerVentaEditModel):
+        """Edita una venta (movimiento DEBE) y rehace su asiento si corresponde."""
+        tns = float(data.tns_vendidas or 0)
+        precio = float(data.precio_pizarra or 0)
+        if tns <= 0:
+            raise HTTPException(400, "Las toneladas vendidas deben ser mayores a 0.")
+        conn = get_db()
+        cur = conn.cursor()
+        eid = get_empresa_activa_id()
+        cur.execute("SELECT * FROM alquileres_cta_cte WHERE id=? AND empresa_id=?;", (mov_id, eid))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            raise HTTPException(404, "Movimiento no encontrado.")
+        row = dict(row)
+        if float(row.get("haber") or 0) > 0 or float(row.get("debe") or 0) <= 0:
+            conn.close()
+            raise HTTPException(400, "Sólo se pueden editar ventas (movimientos al DEBE); las tn de contrato se editan desde el contrato.")
+        fecha_pizarra = (data.fecha_pizarra or "").strip()[:10] or (row.get("fecha_pizarra") or "")
+        fecha_pago = (data.fecha_pago or "").strip()[:10] or fecha_pizarra
+        detalle = (data.detalle or "").strip() or (row.get("varios") or "Venta")
+        importe = round(tns * precio, 2)
+        cur.execute(
+            """UPDATE alquileres_cta_cte SET debe=?, precio_pizarra=?, fecha_pizarra=?, fecha_pago=?,
+                   varios=?, importe_total=? WHERE id=?;""",
+            (tns, precio, fecha_pizarra, fecha_pago, detalle, importe, mov_id),
+        )
+        from motor_contable import asiento_para_alquiler, eliminar_asiento, proveedor_omite_asiento_oficial
+        asiento_id = row.get("asiento_id")
+        if asiento_id:
+            eliminar_asiento(cur, int(asiento_id))
+            asiento_id = None
+        if importe > 0 and not proveedor_omite_asiento_oficial(cur, row["locador"]):
+            asiento_id = asiento_para_alquiler(
+                cur, fecha=fecha_pago or fecha_pizarra, locador=row["locador"], importe=importe,
+                detalle=detalle, empresa_id=eid, origen_id=mov_id,
+            )
+        if "asiento_id" in row or asiento_id:
+            cols_cc = {r[1] for r in cur.execute("PRAGMA table_info(alquileres_cta_cte)")}
+            if "asiento_id" not in cols_cc:
+                cur.execute("ALTER TABLE alquileres_cta_cte ADD COLUMN asiento_id INTEGER;")
+            cur.execute("UPDATE alquileres_cta_cte SET asiento_id=? WHERE id=?;", (asiento_id, mov_id))
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "asiento_id": asiento_id, "importe_total": importe}
 
     @app.delete("/api/agro/alquileres_cc/{mov_id}")
     def api_alquileres_cc_borrar_venta(mov_id: int):
