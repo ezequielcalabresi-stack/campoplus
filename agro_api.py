@@ -361,6 +361,7 @@ class AlquilerVentaModel(BaseModel):
     actividad: Optional[str] = ""
     cuenta: Optional[str] = ""
     forzar: bool = False  # permite vender por encima del saldo
+    confirmar_duplicado: bool = False
 
 
 def _guardar_contrato_campo(cursor, campo_id: int, empresa_id: int, contrato: ContratoArrendamientoModel) -> int:
@@ -1781,6 +1782,28 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             except ValueError:
                 fecha_pago = fecha_pizarra
 
+        if not data.confirmar_duplicado:
+            cur.execute(
+                """
+                SELECT id, fecha_pago FROM alquileres_cta_cte
+                WHERE empresa_id=? AND campania_codigo=?
+                  AND UPPER(TRIM(locador))=UPPER(TRIM(?))
+                  AND UPPER(TRIM(COALESCE(grano,'')))=UPPER(TRIM(?))
+                  AND COALESCE(fecha_pizarra,'')=? AND ABS(COALESCE(debe,0)-?)<0.0001
+                  AND ABS(COALESCE(precio_pizarra,0)-?)<0.01
+                ORDER BY id DESC LIMIT 1;
+                """,
+                (eid, camp, locador, grano, fecha_pizarra, tns, precio),
+            )
+            dup = cur.fetchone()
+            if dup:
+                conn.close()
+                raise HTTPException(
+                    409,
+                    f"Ya hay una venta igual cargada ({tns:g} tn · pizarra {fecha_pizarra} · "
+                    f"$ {precio:,.2f}/tn · pago {dup['fecha_pago'] or '-'}). ¿La querés cargar de nuevo?",
+                )
+
         importe = round(tns * precio, 2)
         detalle = (data.detalle or "Venta").strip() or "Venta"
         actividad = (data.actividad or "").strip()
@@ -1854,6 +1877,29 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             "fecha_pago": fecha_pago,
             "message": f"Venta registrada · {tns} tn · saldo restante {saldo_post} tn. {msg_asiento}",
         }
+
+    @app.delete("/api/agro/alquileres_cc/{mov_id}")
+    def api_alquileres_cc_borrar_venta(mov_id: int):
+        """Borra una venta (movimiento DEBE) de la cta cte de alquileres y su asiento, si tiene."""
+        conn = get_db()
+        cur = conn.cursor()
+        eid = get_empresa_activa_id()
+        cur.execute("SELECT * FROM alquileres_cta_cte WHERE id=? AND empresa_id=?;", (mov_id, eid))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            raise HTTPException(404, "Movimiento no encontrado.")
+        row = dict(row)
+        if float(row.get("haber") or 0) > 0 or float(row.get("debe") or 0) <= 0:
+            conn.close()
+            raise HTTPException(400, "Sólo se pueden borrar ventas (movimientos al DEBE); las tn de contrato se editan desde el contrato.")
+        if row.get("asiento_id"):
+            from motor_contable import eliminar_asiento
+            eliminar_asiento(cur, int(row["asiento_id"]))
+        cur.execute("DELETE FROM alquileres_cta_cte WHERE id=?;", (mov_id,))
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "asiento_borrado": row.get("asiento_id")}
 
     @app.get("/api/agro/contratos_alquileres")
     def api_contratos_alquileres(

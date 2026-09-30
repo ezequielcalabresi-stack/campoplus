@@ -335,7 +335,7 @@
                             <input type="checkbox" id="vForzar" class="rounded border-slate-300">
                             Forzar si supera saldo
                         </label>
-                        <button type="button" onclick="guardarVenta()" class="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">
+                        <button type="button" id="btnIngresarVenta" onclick="guardarVenta()" class="ml-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-wait text-white px-5 py-2 rounded-lg text-sm font-bold shadow">
                             Ingresar venta
                         </button>
                     </div>
@@ -392,9 +392,10 @@
                         <th class="p-2 text-right">$/tn</th>
                         <th class="p-2 text-right">Importe $</th>
                         <th class="p-2 text-left">Detalle</th>
+                        <th class="p-2"></th>
                     </tr>
                 </thead>
-                <tbody id="tbCc"><tr><td colspan="9" class="p-4 text-center text-slate-400">Eleg un arrendador.</td></tr></tbody>
+                <tbody id="tbCc"><tr><td colspan="10" class="p-4 text-center text-slate-400">Eleg un arrendador.</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -639,13 +640,39 @@ async function guardarVenta() {
     if (!body.grano) return alert('Indic el grano.');
     if (body.tns_vendidas <= 0) return alert('Indic las toneladas vendidas.');
 
-    const res = await fetch('/api/agro/alquileres_cc/venta', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
+    const btn = document.getElementById('btnIngresarVenta');
     const st = document.getElementById('vEstado');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    st.textContent = 'Registrando la venta…';
+    st.className = 'text-xs text-slate-500 mt-3 font-medium';
+    let res, data;
+    try {
+        const enviar = () => fetch('/api/agro/alquileres_cc/venta', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        res = await enviar();
+        data = await res.json().catch(() => ({}));
+        if (res.status === 409 && confirm(data.detail || 'Ya hay una venta igual cargada. ¿Cargarla de nuevo?')) {
+            body.confirmar_duplicado = true;
+            res = await enviar();
+            data = await res.json().catch(() => ({}));
+        } else if (res.status === 409) {
+            st.textContent = 'No se cargó: ya existía una venta igual.';
+            st.className = 'text-xs text-amber-700 mt-3 font-medium';
+            return;
+        }
+    } catch (e) {
+        st.textContent = 'Sin respuesta del servidor. Revisá la cta cte antes de reintentar.';
+        st.className = 'text-xs text-rose-600 mt-3 font-medium';
+        return;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingresar venta';
+    }
     if (!res.ok) {
         const msg = typeof data.detail === 'string' ? data.detail : 'No se pudo registrar la venta';
         st.textContent = msg;
@@ -1035,7 +1062,7 @@ async function cargarCc() {
     const rows = await fetch('/api/agro/alquileres_cc?' + qs.toString()).then(r => r.ok ? r.json() : []);
     const tb = document.getElementById('tbCc');
     if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin movimientos de CC.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-slate-400">Sin movimientos de CC.</td></tr>`;
         return;
     }
     const ordenados = [...rows].sort((a, b) => String(a.fecha_pago || a.fecha_pizarra || '').localeCompare(String(b.fecha_pago || b.fecha_pizarra || '')) || (a.id || 0) - (b.id || 0));
@@ -1055,6 +1082,7 @@ async function cargarCc() {
             <td class="p-2 text-right font-mono">${r.precio_pizarra ? fmt(r.precio_pizarra) : ''}</td>
             <td class="p-2 text-right font-mono">${r.importe_total ? '$ ' + fmt(r.importe_total) : ''}</td>
             <td class="p-2 text-xs text-slate-600">${esc(r.varios || r.actividad_gestion || '')}</td>
+            <td class="p-2 text-center">${debe > 0 && !haber ? `<button type="button" class="text-rose-600 font-bold hover:text-rose-800" title="Borrar esta venta" onclick="borrarVentaCc(${r.id})">×</button>` : ''}</td>
         </tr>`;
     }).join('');
     const sc = document.getElementById('scrollCc');
@@ -1064,6 +1092,16 @@ async function cargarCc() {
         lbl.textContent = fmt(saldo, 3);
         lbl.className = 'font-mono font-bold text-lg ' + (saldo > 0.0001 ? 'text-emerald-800' : 'text-slate-700');
     }
+}
+
+async function borrarVentaCc(id) {
+    if (!confirm('¿Borrar esta venta de la cta cte del arrendador? Si tiene asiento contable, también se borra.')) return;
+    const res = await fetch('/api/agro/alquileres_cc/' + id, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.detail || 'No se pudo borrar.'); return; }
+    await cargarCc();
+    await cargarVisorArrendadores();
+    if (document.getElementById('panelVentas').style.display !== 'none') await cargarSaldosVenta();
 }
 
 async function recargar() {
