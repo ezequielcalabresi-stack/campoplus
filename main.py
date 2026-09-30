@@ -2258,13 +2258,42 @@ def obtener_siguiente_certificado_db(tipo: str, base_defecto: int) -> int:
 
 # --- ENDPOINTS API ---
 
+def _asegurar_columnas_configuracion(cursor) -> None:
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS configuracion_empresa (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            razon_social TEXT, cuit TEXT, condicion_iva TEXT, localidad TEXT, contacto_email TEXT, cit_arba TEXT,
+            empresa_activa_id INTEGER DEFAULT 1
+        );
+    """)
+    cols = {c[1] for c in cursor.execute("PRAGMA table_info(configuracion_empresa);").fetchall()}
+    faltantes = [
+        ("razon_social", "TEXT"), ("cuit", "TEXT"), ("condicion_iva", "TEXT"), ("localidad", "TEXT"),
+        ("contacto_email", "TEXT"), ("cit_arba", "TEXT"),
+        ("empresa_activa_id", "INTEGER DEFAULT 1"),
+        ("agente_retencion_iibb", "INTEGER DEFAULT 1"),
+        ("agente_retencion_ganancias", "INTEGER DEFAULT 1"),
+        ("agente_percepcion_iibb", "INTEGER DEFAULT 1"),
+        ("sisa_estado", "TEXT DEFAULT '1'"),
+        ("sisa_caracter", "TEXT DEFAULT 'productor'"),
+        ("criterio_costo", "TEXT DEFAULT 'peps'"),
+    ]
+    for col, tipo in faltantes:
+        if col not in cols:
+            cursor.execute(f"ALTER TABLE configuracion_empresa ADD COLUMN {col} {tipo};")
+
+
 @app.get("/api/configuracion")
 def obtener_configuracion():
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM configuracion_empresa WHERE id = 1;")
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        _asegurar_columnas_configuracion(cursor)
+        conn.commit()
+        cursor.execute("SELECT * FROM configuracion_empresa WHERE id = 1;")
+        row = cursor.fetchone()
+    finally:
+        conn.close()
     if row:
         return dict(row)
     return {}
@@ -2272,7 +2301,19 @@ def obtener_configuracion():
 @app.post("/api/configuracion")
 def guardar_configuracion(data: ConfiguracionModel):
     conn = get_db()
+    try:
+        return _guardar_configuracion(conn, data)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"No se pudo guardar la configuración: {exc}") from exc
+    finally:
+        conn.close()
+
+
+def _guardar_configuracion(conn, data: ConfiguracionModel):
     cursor = conn.cursor()
+    _asegurar_columnas_configuracion(cursor)
     cursor.execute("""
         INSERT INTO configuracion_empresa (
             id, razon_social, cuit, condicion_iva, localidad, contacto_email, cit_arba,
@@ -2298,7 +2339,6 @@ def guardar_configuracion(data: ConfiguracionModel):
         (data.criterio_costo or "peps").strip().lower() or "peps",
     ))
     conn.commit()
-    conn.close()
     return {"status": "success", "message": "Configuración guardada correctamente."}
 
 @app.get("/api/entidades")

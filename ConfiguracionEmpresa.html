@@ -222,8 +222,10 @@
                     body: JSON.stringify(payload)
                 });
 
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.detail || "Error al guardar.");
+                const texto = await response.text();
+                let result = {};
+                try { result = JSON.parse(texto); } catch (_) { result = { detail: texto }; }
+                if (!response.ok) throw new Error(result.detail || `Error ${response.status} al guardar.`);
 
                 alert("¡Configuración comercial de la empresa guardada con éxito en el servidor!");
             } catch (err) {
