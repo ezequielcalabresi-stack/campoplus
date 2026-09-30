@@ -455,6 +455,7 @@
                     const emp = await det.json();
                     localStorage.setItem('campoplus_session_empresa', JSON.stringify(emp));
                     refrescarBranding(emp);
+                    if (CampoAuth.aplicarFondo) CampoAuth.aplicarFondo(emp);
                 }
             } catch (e) {
                 console.error("Error al actualizar la empresa activa en el servidor:", e);

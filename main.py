@@ -185,6 +185,7 @@ def _row_to_empresa(row) -> dict:
         "mod_bancos", "mod_agro", "mod_almacen", "mod_ganaderia", "mod_tambo",
         "mod_porcino", "mod_aviar",
         "mod_sicore", "mod_arba", "mod_cm05", "mod_contabilidad", "mod_liquidaciones", "es_agente_retencion",
+        "fondo_path", "fondo_nitidez",
     ):
         if k in keys:
             d[k] = row[k]
@@ -192,6 +193,12 @@ def _row_to_empresa(row) -> dict:
     if logo and not str(logo).startswith("/"):
         logo = "/" + str(logo).replace("\\", "/")
     d["logo_url"] = logo
+    fondo = d.get("fondo_path") or ""
+    d["fondo_url"] = ("/" + str(fondo).replace("\\", "/").lstrip("/")) if fondo else ""
+    try:
+        d["fondo_nitidez"] = max(0, min(100, int(d["fondo_nitidez"]))) if d.get("fondo_nitidez") is not None else 40
+    except (TypeError, ValueError):
+        d["fondo_nitidez"] = 40
     d["plan"] = d.get("plan") or "full"
     d["acceso_habilitado"] = int(d["acceso_habilitado"]) if d.get("acceso_habilitado") is not None else 1
     return d

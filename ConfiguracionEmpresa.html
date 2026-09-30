@@ -131,6 +131,7 @@
             <div class="bg-white border border-slate-200 p-5 rounded-lg space-y-3 text-xs">
                 <h3 class="font-bold text-slate-800 uppercase tracking-wide border-b pb-2 text-sm">Imagen de fondo de las pantallas (opcional)</h3>
                 <p class="text-slate-600">Cada empresa puede usar su propia foto de fondo; se ve en los espacios libres alrededor de los formularios. Sin imagen, las pantallas quedan con el fondo gris habitual.</p>
+                <p class="text-slate-700">Empresa: <span id="fondoEmpresaNombre" class="font-bold"></span></p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                     <div id="fondoPreview" class="relative h-40 rounded-lg border border-slate-300 overflow-hidden bg-slate-100 flex items-center justify-center">
                         <div id="fondoPreviewImg" class="absolute bg-center bg-cover" style="inset:-12px;"></div>
@@ -244,6 +245,7 @@
             const url = emp && emp.fondo_url;
             const n = Math.max(0, Math.min(100, Number(nitidez)));
             document.getElementById('fondoNitidezTxt').textContent = n;
+            document.getElementById('fondoEmpresaNombre').textContent = (emp && emp.razon_social) || '';
             const img = document.getElementById('fondoPreviewImg');
             const velo = document.getElementById('fondoPreviewVelo');
             img.style.backgroundImage = url ? `url('${url}')` : 'none';

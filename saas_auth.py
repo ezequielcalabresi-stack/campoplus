@@ -732,6 +732,30 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
             raise HTTPException(404, "Empresa no encontrada")
         return conn, cur, dict(row)
 
+    def _actualizar_fondo(conn, empresa_id: int, campos: Dict[str, Any]) -> None:
+        # La fila de la empresa existe en su base y en la del grupo (/api/empresas lee esta última).
+        sql = f"UPDATE empresas SET {', '.join(f'{k} = ?' for k in campos)} WHERE id = ?;"
+        vals = list(campos.values()) + [empresa_id]
+        conn.execute(sql, vals)
+        conn.commit()
+        try:
+            from plataforma import conexion_grupo
+
+            grupo = conexion_grupo()
+        except Exception:
+            grupo = None
+        if grupo is None:
+            return
+        try:
+            gcur = grupo.cursor()
+            _asegurar_columnas_fondo(gcur)
+            gcur.execute(sql, vals)
+            grupo.commit()
+        except sqlite3.Error:
+            pass
+        finally:
+            grupo.close()
+
     @app.post("/api/empresas/{empresa_id}/fondo")
     async def api_fondo_subir(empresa_id: int, request: Request, file: UploadFile = File(...)):
         conn, cur, emp = _empresa_para_fondo(request, empresa_id)
@@ -750,8 +774,7 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
                 f.write(raw)
             anterior = emp.get("fondo_path") or ""
             rel = f"logos/{fname}"
-            cur.execute("UPDATE empresas SET fondo_path = ? WHERE id = ?;", (rel, empresa_id))
-            conn.commit()
+            _actualizar_fondo(conn, empresa_id, {"fondo_path": rel})
             if anterior and os.path.basename(anterior) != fname:
                 _borrar_archivo_fondo(anterior)
             cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
@@ -763,8 +786,7 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
     def api_fondo_quitar(empresa_id: int, request: Request):
         conn, cur, emp = _empresa_para_fondo(request, empresa_id)
         try:
-            cur.execute("UPDATE empresas SET fondo_path = NULL WHERE id = ?;", (empresa_id,))
-            conn.commit()
+            _actualizar_fondo(conn, empresa_id, {"fondo_path": None})
             _borrar_archivo_fondo(emp.get("fondo_path") or "")
             cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
             return {"status": "ok", "empresa": empresa_to_dict(cur.fetchone())}
@@ -775,8 +797,7 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
     def api_fondo_nitidez(empresa_id: int, data: FondoNitidezModel, request: Request):
         conn, cur, _emp = _empresa_para_fondo(request, empresa_id)
         try:
-            cur.execute("UPDATE empresas SET fondo_nitidez = ? WHERE id = ?;", (int(data.nitidez), empresa_id))
-            conn.commit()
+            _actualizar_fondo(conn, empresa_id, {"fondo_nitidez": int(data.nitidez), "fondo_path": _emp.get("fondo_path")})
             cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
             return {"status": "ok", "empresa": empresa_to_dict(cur.fetchone())}
         finally:
