@@ -404,12 +404,179 @@
     aplicarFondo();
   }
 
+  /** Ventanas emergentes (Bootstrap .modal y overlays Tailwind): agrandar y cambiar tamaño arrastrando. */
+  var CSS_VENTANAS =
+    ".cp-win{position:relative}" +
+    ".cp-win-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:6px;width:30px;height:26px;" +
+    "font-size:15px;line-height:1;cursor:pointer;flex:0 0 auto;margin-left:auto;margin-right:8px;padding:0}" +
+    ".cp-win-btn:hover{background:#f1f5f9;color:#0f172a}" +
+    ".cp-win-btn.cp-abs{position:absolute;top:8px;right:44px;z-index:6;margin:0}" +
+    ".cp-win-btn+.btn-close{margin-left:0!important}" +
+    ".cp-win-grip{position:absolute;right:1px;bottom:1px;width:16px;height:16px;cursor:nwse-resize;z-index:6;" +
+    "background:linear-gradient(135deg,transparent 45%,#94a3b8 45%,#94a3b8 55%,transparent 55%,transparent 70%,#94a3b8 70%,#94a3b8 80%,transparent 80%)}" +
+    ".modal-dialog.cp-max{max-width:98vw!important;width:98vw!important;margin:1vh auto!important}" +
+    ".modal-dialog.cp-max>.modal-content{height:98vh}" +
+    ".modal-dialog.cp-max .modal-body,.modal-dialog.cp-sized .modal-body{overflow:auto;flex:1 1 auto}" +
+    ".modal-dialog.cp-max .modal-body .table-responsive,.modal-dialog.cp-sized .modal-body .table-responsive{max-height:none!important}" +
+    ".cp-win.cp-max-panel{width:98vw!important;max-width:98vw!important;height:96vh!important;max-height:96vh!important;overflow:auto!important}" +
+    ".modal-body td>input[type=date].form-control,.modal-body td>.campo-fecha-wrap{min-width:125px}" +
+    ".modal-body td>input.money-input{min-width:105px}" +
+    ".modal-body td>select.form-select{min-width:110px}" +
+    ".modal-body td>input.cq-nota{min-width:140px}" +
+    "@media print{.cp-win-btn,.cp-win-grip{display:none}}";
+
+  function claveVentana(raiz) {
+    var page = (location.pathname.split("/").pop() || "").toLowerCase();
+    return "campoplus_win_max:" + page + ":" + ((raiz && raiz.id) || "");
+  }
+
+  function fijarMaximizada(v, on) {
+    if (v.dialog) {
+      v.dialog.classList.toggle("cp-max", on);
+      v.dialog.classList.remove("cp-sized");
+      v.dialog.style.width = "";
+      v.dialog.style.maxWidth = "";
+    } else {
+      v.panel.classList.toggle("cp-max-panel", on);
+      v.panel.style.width = "";
+      v.panel.style.maxWidth = "";
+      v.panel.style.maxHeight = "";
+    }
+    v.panel.style.height = "";
+    if (v.boton) {
+      v.boton.textContent = on ? "\u2921" : "\u2922";
+      v.boton.title = on ? "Achicar ventana" : "Agrandar ventana (doble clic en el título)";
+    }
+    try {
+      if (v.raiz && v.raiz.id) {
+        if (on) localStorage.setItem(claveVentana(v.raiz), "1");
+        else localStorage.removeItem(claveVentana(v.raiz));
+      }
+    } catch (_) {}
+  }
+
+  function estaMaximizada(v) {
+    return v.dialog ? v.dialog.classList.contains("cp-max") : v.panel.classList.contains("cp-max-panel");
+  }
+
+  function arrastrarTamano(ev, v) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    var caja = v.panel.getBoundingClientRect();
+    var x0 = ev.clientX, y0 = ev.clientY, w0 = caja.width, h0 = caja.height;
+    var factorAlto = v.dialog && !v.dialog.classList.contains("modal-dialog-centered") ? 1 : 2;
+    if (estaMaximizada(v)) fijarMaximizada(v, false);
+    function mover(e) {
+      var w = Math.max(320, Math.min(window.innerWidth - 12, w0 + (e.clientX - x0) * 2));
+      var h = Math.max(200, Math.min(window.innerHeight - 12, h0 + (e.clientY - y0) * factorAlto));
+      if (v.dialog) {
+        v.dialog.classList.add("cp-sized");
+        v.dialog.style.maxWidth = "none";
+        v.dialog.style.width = w + "px";
+      } else {
+        v.panel.style.maxWidth = "none";
+        v.panel.style.width = w + "px";
+        v.panel.style.maxHeight = "none";
+        v.panel.style.overflow = "auto";
+      }
+      v.panel.style.height = h + "px";
+    }
+    function tragarClic(e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    function soltar() {
+      document.removeEventListener("mousemove", mover);
+      document.removeEventListener("mouseup", soltar);
+      document.body.style.userSelect = "";
+      // El clic que sigue al soltar fuera del recuadro no debe cerrar la ventana por "clic en el fondo".
+      document.addEventListener("click", tragarClic, true);
+      setTimeout(function () {
+        document.removeEventListener("click", tragarClic, true);
+      }, 0);
+    }
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", mover);
+    document.addEventListener("mouseup", soltar);
+  }
+
+  function mejorarVentana(panel, dialog, raiz) {
+    if (!panel || panel.getAttribute("data-cp-win")) return;
+    panel.setAttribute("data-cp-win", "1");
+    panel.classList.add("cp-win");
+    var v = { panel: panel, dialog: dialog, raiz: raiz, boton: null };
+    var cab = panel.querySelector(":scope > .modal-header");
+    if (!cab && !dialog) {
+      var primero = panel.firstElementChild;
+      if (primero && primero.classList.contains("flex") && primero.classList.contains("justify-between")) cab = primero;
+    }
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cp-win-btn";
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      fijarMaximizada(v, !estaMaximizada(v));
+    });
+    if (cab && cab.children.length >= 2) cab.insertBefore(btn, cab.lastElementChild);
+    else {
+      btn.classList.add("cp-abs");
+      panel.appendChild(btn);
+    }
+    v.boton = btn;
+    if (cab) {
+      cab.addEventListener("dblclick", function (e) {
+        if (e.target.closest("input,select,textarea,button,a")) return;
+        fijarMaximizada(v, !estaMaximizada(v));
+      });
+    }
+    var grip = document.createElement("div");
+    grip.className = "cp-win-grip";
+    grip.title = "Arrastrar para cambiar el tamaño";
+    grip.addEventListener("mousedown", function (e) {
+      arrastrarTamano(e, v);
+    });
+    panel.appendChild(grip);
+    var recordada = false;
+    try {
+      recordada = !!(raiz && raiz.id && localStorage.getItem(claveVentana(raiz)));
+    } catch (_) {}
+    fijarMaximizada(v, recordada);
+  }
+
+  function mejorarVentanas(raiz) {
+    var base = raiz || document;
+    if (!document.getElementById("campoplusVentanasCss")) {
+      var st = document.createElement("style");
+      st.id = "campoplusVentanasCss";
+      st.textContent = CSS_VENTANAS;
+      document.head.appendChild(st);
+    }
+    var modales = base.classList && base.classList.contains("modal") ? [base] : base.querySelectorAll(".modal");
+    Array.prototype.forEach.call(modales, function (m) {
+      var c = m.querySelector(".modal-dialog > .modal-content");
+      if (c) mejorarVentana(c, c.parentElement, m);
+    });
+    if (!raiz) {
+      document.querySelectorAll("div.fixed.inset-0").forEach(function (ov) {
+        var p = ov.firstElementChild;
+        if (p && p.tagName === "DIV" && p.classList.contains("bg-white")) mejorarVentana(p, null, ov);
+      });
+    }
+  }
+
+  document.addEventListener("show.bs.modal", function (e) {
+    if (e.target && e.target.classList) mejorarVentanas(e.target);
+  });
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", injectFormBrand);
     document.addEventListener("DOMContentLoaded", aplicarFondoInicial);
+    document.addEventListener("DOMContentLoaded", function () { mejorarVentanas(); });
   } else {
     injectFormBrand();
     aplicarFondoInicial();
+    mejorarVentanas();
   }
 
   if (esPaginaAreaEmpresa()) {
