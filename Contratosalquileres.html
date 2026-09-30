@@ -383,7 +383,8 @@
             <table class="w-full text-sm">
                 <thead class="sticky top-0 bg-slate-800 text-white">
                     <tr class="text-xs uppercase">
-                        <th class="p-2 text-left">Fecha</th>
+                        <th class="p-2 text-left">Fecha pago</th>
+                        <th class="p-2 text-left">Fecha pizarra</th>
                         <th class="p-2 text-left">Campaa</th>
                         <th class="p-2 text-left">Grano</th>
                         <th class="p-2 text-right">Debe tn</th>
@@ -395,7 +396,7 @@
                         <th class="p-2"></th>
                     </tr>
                 </thead>
-                <tbody id="tbCc"><tr><td colspan="10" class="p-4 text-center text-slate-400">Eleg un arrendador.</td></tr></tbody>
+                <tbody id="tbCc"><tr><td colspan="11" class="p-4 text-center text-slate-400">Eleg un arrendador.</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -1107,7 +1108,7 @@ async function cargarCc() {
     const rows = await fetch('/api/agro/alquileres_cc?' + qs.toString()).then(r => r.ok ? r.json() : []);
     const tb = document.getElementById('tbCc');
     if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-slate-400">Sin movimientos de CC.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="11" class="p-4 text-center text-slate-400">Sin movimientos de CC.</td></tr>`;
         return;
     }
     _ccRows = Object.fromEntries(rows.map(r => [r.id, r]));
@@ -1119,7 +1120,8 @@ async function cargarCc() {
         saldo += haber - debe;
         const color = saldo > 0.0001 ? 'text-emerald-800' : (saldo < -0.0001 ? 'text-rose-700' : 'text-slate-500');
         return `<tr class="border-t hover:bg-slate-50">
-            <td class="p-2 font-mono text-xs">${fechaVista(r.fecha_pago || r.fecha_pizarra)}</td>
+            <td class="p-2 font-mono text-xs">${fechaVista(r.fecha_pago)}</td>
+            <td class="p-2 font-mono text-xs text-slate-500">${fechaVista(r.fecha_pizarra)}</td>
             <td class="p-2 font-mono text-xs">${esc(r.campania_codigo)}</td>
             <td class="p-2">${esc(r.grano)}</td>
             <td class="p-2 text-right font-mono text-rose-700">${debe ? fmt(debe, 3) : ''}</td>
