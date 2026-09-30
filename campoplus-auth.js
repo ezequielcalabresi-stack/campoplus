@@ -351,33 +351,65 @@
     else body.appendChild(bar);
   }
 
-  /** Foto de fondo común a todas las pantallas; si /fondo.jpg no existe no cambia nada. */
-  function aplicarFondo() {
-    if (document.getElementById("campoplusFondo")) return;
-    var url = "/fondo.jpg?v=1";
+  function quitarFondo() {
+    var st = document.getElementById("campoplusFondoCss");
+    var capa = document.getElementById("campoplusFondo");
+    if (st) st.remove();
+    if (capa) capa.remove();
+  }
+
+  /**
+   * Foto de fondo propia de la empresa (Configuración de empresa).
+   * nitidez 0-100: 100 = foto nítida con velo leve; 0 = muy desenfocada y clara.
+   */
+  function aplicarFondo(emp) {
+    emp = emp || sessionEmpresa();
+    var page = (location.pathname.split("/").pop() || "").toLowerCase();
+    if (!emp || !emp.fondo_url || page === "login.html") {
+      quitarFondo();
+      return;
+    }
+    var n = Number(emp.fondo_nitidez);
+    if (!isFinite(n)) n = 40;
+    n = Math.max(0, Math.min(100, n));
+    var blur = ((100 - n) * 0.08).toFixed(1);
+    var velo = (0.15 + (100 - n) * 0.006).toFixed(2);
+    var url = emp.fondo_url;
     var img = new Image();
     img.onload = function () {
-      var st = document.createElement("style");
+      var st = document.getElementById("campoplusFondoCss");
+      if (!st) {
+        st = document.createElement("style");
+        st.id = "campoplusFondoCss";
+        document.head.appendChild(st);
+      }
       st.textContent =
         "body{background-color:transparent!important}" +
         "#campoplusFondo{position:fixed;inset:-24px;z-index:-1;pointer-events:none;" +
-        "background:url('" + url + "') center/cover no-repeat;filter:blur(5px) saturate(.9)}" +
-        "#campoplusFondo::after{content:'';position:absolute;inset:0;background:rgba(241,245,249,.55)}" +
+        "background:url('" + url.replace(/'/g, "%27") + "') center/cover no-repeat;filter:blur(" + blur + "px)}" +
+        "#campoplusFondo::after{content:'';position:absolute;inset:0;background:rgba(241,245,249," + velo + ")}" +
+        "body>header,body>h1,body>h2,body>div>h1,body>div>h2{text-shadow:0 1px 3px rgba(255,255,255,.9)}" +
         "@media print{#campoplusFondo{display:none}}";
-      document.head.appendChild(st);
-      var capa = document.createElement("div");
-      capa.id = "campoplusFondo";
-      document.body.insertBefore(capa, document.body.firstChild);
+      if (!document.getElementById("campoplusFondo")) {
+        var capa = document.createElement("div");
+        capa.id = "campoplusFondo";
+        document.body.insertBefore(capa, document.body.firstChild);
+      }
     };
+    img.onerror = quitarFondo;
     img.src = url;
+  }
+
+  function aplicarFondoInicial() {
+    aplicarFondo();
   }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", injectFormBrand);
-    document.addEventListener("DOMContentLoaded", aplicarFondo);
+    document.addEventListener("DOMContentLoaded", aplicarFondoInicial);
   } else {
     injectFormBrand();
-    aplicarFondo();
+    aplicarFondoInicial();
   }
 
   if (esPaginaAreaEmpresa()) {
@@ -405,5 +437,6 @@
     },
     paintLogo: paintLogo,
     injectFormBrand: injectFormBrand,
+    aplicarFondo: aplicarFondo,
   };
 })();

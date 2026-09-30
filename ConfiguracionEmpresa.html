@@ -128,6 +128,34 @@
                 </select>
             </div>
 
+            <div class="bg-white border border-slate-200 p-5 rounded-lg space-y-3 text-xs">
+                <h3 class="font-bold text-slate-800 uppercase tracking-wide border-b pb-2 text-sm">Imagen de fondo de las pantallas (opcional)</h3>
+                <p class="text-slate-600">Cada empresa puede usar su propia foto de fondo; se ve en los espacios libres alrededor de los formularios. Sin imagen, las pantallas quedan con el fondo gris habitual.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                    <div id="fondoPreview" class="relative h-40 rounded-lg border border-slate-300 overflow-hidden bg-slate-100 flex items-center justify-center">
+                        <div id="fondoPreviewImg" class="absolute bg-center bg-cover" style="inset:-12px;"></div>
+                        <div id="fondoPreviewVelo" class="absolute inset-0"></div>
+                        <span id="fondoPreviewVacio" class="relative text-slate-400">Sin imagen</span>
+                        <div id="fondoPreviewCard" class="relative bg-white rounded shadow px-4 py-2 text-slate-700 font-semibold hidden">Así se ve un formulario</div>
+                    </div>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1">Subir imagen (JPG, PNG o WEBP, máx 5 MB)</label>
+                            <input type="file" id="fondoArchivo" accept=".jpg,.jpeg,.png,.webp" class="w-full text-xs">
+                        </div>
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1">Nitidez: <span id="fondoNitidezTxt" class="font-bold">40</span></label>
+                            <input type="range" id="fondoNitidez" min="0" max="100" step="5" value="40" class="w-full">
+                            <div class="flex justify-between text-[10px] text-slate-500"><span>Muy suave (desenfocada y clara)</span><span>Nítida</span></div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button type="button" id="fondoQuitar" class="bg-rose-50 text-rose-700 border border-rose-200 px-3 py-1.5 rounded hover:bg-rose-100 font-semibold hidden">Quitar imagen</button>
+                            <span id="fondoEstado" class="text-slate-500"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- SECCIÓN 3: ESTADO DE LA LICENCIA -->
             <div class="bg-emerald-50 border border-emerald-200 p-5 rounded-lg flex justify-between items-center text-xs">
                 <div>
@@ -203,7 +231,99 @@
             }
         }
 
-        window.onload = cargarConfiguracion;
+        let _fondoEmp = null;
+
+        function fondoEmpresaId() {
+            const emp = window.CampoAuth ? CampoAuth.sessionEmpresa() : null;
+            return (emp && emp.id) || localStorage.getItem('campoplus_tenant_activo') || '';
+        }
+
+        function pintarFondoPreview(emp, nitidez) {
+            const url = emp && emp.fondo_url;
+            const n = Math.max(0, Math.min(100, Number(nitidez)));
+            document.getElementById('fondoNitidezTxt').textContent = n;
+            const img = document.getElementById('fondoPreviewImg');
+            const velo = document.getElementById('fondoPreviewVelo');
+            img.style.backgroundImage = url ? `url('${url}')` : 'none';
+            img.style.filter = url ? `blur(${((100 - n) * 0.08 / 2).toFixed(1)}px)` : 'none';
+            velo.style.background = url ? `rgba(241,245,249,${(0.15 + (100 - n) * 0.006).toFixed(2)})` : 'transparent';
+            document.getElementById('fondoPreviewVacio').classList.toggle('hidden', !!url);
+            document.getElementById('fondoPreviewCard').classList.toggle('hidden', !url);
+            document.getElementById('fondoQuitar').classList.toggle('hidden', !url);
+            if (window.CampoAuth && CampoAuth.aplicarFondo) {
+                CampoAuth.aplicarFondo(Object.assign({}, emp || {}, { fondo_nitidez: n }));
+            }
+        }
+
+        async function fondoRespuesta(res) {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || 'Error al guardar la imagen de fondo.');
+            _fondoEmp = data.empresa || _fondoEmp;
+            if (window.CampoAuth) await CampoAuth.me();
+            document.getElementById('fondoNitidez').value = _fondoEmp.fondo_nitidez ?? 40;
+            pintarFondoPreview(_fondoEmp, _fondoEmp.fondo_nitidez ?? 40);
+        }
+
+        async function cargarFondo() {
+            try {
+                const data = window.CampoAuth ? await CampoAuth.me() : null;
+                _fondoEmp = (data && data.empresa) || (window.CampoAuth && CampoAuth.sessionEmpresa()) || {};
+            } catch (_) {
+                _fondoEmp = {};
+            }
+            const n = _fondoEmp.fondo_nitidez ?? 40;
+            document.getElementById('fondoNitidez').value = n;
+            pintarFondoPreview(_fondoEmp, n);
+        }
+
+        document.getElementById('fondoArchivo').addEventListener('change', async (ev) => {
+            const file = ev.target.files && ev.target.files[0];
+            if (!file) return;
+            const estado = document.getElementById('fondoEstado');
+            estado.textContent = 'Subiendo imagen...';
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                await fondoRespuesta(await fetch(`/api/empresas/${fondoEmpresaId()}/fondo`, { method: 'POST', body: fd }));
+                estado.textContent = 'Imagen guardada.';
+            } catch (err) {
+                estado.textContent = '';
+                alert(err.message);
+            } finally {
+                ev.target.value = '';
+            }
+        });
+
+        document.getElementById('fondoNitidez').addEventListener('input', (ev) => {
+            pintarFondoPreview(_fondoEmp, ev.target.value);
+        });
+
+        document.getElementById('fondoNitidez').addEventListener('change', async (ev) => {
+            const estado = document.getElementById('fondoEstado');
+            try {
+                await fondoRespuesta(await fetch(`/api/empresas/${fondoEmpresaId()}/fondo`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nitidez: Number(ev.target.value) })
+                }));
+                estado.textContent = 'Nitidez guardada.';
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        document.getElementById('fondoQuitar').addEventListener('click', async () => {
+            if (!confirm('¿Quitar la imagen de fondo de esta empresa?')) return;
+            const estado = document.getElementById('fondoEstado');
+            try {
+                await fondoRespuesta(await fetch(`/api/empresas/${fondoEmpresaId()}/fondo`, { method: 'DELETE' }));
+                estado.textContent = 'Imagen quitada.';
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        window.onload = () => { cargarConfiguracion(); cargarFondo(); };
     </script>
 </body>
 </html>

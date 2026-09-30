@@ -245,12 +245,22 @@ def init_saas_schema(cursor: sqlite3.Cursor) -> None:
     )
 
 
+class FondoNitidezModel(BaseModel):
+    nitidez: int = Field(40, ge=0, le=100)
+
+
 def empresa_to_dict(row) -> dict:
     d = dict(row)
     logo = d.get("logo_path") or ""
     if logo and not logo.startswith("/"):
         logo = "/" + logo.replace("\\", "/")
     d["logo_url"] = logo if logo else ""
+    fondo = d.get("fondo_path") or ""
+    d["fondo_url"] = ("/" + fondo.replace("\\", "/").lstrip("/")) if fondo else ""
+    try:
+        d["fondo_nitidez"] = max(0, min(100, int(d.get("fondo_nitidez") if d.get("fondo_nitidez") is not None else 40)))
+    except (TypeError, ValueError):
+        d["fondo_nitidez"] = 40
     d["plan"] = d.get("plan") or "full"
     d["acceso_habilitado"] = int(d.get("acceso_habilitado") if d.get("acceso_habilitado") is not None else 1)
     for k in MOD_KEYS:
@@ -690,6 +700,87 @@ def register_saas_routes(app: FastAPI, get_db: Callable, get_empresa_activa_id: 
         conn.commit()
         conn.close()
         return {"status": "ok", "logo_url": "/" + rel}
+
+    def _asegurar_columnas_fondo(cur) -> None:
+        cols = {r[1] for r in cur.execute("PRAGMA table_info(empresas)")}
+        if "fondo_path" not in cols:
+            cur.execute("ALTER TABLE empresas ADD COLUMN fondo_path TEXT;")
+        if "fondo_nitidez" not in cols:
+            cur.execute("ALTER TABLE empresas ADD COLUMN fondo_nitidez INTEGER DEFAULT 40;")
+
+    def _borrar_archivo_fondo(rel: str) -> None:
+        if not rel:
+            return
+        path = os.path.join(LOGOS_DIR, os.path.basename(rel))
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+    def _empresa_para_fondo(request: Request, empresa_id: int):
+        if not sesion_actual(get_db, request):
+            raise HTTPException(401, "Sesión no válida o expirada")
+        conn = get_db()
+        cur = conn.cursor()
+        _asegurar_columnas_fondo(cur)
+        conn.commit()
+        cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            raise HTTPException(404, "Empresa no encontrada")
+        return conn, cur, dict(row)
+
+    @app.post("/api/empresas/{empresa_id}/fondo")
+    async def api_fondo_subir(empresa_id: int, request: Request, file: UploadFile = File(...)):
+        conn, cur, emp = _empresa_para_fondo(request, empresa_id)
+        try:
+            raw = await file.read()
+            if not raw:
+                raise HTTPException(400, "Archivo vacío")
+            if len(raw) > 5_000_000:
+                raise HTTPException(400, "Imagen demasiado grande (máx 5 MB)")
+            ext = os.path.splitext(file.filename or "")[1].lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                raise HTTPException(400, "Formato no admitido (usar JPG, PNG o WEBP)")
+            os.makedirs(LOGOS_DIR, exist_ok=True)
+            fname = f"fondo_empresa_{empresa_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
+            with open(os.path.join(LOGOS_DIR, fname), "wb") as f:
+                f.write(raw)
+            anterior = emp.get("fondo_path") or ""
+            rel = f"logos/{fname}"
+            cur.execute("UPDATE empresas SET fondo_path = ? WHERE id = ?;", (rel, empresa_id))
+            conn.commit()
+            if anterior and os.path.basename(anterior) != fname:
+                _borrar_archivo_fondo(anterior)
+            cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+            return {"status": "ok", "empresa": empresa_to_dict(cur.fetchone())}
+        finally:
+            conn.close()
+
+    @app.delete("/api/empresas/{empresa_id}/fondo")
+    def api_fondo_quitar(empresa_id: int, request: Request):
+        conn, cur, emp = _empresa_para_fondo(request, empresa_id)
+        try:
+            cur.execute("UPDATE empresas SET fondo_path = NULL WHERE id = ?;", (empresa_id,))
+            conn.commit()
+            _borrar_archivo_fondo(emp.get("fondo_path") or "")
+            cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+            return {"status": "ok", "empresa": empresa_to_dict(cur.fetchone())}
+        finally:
+            conn.close()
+
+    @app.put("/api/empresas/{empresa_id}/fondo")
+    def api_fondo_nitidez(empresa_id: int, data: FondoNitidezModel, request: Request):
+        conn, cur, _emp = _empresa_para_fondo(request, empresa_id)
+        try:
+            cur.execute("UPDATE empresas SET fondo_nitidez = ? WHERE id = ?;", (int(data.nitidez), empresa_id))
+            conn.commit()
+            cur.execute("SELECT * FROM empresas WHERE id = ?;", (empresa_id,))
+            return {"status": "ok", "empresa": empresa_to_dict(cur.fetchone())}
+        finally:
+            conn.close()
 
     @app.post("/api/empresas/{empresa_id}/acceso")
     def api_toggle_acceso(empresa_id: int, request: Request, habilitar: int = 1):
