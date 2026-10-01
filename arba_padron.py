@@ -235,17 +235,75 @@ def _extraer_zip_si_hace_falta(ruta: str) -> List[str]:
     return out
 
 
-ESPACIO_MINIMO_DESCARGA = 1200 * 1024 * 1024
+# Pico real: TXT extraídos (~440 MB) + base temporal en armado (~410 MB).
+ESPACIO_MINIMO_DESCARGA = 950 * 1024 * 1024
 
 
 def _borrar_archivos_padron_sueltos() -> None:
     """Los TXT/ZIP ya importados ocupan ~600 MB; se borran antes y después de cada descarga."""
-    for patron in ("PadronRGS*.TXT", "PadronRGS*.txt", "PadronRGS*.zip", "PadronRGS*.ZIP", "*.part"):
+    for patron in ("*.TXT", "*.txt", "*.zip", "*.ZIP", "*.part"):
         for ruta in glob.glob(os.path.join(PADRONES_DIR, patron)):
             try:
                 os.remove(ruta)
             except OSError:
                 pass
+
+
+def _borrar_padron_bak() -> None:
+    try:
+        if os.path.exists(PADRON_DB_PATH + ".bak"):
+            os.remove(PADRON_DB_PATH + ".bak")
+    except OSError:
+        pass
+
+
+def _mb(n: float) -> int:
+    return int(n // (1024 * 1024))
+
+
+def uso_disco(top: int = 15) -> Dict[str, Any]:
+    """Cuánto ocupa el disco de datos y cuáles son los archivos más grandes."""
+    raiz = _PADRON_ROOT
+    du = shutil.disk_usage(raiz)
+    archivos: List[Tuple[int, str]] = []
+    carpetas: Dict[str, int] = {}
+    for dirpath, _dirs, files in os.walk(raiz):
+        for name in files:
+            ruta = os.path.join(dirpath, name)
+            try:
+                tam = os.path.getsize(ruta)
+            except OSError:
+                continue
+            rel = os.path.relpath(ruta, raiz)
+            archivos.append((tam, rel))
+            primera = rel.split(os.sep)[0] if os.sep in rel else "(raíz)"
+            carpetas[primera] = carpetas.get(primera, 0) + tam
+    archivos.sort(reverse=True)
+    return {
+        "carpeta": raiz,
+        "total_mb": _mb(du.total),
+        "usado_mb": _mb(du.used),
+        "libre_mb": _mb(du.free),
+        "necesario_mb": _mb(ESPACIO_MINIMO_DESCARGA),
+        "archivos_mb": _mb(sum(t for t, _ in archivos)),
+        "mayores": [{"archivo": r, "mb": round(t / (1024 * 1024), 1)} for t, r in archivos[:top]],
+        "carpetas": sorted(
+            ({"carpeta": c, "mb": round(t / (1024 * 1024), 1)} for c, t in carpetas.items()),
+            key=lambda x: -x["mb"],
+        ),
+    }
+
+
+def liberar_espacio_padron() -> Dict[str, Any]:
+    """Borra lo que sobra del padrón (copia del mes anterior, cargas a medio armar, TXT/ZIP sueltos)."""
+    if _job_thread is not None and _job_thread.is_alive():
+        return {"ok": False, "message": "Hay una carga del padrón en curso; esperá a que termine."}
+    antes = shutil.disk_usage(_PADRON_ROOT).free
+    _borrar_archivos_padron_sueltos()
+    _borrar_padron_bak()
+    liberar_temporal_padron()
+    liberado = _mb(shutil.disk_usage(_PADRON_ROOT).free - antes)
+    return {"ok": True, "liberado_mb": max(0, liberado), "message": f"Se liberaron {max(0, liberado)} MB."}
 
 
 def descargar_y_extraer_padron(
@@ -256,11 +314,14 @@ def descargar_y_extraer_padron(
 
     asegurar_carpeta_padrones()
     _borrar_archivos_padron_sueltos()
+    _borrar_padron_bak()
+    liberar_temporal_padron()
     libre = shutil.disk_usage(PADRONES_DIR).free
     if libre < ESPACIO_MINIMO_DESCARGA:
         raise ArbaWSError(
-            f"Espacio en disco insuficiente para el padrón: libres {libre // (1024 * 1024)} MB, "
-            f"hacen falta {ESPACIO_MINIMO_DESCARGA // (1024 * 1024)} MB."
+            f"Espacio en disco insuficiente para el padrón: libres {_mb(libre)} MB, "
+            f"hacen falta {_mb(ESPACIO_MINIMO_DESCARGA)} MB. "
+            "En 'Espacio en disco' (abajo) se ve qué lo está ocupando."
         )
 
     def avance(bytes_bajados: int):
@@ -406,6 +467,7 @@ def importar_padrones_arba(
             except OSError:
                 pass
     os.replace(PADRON_TMP_PATH, PADRON_DB_PATH)
+    _borrar_padron_bak()
 
     elapsed = (datetime.now() - t0).total_seconds()
     result = {
@@ -670,7 +732,7 @@ def start_import_job(
                     auto_detect=detectar,
                     on_progress=on_progress,
                 )
-                if descarga:
+                if descarga or result.get("status") != "error":
                     _borrar_archivos_padron_sueltos()
                 if result.get("status") == "error":
                     _escribir_job({

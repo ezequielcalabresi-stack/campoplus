@@ -36,6 +36,8 @@ from arba_padron import (
     consultar_cuit_padron,
     start_import_job,
     get_import_job_status,
+    liberar_espacio_padron,
+    uso_disco,
     PADRONES_DIR,
 )
 from arba_auto import (
@@ -6103,6 +6105,23 @@ def api_arba_padron_descargar():
     if job.get("status") == "error" and not job.get("accepted"):
         raise HTTPException(status_code=400, detail=job.get("message") or "No se pudo iniciar la descarga")
     return job
+
+
+@app.get("/api/arba/disco")
+def api_arba_disco(request: Request):
+    if not _es_admin_empresa(request):
+        raise HTTPException(403, "Solo el administrador de la empresa puede ver el uso del disco.")
+    return uso_disco()
+
+
+@app.post("/api/arba/disco/liberar")
+def api_arba_disco_liberar(request: Request):
+    if not _es_admin_empresa(request):
+        raise HTTPException(403, "Solo el administrador de la empresa puede liberar espacio.")
+    r = liberar_espacio_padron()
+    if not r.get("ok"):
+        raise HTTPException(409, r.get("message") or "No se pudo liberar espacio.")
+    return {**r, **uso_disco()}
 
 
 @app.get("/api/arba/padron/detectar")
