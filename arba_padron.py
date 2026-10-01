@@ -561,6 +561,17 @@ def get_import_job_status() -> Dict[str, Any]:
             data = json.load(f)
         if not isinstance(data, dict):
             return {"status": "idle", "message": "Sin importación en curso."}
+        hilo_vivo = _job_thread is not None and _job_thread.is_alive()
+        if data.get("status") == "running" and not hilo_vivo and not _job_lock.locked():
+            # El hilo muere con el proceso: si el servidor se reinició, el archivo queda en "running" para siempre.
+            liberar_temporal_padron()
+            data.update({
+                "status": "interrumpido",
+                "message": "La carga anterior se cortó porque el servidor se reinició. Se puede volver a bajar.",
+                "fase": "interrumpido",
+            })
+            _escribir_job(data)
+            return data
         # Reloj servidor por si el cliente se fue y volvió
         started = data.get("started_at_ts")
         if started and data.get("status") == "running":
