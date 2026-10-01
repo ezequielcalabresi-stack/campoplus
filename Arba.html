@@ -25,7 +25,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Padrón ARBA RGS (Ret / Perc)</small></h4>
-            <p class="text-muted small mb-0">Descargá el padrón una vez al mes, cargalo acá y las OP consultan esas alícuotas todo el período.</p>
+            <p class="text-muted small mb-0">El padrón se baja solo del servicio web de ARBA cuando vence. Si un CUIT no figura, se consulta en línea.</p>
         </div>
         <a href="Index.html" class="btn btn-secondary btn-sm" style="background:#e2e8f0;color:#334155;border:none;font-weight:600;">Dashboard</a>
     </div>
@@ -44,13 +44,18 @@
             <div class="col-md-3"><div class="stat"><div class="text-muted small">Registros</div><div class="fw-bold font-mono" id="stRegs"> - </div></div></div>
             <div class="col-md-3"><div class="stat"><div class="text-muted small">Última carga</div><div class="fw-bold font-mono small" id="stCarga"> - </div></div></div>
         </div>
+        <div class="small mt-3 mb-0" id="lblAuto"> - </div>
     </div>
 
     <div class="row g-4">
         <div class="col-md-6">
             <div class="main-card h-100">
-                <h5 class="fw-bold mb-2">1. Importar archivos del mes</h5>
-                <p class="text-muted small">Archivos oficiales ARBA: <code>PadronRGSRetMMYYYY.TXT</code> y <code>PadronRGSPerMMYYYY.TXT</code> (o ZIP). Podés dejarlos en la carpeta <code>padrones_arba/</code> o subirlos aquí.</p>
+                <h5 class="fw-bold mb-2">1. Actualizar padrón</h5>
+                <p class="text-muted small">Baja el padrón del mes directamente de ARBA con la CIT de Configuración de Empresa.</p>
+                <div class="d-grid mb-3">
+                    <button class="btn btn-success fw-bold" id="btnDescargar" onclick="descargarDeArba()">Descargar ahora desde ARBA</button>
+                </div>
+                <p class="text-muted small mb-2">Alternativa manual: archivos oficiales <code>PadronRGSRetMMYYYY.TXT</code> y <code>PadronRGSPerMMYYYY.TXT</code> (o ZIP).</p>
                 <div class="mb-2">
                     <label class="form-label small fw-bold">Retenciones (TXT/ZIP)</label>
                     <input type="file" id="fileRet" class="form-control form-control-sm" accept=".txt,.TXT,.zip,.ZIP">
@@ -68,7 +73,7 @@
                 <div id="jobPanel">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <div>
-                            <div class="small text-muted fw-bold text-uppercase" style="letter-spacing:.04em;">Importación en 2º plano</div>
+                            <div class="small text-muted fw-bold text-uppercase" style="letter-spacing:.04em;">Carga en 2º plano</div>
                             <div class="clock font-mono" id="jobClock">00:00</div>
                         </div>
                         <div class="text-end">
@@ -88,7 +93,7 @@
         <div class="col-md-6">
             <div class="main-card h-100">
                 <h5 class="fw-bold mb-2">2. Consultar CUIT</h5>
-                <p class="text-muted small">Misma fuente que usan las Órdenes de Pago para IIBB.</p>
+                <p class="text-muted small">Misma fuente que usan las Órdenes de Pago y Facturas para IIBB.</p>
                 <div class="input-group mb-3">
                     <input type="text" id="cuitInput" class="form-control font-mono" placeholder="CUIT sin guiones" maxlength="11" oninput="this.value=this.value.replace(/\D/g,'')">
                     <button class="btn btn-dark fw-bold" onclick="consultarCuit()">Consultar</button>
@@ -107,13 +112,14 @@
                             <div class="small">Grupo <span id="resPercG" class="font-mono"> - </span></div>
                         </div>
                     </div>
+                    <div class="small text-muted mt-2" id="resFuente"></div>
                 </div>
                 <hr>
-                <h6 class="fw-bold">Cómo renovar cada mes</h6>
+                <h6 class="fw-bold">Cómo funciona</h6>
                 <ol class="small text-muted mb-0">
-                    <li>Entrá a ARBA / DFE con tu CIT (Configuración empresa).</li>
-                    <li>Descargá padrón de <strong>Retenciones</strong> y <strong>Percepciones</strong> del mes.</li>
-                    <li>Subilos acá (o copialos a <code>padrones_arba/</code> y usá "Importar detectados").</li>
+                    <li>Cargá CUIT y CIT de ARBA en <strong>Configuración de Empresa</strong> (agente de recaudación).</li>
+                    <li>El servidor revisa cada 6 horas: si el padrón venció, baja el del mes nuevo y lo importa solo.</li>
+                    <li>Si un CUIT no está en el padrón cargado, se consulta en línea a ARBA y queda guardado por el mes.</li>
                 </ol>
             </div>
         </div>
@@ -136,6 +142,7 @@ function fmtClock(sec) {
 function setBusy(on) {
     document.getElementById('btnUpload').disabled = on;
     document.getElementById('btnDetect').disabled = on;
+    document.getElementById('btnDescargar').disabled = on;
 }
 
 function stopLocalTick() {
@@ -256,14 +263,41 @@ async function cargarEstado() {
             badge.innerText = 'SIN PADRÓN';
         }
         document.getElementById('stPeriodo').innerText = d.periodo_label || ' - ';
-        document.getElementById('stVigencia').innerText = (d.vigencia_desde && d.vigencia_hasta) ? `${d.vigencia_desde} ? ${d.vigencia_hasta}` : ' - ';
+        document.getElementById('stVigencia').innerText = (d.vigencia_desde && d.vigencia_hasta) ? `${d.vigencia_desde} al ${d.vigencia_hasta}` : ' - ';
         document.getElementById('stRegs').innerText = d.registros != null ? Number(d.registros).toLocaleString('es-AR') : ' - ';
         document.getElementById('stCarga').innerText = d.fecha_carga || ' - ';
+        const auto = d.auto || {};
+        const partes = [];
+        if (!auto.credenciales) partes.push('<span class="text-danger fw-bold">Falta la CIT de ARBA en Configuración de Empresa: no se puede bajar el padrón ni consultar en línea.</span>');
+        partes.push(auto.habilitado ? 'Actualización automática: <strong>activa</strong>' : 'Actualización automática: <strong>desactivada en este equipo</strong> (solo corre en el servidor)');
+        if (auto.ultima_revision) partes.push(`última revisión ${auto.ultima_revision}${auto.ultimo_resultado ? ' - ' + auto.ultimo_resultado : ''}`);
+        document.getElementById('lblAuto').innerHTML = partes.join(' · ');
         const det = d.detectados || {};
         document.getElementById('lblDetect').innerHTML =
             `Detectados: Ret <code>${det.retenciones ? det.retenciones.split(/[/\\\\]/).pop() : ' - '}</code> - Perc <code>${det.percepciones ? det.percepciones.split(/[/\\\\]/).pop() : ' - '}</code>`;
     } catch (e) {
         document.getElementById('lblEstado').innerText = 'No se pudo consultar el estado del padrón.';
+    }
+}
+
+async function descargarDeArba() {
+    if (!confirm('¿Bajar ahora el padrón del mes desde ARBA e importarlo? Corre en segundo plano (varios minutos).')) return;
+    setBusy(true);
+    doneAlertShown = false;
+    try {
+        const res = await fetch('/api/arba/padron/descargar', { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || d.message || 'Error');
+        if (d.accepted === false) {
+            setBusy(false);
+            alert(d.message || 'No se inició la descarga');
+            return ensurePolling();
+        }
+        renderJob({ ...d, status: 'running' });
+        ensurePolling();
+    } catch (e) {
+        setBusy(false);
+        alert('' + (e.message || e));
     }
 }
 
@@ -318,6 +352,9 @@ async function consultarCuit() {
         document.getElementById('resPerc').innerText = `${Number(d.alicuota_percepcion||0).toFixed(2).replace('.',',')} %`;
         document.getElementById('resRetG').innerText = d.ret_grupo || '00';
         document.getElementById('resPercG').innerText = d.perc_grupo || '00';
+        let fuente = d.fuente === 'online' ? 'Fuente: consulta en línea a ARBA (guardada por el mes).' : 'Fuente: padrón cargado.';
+        if (d.aviso_online) fuente += ' Consulta en línea: ' + d.aviso_online;
+        document.getElementById('resFuente').innerText = fuente;
     } catch (e) {
         alert('Error al consultar');
     }

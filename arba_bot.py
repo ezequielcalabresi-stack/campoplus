@@ -6,8 +6,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-CUIT = "30665193337"
-CIT = "Esya1956"
+from arba_descarga_mensual import credenciales
+
+CUIT, CIT = credenciales()
 
 def ejecutar_bot_arba():
     print("🤖 Iniciando navegador automatizado para ARBA...")

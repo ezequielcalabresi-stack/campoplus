@@ -38,6 +38,13 @@ from arba_padron import (
     get_import_job_status,
     PADRONES_DIR,
 )
+from arba_auto import (
+    bases_candidatas as arba_bases_candidatas,
+    consulta_online as arba_consulta_online,
+    estado_auto as arba_estado_auto,
+    iniciar_actualizador as arba_iniciar_actualizador,
+    revisar_padron as arba_revisar_padron,
+)
 
 app = FastAPI(title="CAmpo+ Backend - Gestión Total & Bancaria (Motor Normativo Relacional)", version="12.1")
 
@@ -5872,10 +5879,28 @@ def guardar_cuotas_credito(credito_id: int, data: CreditoCuotasLoteModel):
         ),
     }
 
+def _rutas_credenciales_arba() -> List[str]:
+    """La empresa activa primero; si no tiene CIT, cualquier empresa del servidor que la tenga."""
+    from plataforma import db_path_efectivo
+
+    raiz = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
+    return [db_path_efectivo(DB_PATH), DB_PATH] + arba_bases_candidatas(raiz)
+
+
 @app.get("/api/arba/padron/estado")
 def api_arba_padron_estado():
     asegurar_carpeta_padrones()
-    return estado_padron_arba()
+    return {**estado_padron_arba(), "auto": arba_estado_auto(_rutas_credenciales_arba())}
+
+
+@app.post("/api/arba/padron/descargar")
+def api_arba_padron_descargar():
+    """Baja el padrón del mes desde el servicio web de ARBA e inicia la importación en segundo plano."""
+    asegurar_carpeta_padrones()
+    job = arba_revisar_padron(_rutas_credenciales_arba(), forzar=True, automatico=False)
+    if job.get("status") == "error" and not job.get("accepted"):
+        raise HTTPException(status_code=400, detail=job.get("message") or "No se pudo iniciar la descarga")
+    return job
 
 
 @app.get("/api/arba/padron/detectar")
@@ -5933,11 +5958,27 @@ async def api_arba_padron_upload(
 
 
 @app.get("/api/arba/consultar/{cuit}")
-def consultar_arba(cuit: str):
-    """Consulta alícuotas Ret/Perc del padrón ARBA del mes cargado."""
+def consultar_arba(cuit: str, online: bool = True):
+    """Alícuotas Ret/Perc del padrón ARBA del mes cargado. Si el padrón no está vigente o el
+    CUIT no figura, se consulta en línea al servicio web de ARBA (con caché mensual)."""
     data = consultar_cuit_padron(cuit)
+    fuente = "padron"
+    aviso_online = ""
+    if online and not (data.get("encontrado") and estado_padron_arba().get("status") == "ok"):
+        ws, aviso_online = arba_consulta_online(cuit, _rutas_credenciales_arba())
+        if ws:
+            fuente = "online"
+            data = {
+                **ws,
+                "encontrado": True,
+                "razon_social": "",
+                "estado": "Consulta online ARBA",
+                "periodo": {"vigencia_desde": ws.get("vigencia_desde"), "vigencia_hasta": ws.get("vigencia_hasta")},
+            }
     # Compat con OP / front existente
     return {
+        "fuente": fuente,
+        "aviso_online": aviso_online,
         "cuit": data.get("cuit") or cuit,
         "razon_social": data.get("razon_social") or "",
         "alicuota_percepcion": float(data.get("alicuota_percepcion") or 0),
@@ -9355,6 +9396,11 @@ def _indices_cuit_normalizado() -> None:
 
 
 _indices_cuit_normalizado()
+arba_iniciar_actualizador(
+    lambda: [DB_PATH] + arba_bases_candidatas(
+        os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
+    )
+)
 
 
 @app.get("/")

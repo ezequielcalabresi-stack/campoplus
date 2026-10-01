@@ -10,6 +10,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import sqlite3
 import threading
 import time
@@ -229,9 +230,63 @@ def _extraer_zip_si_hace_falta(ruta: str) -> List[str]:
                 continue
             dest = os.path.join(PADRONES_DIR, base)
             with zf.open(name) as src, open(dest, "wb") as dst:
-                dst.write(src.read())
+                shutil.copyfileobj(src, dst, 1024 * 1024)
             out.append(dest)
     return out
+
+
+ESPACIO_MINIMO_DESCARGA = 1200 * 1024 * 1024
+
+
+def _borrar_archivos_padron_sueltos() -> None:
+    """Los TXT/ZIP ya importados ocupan ~600 MB; se borran antes y después de cada descarga."""
+    for patron in ("PadronRGS*.TXT", "PadronRGS*.txt", "PadronRGS*.zip", "PadronRGS*.ZIP", "*.part"):
+        for ruta in glob.glob(os.path.join(PADRONES_DIR, patron)):
+            try:
+                os.remove(ruta)
+            except OSError:
+                pass
+
+
+def descargar_y_extraer_padron(
+    cuit_agente: str, cit: str, fecha=None, on_progress: ProgressCb = None
+) -> Tuple[str, str]:
+    """Baja el ZIP del mes desde el servicio web de ARBA y deja los TXT Ret/Per listos para importar."""
+    from arba_ws import ArbaWSError, descargar_padron
+
+    asegurar_carpeta_padrones()
+    _borrar_archivos_padron_sueltos()
+    libre = shutil.disk_usage(PADRONES_DIR).free
+    if libre < ESPACIO_MINIMO_DESCARGA:
+        raise ArbaWSError(
+            f"Espacio en disco insuficiente para el padrón: libres {libre // (1024 * 1024)} MB, "
+            f"hacen falta {ESPACIO_MINIMO_DESCARGA // (1024 * 1024)} MB."
+        )
+
+    def avance(bytes_bajados: int):
+        if on_progress:
+            mb = bytes_bajados / (1024 * 1024)
+            on_progress({
+                "message": f"Descargando padrón de ARBA… {mb:,.0f} MB".replace(",", "."),
+                "fase": "descarga",
+                "pct": min(4, 1 + int(mb / 40)),
+            })
+
+    if on_progress:
+        on_progress({"message": "Pidiendo el padrón a ARBA…", "fase": "descarga", "pct": 1})
+    zip_path = descargar_padron(cuit_agente, cit, PADRONES_DIR, fecha=fecha, on_progress=avance)
+    try:
+        archivos = _extraer_zip_si_hace_falta(zip_path)
+    finally:
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+    ret = next((p for p in archivos if "ret" in os.path.basename(p).lower()), None)
+    per = next((p for p in archivos if "per" in os.path.basename(p).lower()), None)
+    if not ret or not per:
+        raise ArbaWSError("El ZIP de ARBA no trae los padrones de Retenciones y Percepciones.")
+    return ret, per
 
 
 def importar_padrones_arba(
@@ -519,10 +574,12 @@ def start_import_job(
     ruta_ret: Optional[str] = None,
     ruta_per: Optional[str] = None,
     auto_detect: bool = True,
+    descarga: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Lanza la importación en un hilo de fondo.
     El usuario puede salir de la pantalla; al volver, GET /job muestra el estado.
+    Con `descarga` ({cuit, cit, fecha, automatico}) primero baja el padrón del servicio web de ARBA.
     """
     global _job_thread
     with _job_lock:
@@ -538,8 +595,12 @@ def start_import_job(
         job0 = {
             "status": "running",
             "accepted": True,
-            "message": "Importación iniciada en segundo plano…",
-            "fase": "inicio",
+            "message": (
+                "Descarga del padrón desde ARBA iniciada en segundo plano…"
+                if descarga
+                else "Importación iniciada en segundo plano…"
+            ),
+            "fase": "descarga" if descarga else "inicio",
             "pct": 0,
             "procesados": 0,
             "elapsed_sec": 0,
@@ -547,8 +608,11 @@ def start_import_job(
             "started_at_ts": started_ts,
             "ruta_ret": os.path.basename(ruta_ret) if ruta_ret else None,
             "ruta_per": os.path.basename(ruta_per) if ruta_per else None,
+            "origen": "arba_ws" if descarga else "archivos",
+            "automatico": bool(descarga and descarga.get("automatico")),
         }
         _escribir_job(job0)
+        extra_job = {"origen": job0["origen"], "automatico": job0["automatico"]}
 
         def _run():
             def on_progress(info: Dict[str, Any]):
@@ -571,6 +635,7 @@ def start_import_job(
                     "started_at_ts": started_ts,
                     "ruta_ret": job0.get("ruta_ret"),
                     "ruta_per": job0.get("ruta_per"),
+                    **extra_job,
                 }
                 # Mantener campos de resultado si vienen en progress final
                 for k in (
@@ -582,12 +647,20 @@ def start_import_job(
                 _escribir_job(patch)
 
             try:
+                r_ret, r_per, detectar = ruta_ret, ruta_per, auto_detect
+                if descarga:
+                    r_ret, r_per = descargar_y_extraer_padron(
+                        descarga["cuit"], descarga["cit"], fecha=descarga.get("fecha"), on_progress=on_progress
+                    )
+                    detectar = False
                 result = importar_padrones_arba(
-                    ruta_ret=ruta_ret,
-                    ruta_per=ruta_per,
-                    auto_detect=auto_detect,
+                    ruta_ret=r_ret,
+                    ruta_per=r_per,
+                    auto_detect=detectar,
                     on_progress=on_progress,
                 )
+                if descarga:
+                    _borrar_archivos_padron_sueltos()
                 if result.get("status") == "error":
                     _escribir_job({
                         "status": "error",
@@ -598,6 +671,7 @@ def start_import_job(
                         "elapsed_sec": round(time.time() - started_ts, 1),
                         "started_at": job0["started_at"],
                         "started_at_ts": started_ts,
+                        **extra_job,
                     })
                 else:
                     _escribir_job({
@@ -609,9 +683,13 @@ def start_import_job(
                         "elapsed_sec": result.get("segundos") or round(time.time() - started_ts, 1),
                         "started_at": job0["started_at"],
                         "started_at_ts": started_ts,
+                        **extra_job,
                         **{k: v for k, v in result.items() if k not in ("status", "message")},
                     })
             except Exception as e:
+                if descarga:
+                    _borrar_archivos_padron_sueltos()
+                liberar_temporal_padron()
                 _escribir_job({
                     "status": "error",
                     "accepted": True,
@@ -621,6 +699,7 @@ def start_import_job(
                     "elapsed_sec": round(time.time() - started_ts, 1),
                     "started_at": job0["started_at"],
                     "started_at_ts": started_ts,
+                    **extra_job,
                 })
 
         _job_thread = threading.Thread(target=_run, name="arba-padron-import", daemon=True)
