@@ -74,7 +74,10 @@
                 <div class="row g-3">
                     <div class="col-md-4">
                         <label class="form-label fw-bold text-slate-700">CUIT (Solo números, sin guiones)*</label>
-                        <input type="text" class="form-control" id="cuit" required placeholder="Ej: 30554380749">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="cuit" required placeholder="Ej: 30554380749">
+                            <button type="button" class="btn btn-outline-secondary" id="btn-cambiar-cuit" style="display:none;" onclick="cambiarCuit()">Cambiar CUIT</button>
+                        </div>
                     </div>
                     <div class="col-md-8">
                         <label class="form-label fw-bold text-slate-700">Razón Social / Apellido y Nombre*</label>
@@ -310,6 +313,7 @@
             document.getElementById('cuit').value = e.cuit;
             document.getElementById('cuit').dataset.original = e.cuit;
             document.getElementById('cuit').readOnly = !String(e.cuit).startsWith('99');
+            document.getElementById('btn-cambiar-cuit').style.display = document.getElementById('cuit').readOnly ? '' : 'none';
             document.getElementById('razon_social').value = e.nombre_fantasia || e.razon_social || '';
             document.getElementById('domicilio').value = e.domicilio || '';
             document.getElementById('localidad').value = e.localidad || '';
@@ -330,6 +334,7 @@
             document.getElementById('form-entidad').reset();
             document.getElementById('cuit').readOnly = false;
             document.getElementById('cuit').dataset.original = '';
+            document.getElementById('btn-cambiar-cuit').style.display = 'none';
             document.getElementById('form-titulo').innerText = "Legajo Fiscal y Domiciliario de la Entidad";
             document.getElementById('btn-guardar').innerText = "+ Guardar Entidad";
             document.getElementById('btn-cancelar').style.display = 'none';
@@ -383,6 +388,33 @@
                 alert(err.detail || "Error al guardar la entidad.");
             }
         });
+
+        async function cambiarCuit() {
+            const actual = document.getElementById('cuit').dataset.original || '';
+            if (!actual) return;
+            const nuevo = (prompt(`CUIT actual: ${actual}\nIngresá el CUIT correcto (11 dígitos):`) || '').replace(/\D/g, '');
+            if (!nuevo) return;
+            const url = '/api/entidades/' + encodeURIComponent(actual) + '/cambiar_cuit';
+            const enviar = (confirmar) => fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nuevo_cuit: nuevo, confirmar })
+            });
+            let res = await enviar(false);
+            let d = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(d.detail || 'No se pudo cambiar el CUIT.');
+            const refs = (d.referencias || []).map(r => `  - ${r.tabla}: ${r.registros}`).join('\n');
+            const texto = `Cambiar el CUIT de "${d.entidad}"\nde ${d.cuit_actual} a ${d.cuit_nuevo}.\n\n`
+                + (refs ? `También se pasan al CUIT nuevo (no se borra nada):\n${refs}` : 'No tiene movimientos cargados con el CUIT actual.')
+                + '\n\n¿Confirmás?';
+            if (!confirm(texto)) return;
+            res = await enviar(true);
+            d = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(d.detail || 'No se pudo cambiar el CUIT.');
+            alert(`CUIT actualizado: ${d.entidad} ahora es ${d.cuit_nuevo}.`);
+            limpiarForm();
+            cargarEntidades();
+        }
 
         async function eliminarEntidad(cuit) {
             if (!confirm("¿Estás seguro de eliminar esta entidad?")) return;

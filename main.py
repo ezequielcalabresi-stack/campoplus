@@ -4,7 +4,7 @@ from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import sqlite3
 import tempfile
 import uvicorn
@@ -2600,6 +2600,118 @@ def eliminar_entidad(cuit: str):
     conn.commit()
     conn.close()
     return {"status": "success", "message": "Entidad eliminada."}
+
+
+# Columnas que guardan el CUIT de una entidad (proveedor/cliente/socio).
+# No van: cartera_cheques.cuit_emisor (dato impreso en el cheque), retenciones_historicas.cuit_agente
+# (es la empresa propia), arca_comprobantes (copia de ARCA), empleados, padrones, empresas.
+_REFERENCIAS_CUIT_ENTIDAD = [
+    ("cuentas_corrientes", "entidad_id"),
+    ("ordenes_pago", "cuit"),
+    ("retenciones_sicore", "cuit"),
+    ("retenciones_iibb", "cuit_sujeto"),
+    ("retenciones_ganancias", "cuit_sujeto"),
+    ("retenciones_historicas", "cuit_retenido"),
+    ("cartera_cheques", "cliente_cuit"),
+    ("cartera_cheques", "proveedor_cuit"),
+    ("caja_movimientos", "proveedor_cuit"),
+    ("almacen_movimientos", "proveedor_cuit"),
+    ("ordenes_trabajo", "contratista_cuit"),
+    ("liquidaciones_granos", "entidad_cuit"),
+    ("liquidaciones_hacienda", "entidad_cuit"),
+    ("liquidaciones_leche", "entidad_cuit"),
+    ("campos_agro", "arrendador_cuit"),
+    ("gan_contratos", "arrendador_cuit"),
+    ("campo_participaciones", "socio_cuit"),
+    ("socios_agro", "cuit"),
+]
+
+
+def _cuit_valido(cuit: str) -> bool:
+    if len(cuit) != 11 or not cuit.isdigit():
+        return False
+    resto = sum(int(d) * p for d, p in zip(cuit[:10], (5, 4, 3, 2, 7, 6, 5, 4, 3, 2))) % 11
+    verificador = 0 if resto == 0 else 9 if resto == 1 else 11 - resto
+    return verificador == int(cuit[10])
+
+
+def _referencias_cuit(cursor, cuit: str, empresa_id: int) -> List[Tuple[str, str, str, int]]:
+    """(tabla, columna, filtro_empresa, cantidad) de cada columna que apunta a `cuit`."""
+    tablas = {r[0] for r in cursor.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
+    out = []
+    for tabla, col in _REFERENCIAS_CUIT_ENTIDAD:
+        if tabla not in tablas:
+            continue
+        cols = {r[1] for r in cursor.execute(f'PRAGMA table_info("{tabla}");').fetchall()}
+        if col not in cols:
+            continue
+        filtro = " AND COALESCE(empresa_id, 1) = ?" if "empresa_id" in cols else ""
+        params = (cuit, empresa_id) if filtro else (cuit,)
+        n = cursor.execute(
+            f'SELECT COUNT(*) FROM "{tabla}" WHERE REPLACE(CAST("{col}" AS TEXT), \'-\', \'\') = ?{filtro};', params
+        ).fetchone()[0]
+        out.append((tabla, col, filtro, n))
+    return out
+
+
+class CambiarCuitModel(BaseModel):
+    nuevo_cuit: str
+    confirmar: bool = False
+
+
+@app.post("/api/entidades/{cuit}/cambiar_cuit")
+def cambiar_cuit_entidad(cuit: str, data: CambiarCuitModel, request: Request):
+    """Sin `confirmar` devuelve qué se va a mover; con `confirmar` cambia el CUIT y todas sus referencias."""
+    if not _es_admin_empresa(request):
+        raise HTTPException(403, "Solo el administrador de la empresa puede cambiar el CUIT de una entidad.")
+    actual = "".join(filter(str.isdigit, str(cuit)))
+    nuevo = "".join(filter(str.isdigit, str(data.nuevo_cuit)))
+    if not _cuit_valido(nuevo):
+        raise HTTPException(400, f"El CUIT {nuevo or '(vacío)'} no es válido (revisá los 11 dígitos).")
+    if nuevo == actual:
+        raise HTTPException(400, "El CUIT nuevo es igual al actual.")
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        filtro_ent = "REPLACE(cuit, '-', '') = ? AND COALESCE(empresa_id, 1) = ?"
+        ent = cursor.execute(
+            f"SELECT razon_social, nombre_fantasia FROM entidades WHERE {filtro_ent};", (actual, empresa_id)
+        ).fetchone()
+        if not ent:
+            raise HTTPException(404, "No se encontró la entidad.")
+        otra = cursor.execute(
+            f"SELECT COALESCE(NULLIF(nombre_fantasia, ''), razon_social) FROM entidades WHERE {filtro_ent};",
+            (nuevo, empresa_id),
+        ).fetchone()
+        if otra:
+            raise HTTPException(
+                409,
+                f"El CUIT {nuevo} ya está cargado como \"{otra[0]}\". No se unifican entidades automáticamente.",
+            )
+        refs = _referencias_cuit(cursor, actual, empresa_id)
+        detalle = [{"tabla": t, "columna": c, "registros": n} for t, c, _, n in refs if n]
+        nombre = ent[1] or ent[0]
+        if not data.confirmar:
+            return {"aplicado": False, "entidad": nombre, "cuit_actual": actual, "cuit_nuevo": nuevo, "referencias": detalle}
+        cursor.execute(f"UPDATE entidades SET cuit = ? WHERE {filtro_ent};", (nuevo, actual, empresa_id))
+        for tabla, col, filtro, n in refs:
+            if not n:
+                continue
+            params = (nuevo, actual, empresa_id) if filtro else (nuevo, actual)
+            cursor.execute(
+                f'UPDATE "{tabla}" SET "{col}" = ? WHERE REPLACE(CAST("{col}" AS TEXT), \'-\', \'\') = ?{filtro};', params
+            )
+        conn.commit()
+        return {"aplicado": True, "entidad": nombre, "cuit_actual": actual, "cuit_nuevo": nuevo, "referencias": detalle}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except sqlite3.Error as e:
+        conn.rollback()
+        raise HTTPException(500, f"No se pudo cambiar el CUIT (no se modificó nada): {e}")
+    finally:
+        conn.close()
 
 @app.put("/api/entidades/{cuit}/ajuste")
 def marcar_cuenta_ajuste(cuit: str, data: AjustarCuentaModel):
