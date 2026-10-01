@@ -2488,6 +2488,340 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             costo_usd = round(total / tc, 2) if tc else 0.0
         return cantidad, round(precio, 4), round(tc, 4), costo_ars, costo_usd
 
+    _PALABRAS_VACIAS = {"el", "la", "los", "las", "de", "del", "y", "lote", "lotes"}
+    _ABREVIATURAS = {"sta": "santa", "sto": "santo", "sn": "san", "gral": "general"}
+
+    def _tokens_nombre(txt) -> frozenset:
+        import unicodedata
+
+        s = unicodedata.normalize("NFKD", str(txt or "")).encode("ascii", "ignore").decode().lower()
+        s = re.sub(r"(?<=\d)(?=[a-z])|(?<=[a-z])(?=\d)", " ", s)
+        partes = re.split(r"[^a-z0-9]+", s)
+        return frozenset(_ABREVIATURAS.get(p, p) for p in partes if p and p not in _PALABRAS_VACIAS)
+
+    class _SuperficiesLotes:
+        """Cruza el texto de lote de los costos (Access) con los lotes del alta del campo.
+        Un lote de costos puede juntar varios del alta ("san jose el monte" = "san jose" + "el monte")."""
+
+        def __init__(self, cur, eid: int, campania: Optional[str]):
+            self.cur = cur
+            self.eid = eid
+            self.campania_id = None
+            if campania and campania != "__sin__":
+                r = cur.execute(
+                    "SELECT id FROM campanias_agro WHERE COALESCE(empresa_id, 1)=? AND codigo=?;",
+                    (eid, normalizar_codigo_campania(campania)),
+                ).fetchone()
+                self.campania_id = r["id"] if r else None
+            self._campos = None
+            self._lotes = {}
+
+        def _campo_id(self, campo: str):
+            if self._campos is None:
+                self._campos = [
+                    (r["id"], _tokens_nombre(r["nombre"]))
+                    for r in self.cur.execute(
+                        "SELECT id, nombre FROM campos_agro WHERE COALESCE(empresa_id, 1)=? AND COALESCE(baja, 0)=0;",
+                        (self.eid,),
+                    ).fetchall()
+                ]
+            t = _tokens_nombre(campo)
+            exacto = next((cid for cid, tok in self._campos if tok and tok == t), None)
+            if exacto or not t:
+                return exacto
+            from difflib import SequenceMatcher
+
+            texto = " ".join(sorted(t))
+            puntajes = sorted(
+                ((SequenceMatcher(None, texto, " ".join(sorted(tok))).ratio(), cid) for cid, tok in self._campos if tok),
+                reverse=True,
+            )
+            # Solo errores de tipeo ("albiom"/"albion"): parecido alto y sin otro campo casi igual.
+            if puntajes and puntajes[0][0] >= 0.8 and (len(puntajes) == 1 or puntajes[1][0] < puntajes[0][0] - 0.1):
+                return puntajes[0][1]
+            return None
+
+        def _lotes_campo(self, campo_id: int):
+            if campo_id not in self._lotes:
+                _asegurar_cols_lotes(self.cur)
+                filas = self.cur.execute(
+                    """
+                    SELECT l.id, l.nombre,
+                           CASE WHEN COALESCE(l.superficie_total_lote, 0) > 0 THEN l.superficie_total_lote
+                                ELSE COALESCE(
+                                    (SELECT s.superficie FROM lote_superficie_campania s
+                                     WHERE s.lote_id = l.id AND s.campania_id = ?),
+                                    l.superficie_base, 0)
+                           END AS sup
+                    FROM lotes_agro l
+                    WHERE l.campo_id = ? AND COALESCE(l.baja, 0) = 0;
+                    """,
+                    (self.campania_id or -1, campo_id),
+                ).fetchall()
+                lotes = [(r["id"], _tokens_nombre(r["nombre"]), float(r["sup"] or 0)) for r in filas]
+                self._lotes[campo_id] = sorted([x for x in lotes if x[1]], key=lambda x: -len(x[1]))
+            return self._lotes[campo_id]
+
+        def resolver(self, campo: str, lote: str):
+            """(has sembradas, ids de lotes) o (None, []) si no se puede cruzar con el alta."""
+            cid = self._campo_id(campo)
+            if not cid:
+                return None, []
+            pendientes = set(_tokens_nombre(lote))
+            if not pendientes:
+                return None, []
+            elegidos = []
+            for lid, tok, sup in self._lotes_campo(cid):
+                if tok <= pendientes:
+                    elegidos.append((lid, sup))
+                    pendientes -= tok
+                    if not pendientes:
+                        break
+            if pendientes or not elegidos:
+                return None, []
+            return round(sum(s for _, s in elegidos), 2), [lid for lid, _ in elegidos]
+
+    def _por_ha(monto, has_val):
+        return round(float(monto or 0) / has_val, 2) if has_val else None
+
+    def _datos_costos_detalle(cur, eid, campania, campo, cultivo, lote, limit):
+        where, params = _where_costos(eid, campania, campo, cultivo, lote)
+        cur.execute(f"SELECT COUNT(*) AS n, COALESCE(SUM(costo_ars),0) AS ars, COALESCE(SUM(costo_usd),0) AS usd FROM margenes_access m {where};", params)
+        tot = dict(cur.fetchone())
+        cur.execute(
+            f"""
+            SELECT m.id, m.id_access, m.campania_codigo, m.campo, m.lote, m.cultivo,
+                   m.fecha_orden, m.fecha_aplicacion, m.cantidad_has, m.laboreo, m.producto,
+                   m.dosis_ha, m.cantidad_total, m.precio, m.tc, m.costo_ars, m.costo_usd,
+                   m.unidad, m.contratista, m.almacen_item_id,
+                   i.id AS item_id, i.costo_promedio_neto AS costo_almacen, i.stock_cantidad, i.unidad AS unidad_almacen
+            FROM margenes_access m
+            LEFT JOIN almacen_items i
+              ON i.id = (
+                SELECT ii.id FROM almacen_items ii
+                WHERE ii.empresa_id = m.empresa_id
+                  AND TRIM(COALESCE(m.producto,'')) != ''
+                  AND UPPER(TRIM(ii.nombre)) = UPPER(TRIM(m.producto))
+                ORDER BY ii.id LIMIT 1
+              )
+            {where}
+            ORDER BY m.fecha_aplicacion, m.lote, m.id
+            LIMIT ?;
+            """,
+            params + [max(1, min(limit, 20000))],
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        sup = _SuperficiesLotes(cur, eid, campania)
+        for r in rows:
+            has_s, _ = sup.resolver(r["campo"], r["lote"])
+            r["has_sembradas"] = has_s
+            r["costo_ars_ha"] = _por_ha(r["costo_ars"], has_s)
+            r["costo_usd_ha"] = _por_ha(r["costo_usd"], has_s)
+        cur.execute(
+            f"""
+            SELECT TRIM(m.campo) AS campo, TRIM(m.lote) AS lote,
+                   COALESCE(SUM(m.costo_ars), 0) AS costo_ars, COALESCE(SUM(m.costo_usd), 0) AS costo_usd
+            FROM margenes_access m {where} GROUP BY 1, 2;
+            """,
+            params,
+        )
+        has_total, sin_sup, ars_ok, usd_ok = _sumar_superficies(sup, cur.fetchall())
+        return {
+            "total_filas": tot["n"],
+            "costo_ars": tot["ars"],
+            "costo_usd": tot["usd"],
+            "has_sembradas": has_total,
+            "ars_por_ha": _por_ha(ars_ok, has_total),
+            "usd_por_ha": _por_ha(usd_ok, has_total),
+            "lotes_sin_superficie": sin_sup,
+            "filas": rows,
+        }
+
+    def _sumar_superficies(sup, pares):
+        """Suma cada lote del alta una sola vez. El costo por ha usa solo el costo de los lotes con superficie:
+        devuelve (has, lotes sin cruzar, costo $ con superficie, costo U$S con superficie)."""
+        vistos = {}
+        sin_sup = []
+        ars_ok = usd_ok = 0.0
+        for p in pares:
+            has_s, ids = sup.resolver(p["campo"], p["lote"])
+            if has_s is None:
+                if (p["lote"] or "").strip():
+                    sin_sup.append(f'{p["campo"]} / {p["lote"]}')
+                continue
+            ars_ok += float(p["costo_ars"] or 0)
+            usd_ok += float(p["costo_usd"] or 0)
+            for lid in ids:
+                vistos[lid] = True
+        total = 0.0
+        for cid_lotes in sup._lotes.values():
+            total += sum(s for lid, _, s in cid_lotes if lid in vistos)
+        return round(total, 2), sorted(set(sin_sup)), round(ars_ok, 2), round(usd_ok, 2)
+
+    def _datos_costos_estructura(cur, eid, campania, campo, cultivo, lote):
+        where, params = _where_costos(eid, campania, campo, cultivo, lote)
+        cur.execute(
+            f"""
+            SELECT
+                TRIM(lote) AS lote,
+                CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN TRIM(producto) ELSE '' END AS producto,
+                CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN '' ELSE TRIM(COALESCE(laboreo,'')) END AS laboreo,
+                MAX(cantidad_has) AS has,
+                AVG(NULLIF(dosis_ha, 0)) AS dosis_ha,
+                SUM(cantidad_total) AS und_total,
+                SUM(costo_ars) AS costo_ars,
+                SUM(costo_usd) AS costo_usd,
+                COUNT(*) AS lineas
+            FROM margenes_access m
+            {where}
+            GROUP BY 1, 2, 3
+            ORDER BY lote, CASE WHEN producto = '' THEN 1 ELSE 0 END, producto, laboreo;
+            """,
+            params,
+        )
+        agrupadas = cur.fetchall()
+        sup = _SuperficiesLotes(cur, eid, campania)
+        lineas = []
+        for r in agrupadas:
+            d = dict(r)
+            und = float(d["und_total"] or 0)
+            has_val = float(d["has"] or 0)
+            ars = float(d["costo_ars"] or 0)
+            usd = float(d["costo_usd"] or 0)
+            if und > 0:
+                d["precio_prom"] = round(ars / und, 2)
+            elif has_val > 0:
+                d["precio_prom"] = round(ars / has_val, 2)
+            else:
+                d["precio_prom"] = 0
+            d["tc"] = round(ars / usd, 2) if usd else 0
+            d["costo_ars"] = round(ars, 2)
+            d["costo_usd"] = round(usd, 2)
+            d["dosis_ha"] = round(float(d["dosis_ha"] or 0), 4)
+            has_s, _ = sup.resolver(campo, d["lote"])
+            d["has_sembradas"] = has_s
+            d["costo_ars_ha"] = _por_ha(ars, has_s)
+            d["costo_usd_ha"] = _por_ha(usd, has_s)
+            lineas.append(d)
+        cur.execute(
+            f"""
+            SELECT COALESCE(SUM(has), 0) AS has_siembra FROM (
+                SELECT MAX(cantidad_has) AS has
+                FROM margenes_access m
+                {where} AND UPPER(TRIM(laboreo))='SIEMBRA'
+                GROUP BY TRIM(lote)
+            );
+            """,
+            params,
+        )
+        has_siembra_ot = float(cur.fetchone()["has_siembra"] or 0)
+        has_total, sin_sup, ars_ok, usd_ok = _sumar_superficies(
+            sup, [{"campo": campo, "lote": x["lote"], "costo_ars": x["costo_ars"], "costo_usd": x["costo_usd"]} for x in lineas]
+        )
+        ars = round(sum(x["costo_ars"] for x in lineas), 2)
+        usd = round(sum(x["costo_usd"] for x in lineas), 2)
+        if not has_total:
+            ars_ok, usd_ok = ars, usd
+        has_ref = has_total or has_siembra_ot
+        return {
+            "campania": normalizar_codigo_campania(campania) if campania != "__sin__" else "",
+            "campo": campo,
+            "cultivo": cultivo or "",
+            "lineas": lineas,
+            "lotes_sin_superficie": sin_sup,
+            "totales": {
+                "costo_ars": ars,
+                "costo_usd": usd,
+                "tc": round(ars / usd, 2) if usd else 0,
+                "has_sembradas": has_total,
+                "has_siembra": round(has_ref, 2),
+                "has_siembra_ot": round(has_siembra_ot, 2),
+                "ars_por_ha": _por_ha(ars_ok, has_ref) or 0,
+                "usd_por_ha": _por_ha(usd_ok, has_ref) or 0,
+            },
+        }
+
+    def _excel_costos(cur, eid, campania, campo, cultivo, lote) -> bytes:
+        from io import BytesIO
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+
+        negrita = Font(bold=True)
+        fondo = PatternFill("solid", fgColor="E2E8F0")
+        money = "#,##0.00"
+        filtro = " · ".join(x for x in [
+            f"Campaña {campania}" if campania and campania != "__sin__" else "",
+            campo or "", cultivo or "", f"lote {lote}" if lote else "",
+        ] if x)
+
+        def hoja(ws, titulo, sub, cols, filas, monedas_desde, anchos):
+            ws["A1"] = titulo
+            ws["A1"].font = Font(bold=True, size=13)
+            ws["A2"] = sub
+            for col, t in enumerate(cols, 1):
+                c = ws.cell(row=4, column=col, value=t)
+                c.font = negrita
+                c.fill = fondo
+                c.alignment = Alignment(wrap_text=True, vertical="center")
+            for i, valores in enumerate(filas, 5):
+                for col, v in enumerate(valores, 1):
+                    c = ws.cell(row=i, column=col, value=v)
+                    if col >= monedas_desde and isinstance(v, (int, float)):
+                        c.number_format = money
+            for i, w in enumerate(anchos, 1):
+                ws.column_dimensions[get_column_letter(i)].width = w
+            ws.freeze_panes = "A5"
+            return 5 + len(filas)
+
+        wb = Workbook()
+        det = _datos_costos_detalle(cur, eid, campania, campo, cultivo, lote, 20000)
+        ws = wb.active
+        ws.title = "Detalle"
+        cols = ["Fecha", "Campo", "Lote", "Cultivo", "Producto", "Laboreo", "Has", "Dosis/ha", "Cant.",
+                "Precio", "Costo $", "Costo U$S", "Has sembradas", "$/ha sembrada", "U$S/ha sembrada",
+                "Precio almacén", "Stock almacén"]
+        filas = [[
+            r.get("fecha_aplicacion") or r.get("fecha_orden") or "", r["campo"], r["lote"], r["cultivo"],
+            r["producto"] or "", r["laboreo"] or "", r["cantidad_has"], r["dosis_ha"], r["cantidad_total"],
+            r["precio"], r["costo_ars"], r["costo_usd"], r["has_sembradas"], r["costo_ars_ha"], r["costo_usd_ha"],
+            r["costo_almacen"] if r.get("item_id") else None, r["stock_cantidad"] if r.get("item_id") else None,
+        ] for r in det["filas"]]
+        fin = hoja(ws, f"Costos - detalle | {filtro}",
+                   f"{det['total_filas']} líneas · Has sembradas (alta del campo) {det['has_sembradas'] or 0}",
+                   cols, filas, 7, [11, 16, 26, 12, 30, 22, 8, 9, 10, 13, 15, 13, 11, 13, 13, 14, 11])
+        ws.cell(row=fin, column=1, value="Total").font = negrita
+        for col, v in ((11, det["costo_ars"]), (12, det["costo_usd"]), (13, det["has_sembradas"]),
+                       (14, det["ars_por_ha"]), (15, det["usd_por_ha"])):
+            c = ws.cell(row=fin, column=col, value=v)
+            c.font = negrita
+            c.number_format = money
+        if det["lotes_sin_superficie"]:
+            ws.cell(row=fin + 2, column=1, value="Lotes sin superficie en el alta del campo: " + ", ".join(det["lotes_sin_superficie"]))
+
+        if campania and campo:
+            est = _datos_costos_estructura(cur, eid, campania, campo, cultivo, lote)
+            ws2 = wb.create_sheet("Estructura")
+            t = est["totales"]
+            cols2 = ["Producto", "Laboreo", "Lote", "Has", "Dosis/ha", "Und. total", "Precio prom.",
+                     "Costo $", "Costo U$S", "T/C", "Has sembradas", "$/ha sembrada", "U$S/ha sembrada"]
+            filas2 = [[x["producto"], x["laboreo"], x["lote"], x["has"], x["dosis_ha"], x["und_total"],
+                       x["precio_prom"], x["costo_ars"], x["costo_usd"], x["tc"], x["has_sembradas"],
+                       x["costo_ars_ha"], x["costo_usd_ha"]] for x in est["lineas"]]
+            fin2 = hoja(ws2, f"Estructura de costos | {filtro}",
+                        f"Has sembradas {t['has_siembra']} · $/ha {t['ars_por_ha']} · U$S/ha {t['usd_por_ha']}",
+                        cols2, filas2, 4, [30, 22, 26, 8, 9, 11, 13, 15, 13, 9, 11, 13, 13])
+            ws2.cell(row=fin2, column=1, value="Suma total").font = negrita
+            for col, v in ((8, t["costo_ars"]), (9, t["costo_usd"]), (10, t["tc"]), (11, t["has_siembra"]),
+                           (12, t["ars_por_ha"]), (13, t["usd_por_ha"])):
+                c = ws2.cell(row=fin2, column=col, value=v)
+                c.font = negrita
+                c.number_format = money
+
+        buf = BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
     @app.get("/api/agro/costos/opciones")
     def api_costos_opciones(
         campania: Optional[str] = None,
@@ -2542,37 +2876,12 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         if not campania and not campo:
             raise HTTPException(400, "Elegí al menos una campaña o un campo.")
         conn = get_db()
-        cur = conn.cursor()
-        _asegurar_margenes(cur)
-        eid = get_empresa_activa_id()
-        where, params = _where_costos(eid, campania, campo, cultivo, lote)
-        cur.execute(f"SELECT COUNT(*) AS n, COALESCE(SUM(costo_ars),0) AS ars, COALESCE(SUM(costo_usd),0) AS usd FROM margenes_access m {where};", params)
-        tot = dict(cur.fetchone())
-        cur.execute(
-            f"""
-            SELECT m.id, m.id_access, m.campania_codigo, m.campo, m.lote, m.cultivo,
-                   m.fecha_orden, m.fecha_aplicacion, m.cantidad_has, m.laboreo, m.producto,
-                   m.dosis_ha, m.cantidad_total, m.precio, m.tc, m.costo_ars, m.costo_usd,
-                   m.unidad, m.contratista, m.almacen_item_id,
-                   i.id AS item_id, i.costo_promedio_neto AS costo_almacen, i.stock_cantidad, i.unidad AS unidad_almacen
-            FROM margenes_access m
-            LEFT JOIN almacen_items i
-              ON i.id = (
-                SELECT ii.id FROM almacen_items ii
-                WHERE ii.empresa_id = m.empresa_id
-                  AND TRIM(COALESCE(m.producto,'')) != ''
-                  AND UPPER(TRIM(ii.nombre)) = UPPER(TRIM(m.producto))
-                ORDER BY ii.id LIMIT 1
-              )
-            {where}
-            ORDER BY m.fecha_aplicacion, m.lote, m.id
-            LIMIT ?;
-            """,
-            params + [max(1, min(limit, 2000))],
-        )
-        rows = [dict(r) for r in cur.fetchall()]
-        conn.close()
-        return {"total_filas": tot["n"], "costo_ars": tot["ars"], "costo_usd": tot["usd"], "filas": rows}
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            return _datos_costos_detalle(cur, get_empresa_activa_id(), campania, campo, cultivo, lote, min(limit, 2000))
+        finally:
+            conn.close()
 
     @app.get("/api/agro/costos/estructura")
     def api_costos_estructura(
@@ -2582,75 +2891,37 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         lote: Optional[str] = None,
     ):
         conn = get_db()
-        cur = conn.cursor()
-        _asegurar_margenes(cur)
-        eid = get_empresa_activa_id()
-        where, params = _where_costos(eid, campania, campo, cultivo, lote)
-        cur.execute(
-            f"""
-            SELECT
-                TRIM(lote) AS lote,
-                CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN TRIM(producto) ELSE '' END AS producto,
-                CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN '' ELSE TRIM(COALESCE(laboreo,'')) END AS laboreo,
-                MAX(cantidad_has) AS has,
-                AVG(NULLIF(dosis_ha, 0)) AS dosis_ha,
-                SUM(cantidad_total) AS und_total,
-                SUM(costo_ars) AS costo_ars,
-                SUM(costo_usd) AS costo_usd,
-                COUNT(*) AS lineas
-            FROM margenes_access m
-            {where}
-            GROUP BY 1, 2, 3
-            ORDER BY lote, CASE WHEN producto = '' THEN 1 ELSE 0 END, producto, laboreo;
-            """,
-            params,
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            return _datos_costos_estructura(cur, get_empresa_activa_id(), campania, campo, cultivo, lote)
+        finally:
+            conn.close()
+
+    @app.get("/api/agro/costos/excel")
+    def api_costos_excel(
+        campania: Optional[str] = None,
+        campo: Optional[str] = None,
+        cultivo: Optional[str] = None,
+        lote: Optional[str] = None,
+    ):
+        from fastapi.responses import Response
+
+        if not campania and not campo:
+            raise HTTPException(400, "Elegí al menos una campaña o un campo.")
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            contenido = _excel_costos(cur, get_empresa_activa_id(), campania, campo, cultivo, lote)
+        finally:
+            conn.close()
+        nombre = re.sub(r"[^A-Za-z0-9]+", "_", "_".join(x for x in [campania, campo, cultivo, lote] if x)).strip("_")
+        return Response(
+            content=contenido,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="costos_{nombre or "campania"}.xlsx"'},
         )
-        lineas = []
-        for r in cur.fetchall():
-            d = dict(r)
-            und = float(d["und_total"] or 0)
-            has_val = float(d["has"] or 0)
-            ars = float(d["costo_ars"] or 0)
-            usd = float(d["costo_usd"] or 0)
-            if und > 0:
-                d["precio_prom"] = round(ars / und, 2)
-            elif has_val > 0:
-                d["precio_prom"] = round(ars / has_val, 2)
-            else:
-                d["precio_prom"] = 0
-            d["tc"] = round(ars / usd, 2) if usd else 0
-            d["costo_ars"] = round(ars, 2)
-            d["costo_usd"] = round(usd, 2)
-            d["dosis_ha"] = round(float(d["dosis_ha"] or 0), 4)
-            lineas.append(d)
-        cur.execute(
-            f"""
-            SELECT COALESCE(SUM(has), 0) AS has_siembra FROM (
-                SELECT MAX(cantidad_has) AS has
-                FROM margenes_access m
-                {where} AND UPPER(TRIM(laboreo))='SIEMBRA'
-                GROUP BY TRIM(lote)
-            );
-            """,
-            params,
-        )
-        has_siembra = float(cur.fetchone()["has_siembra"] or 0)
-        conn.close()
-        ars = round(sum(x["costo_ars"] for x in lineas), 2)
-        usd = round(sum(x["costo_usd"] for x in lineas), 2)
-        return {
-            "campania": normalizar_codigo_campania(campania) if campania != "__sin__" else "",
-            "campo": campo,
-            "cultivo": cultivo or "",
-            "lineas": lineas,
-            "totales": {
-                "costo_ars": ars,
-                "costo_usd": usd,
-                "tc": round(ars / usd, 2) if usd else 0,
-                "has_siembra": round(has_siembra, 2),
-                "usd_por_ha": round(usd / has_siembra, 2) if has_siembra else 0,
-            },
-        }
 
     @app.post("/api/agro/costos")
     def api_costos_alta(data: dict = Body(...)):
