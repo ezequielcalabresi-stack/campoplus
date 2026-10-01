@@ -3349,6 +3349,73 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         finally:
             conn.close()
 
+    # ---- Unificación de nombres de campo y lote escritos distinto en las líneas de costo ----
+    @app.get("/api/agro/costos/nombres/revision")
+    def api_costos_nombres_revision(tipo: str = "campo", campo: Optional[str] = None):
+        import agro_nombres
+
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            datos = agro_nombres.revision(cur, get_empresa_activa_id(), "lote" if tipo == "lote" else "campo", (campo or "").strip())
+            conn.commit()
+            return datos
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/costos/nombres/renombrar")
+    def api_costos_nombres_renombrar(request: Request, data: dict = Body(...)):
+        """Pasa las líneas con los nombres 'origenes' al nombre 'destino' (no borra nada; se puede deshacer)."""
+        import agro_nombres
+
+        ses = _sesion(request)
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            r = agro_nombres.renombrar(
+                cur, get_empresa_activa_id(), data.get("tipo") or "campo", data.get("origenes") or [],
+                data.get("destino") or "", data.get("campo") or "", ses.get("nombre") or ses.get("login") or "",
+            )
+            conn.commit()
+            que = "Lotes" if data.get("tipo") == "lote" else "Campos"
+            r["message"] = f"{que} unificados en «{r['destino']}»: {r['lineas']} líneas de costo ({', '.join(r['origenes'])})."
+            return r
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/costos/nombres/{operacion}/deshacer")
+    def api_costos_nombres_deshacer(operacion: str):
+        import agro_nombres
+
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            r = agro_nombres.deshacer(cur, get_empresa_activa_id(), operacion)
+            conn.commit()
+            msg = f"Cambio deshecho: {r['restauradas']} líneas volvieron a su nombre anterior."
+            if r["no_restauradas"]:
+                msg += f" {r['no_restauradas']} no se tocaron porque después se les cambió el nombre otra vez."
+            r["message"] = msg
+            return r
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     @app.post("/api/agro/costos")
     def api_costos_alta(data: dict = Body(...)):
         conn = get_db()

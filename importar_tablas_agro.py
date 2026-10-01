@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from agro_almacen import asegurar_schema_unificacion, init_almacen_schema
+from agro_nombres import aplicar_renombres
 from agro_campania import (
     asegurar_campania_activa,
     init_agro_schema,
@@ -1463,6 +1464,7 @@ def importar_margenes(cur, xl: pd.ExcelFile, empresa_id: int) -> int:
             batch,
         )
         n += len(batch)
+    aplicar_renombres(cur, empresa_id)
     return n
 
 

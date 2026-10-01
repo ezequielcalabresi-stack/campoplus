@@ -147,6 +147,7 @@
                 </div>
                 <div class="d-flex gap-2">
                     <button class="btn btn-sm btn-outline-danger fw-bold" onclick="abrirRevisionCampanias()" title="Campañas mal cargadas en la importación (91-92, 22-22, sin campaña...)">Revisar campañas</button>
+                    <button class="btn btn-sm btn-outline-primary fw-bold" onclick="abrirRevisionNombres()" title="Campos y lotes escritos de distintas formas (LA ALBIOM / la albion...)">Revisar nombres</button>
                     <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
                     <a href="ordenestrabajo.html" class="btn btn-sm btn-outline-dark fw-bold">Órdenes de trabajo</a>
                 </div>
@@ -502,6 +503,49 @@
     </div>
 </div>
 
+<div class="modal fade" id="modalRevNombres" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2"><h6 class="modal-title fw-bold">Nombres de campos y lotes</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p class="hint mb-2">Las líneas de costo traen el campo y el lote escritos a mano desde Access, a veces de distintas formas.
+                    Unificar pasa esas líneas al nombre que elijas: no borra nada, se vuelve a aplicar si reimportás desde Access y se puede deshacer.
+                    No toca facturas, la cuenta corriente ni el alta de campos.</p>
+                <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                    <div class="btn-group" role="group">
+                        <button id="revNomBtnCampo" class="btn btn-sm btn-primary fw-bold" onclick="cambiarTipoNombres('campo')">Campos</button>
+                        <button id="revNomBtnLote" class="btn btn-sm btn-outline-primary fw-bold" onclick="cambiarTipoNombres('lote')">Lotes de un campo</button>
+                    </div>
+                    <div id="revNomCampoBox" style="display:none;min-width:260px;">
+                        <select id="revNomCampo" class="form-select form-select-sm" onchange="cargarRevisionNombres()"></select>
+                    </div>
+                    <span id="revNomEstado" class="hint">Buscando...</span>
+                </div>
+                <h6 class="fw-bold small text-uppercase text-muted mb-2">Parecen el mismo nombre</h6>
+                <div id="revNomGrupos" class="mb-3"></div>
+                <h6 class="fw-bold small text-uppercase text-muted mb-2">Todos los nombres <span class="fw-normal text-lowercase">(marcá los que van juntos)</span></h6>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <input id="revNomDestinoSel" class="form-control form-control-sm" style="max-width:280px;" list="revNomLista" placeholder="Nombre final">
+                    <button class="btn btn-sm btn-primary fw-bold" onclick="unificarSeleccionNombres()">Unificar marcados</button>
+                    <span id="revNomMarcados" class="hint"></span>
+                </div>
+                <div class="table-responsive" style="max-height:340px;">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light" style="position:sticky;top:0;">
+                            <tr><th style="width:32px;"></th><th>Nombre</th><th class="text-end">Líneas</th><th id="revNomColLotes" class="text-end">Lotes</th>
+                                <th>Campañas</th><th class="text-end">Costo U$S</th></tr>
+                        </thead>
+                        <tbody id="revNomBody"></tbody>
+                    </table>
+                </div>
+                <datalist id="revNomLista"></datalist>
+                <h6 class="fw-bold small text-uppercase text-muted mt-3 mb-2">Últimos cambios</h6>
+                <div id="revNomHistorial"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -844,6 +888,183 @@ async function corregirCampania(i, accion) {
     if (!res.ok) return alert(data.detail || 'No se pudo corregir.');
     alert(data.message || 'Listo.');
     await cargarRevisionCampanias();
+    await cargarOpcionesCosto();
+}
+
+let revNom = { tipo: 'campo', datos: null };
+
+async function abrirRevisionNombres() {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalRevNombres')).show();
+    await cambiarTipoNombres(revNom.tipo);
+}
+
+async function cambiarTipoNombres(tipo) {
+    revNom.tipo = tipo;
+    document.getElementById('revNomBtnCampo').className = 'btn btn-sm fw-bold ' + (tipo === 'campo' ? 'btn-primary' : 'btn-outline-primary');
+    document.getElementById('revNomBtnLote').className = 'btn btn-sm fw-bold ' + (tipo === 'lote' ? 'btn-primary' : 'btn-outline-primary');
+    document.getElementById('revNomCampoBox').style.display = tipo === 'lote' ? '' : 'none';
+    document.getElementById('revNomColLotes').style.display = tipo === 'campo' ? '' : 'none';
+    if (tipo === 'lote' && !document.getElementById('revNomCampo').value) {
+        const actual = document.getElementById('costoCampo').value;
+        await cargarRevisionNombres(actual || '');
+        return;
+    }
+    await cargarRevisionNombres();
+}
+
+async function cargarRevisionNombres(campoInicial) {
+    const estado = document.getElementById('revNomEstado');
+    const selCampo = document.getElementById('revNomCampo');
+    const campo = campoInicial !== undefined ? campoInicial : selCampo.value;
+    if (revNom.tipo === 'lote' && !campo) {
+        if (!selCampo.options.length) {
+            const r0 = await fetch('/api/agro/costos/nombres/revision?tipo=campo');
+            const d0 = await r0.json().catch(() => ({}));
+            llenarCamposNombres(d0.campos || [], '');
+        }
+        estado.innerText = 'Elegí el campo para ver sus lotes.';
+        revNom.datos = { nombres: [], grupos: [], maestros: [], historial: revNom.datos ? revNom.datos.historial : [] };
+        pintarRevisionNombres();
+        return;
+    }
+    estado.innerText = 'Buscando...';
+    const p = new URLSearchParams({ tipo: revNom.tipo });
+    if (revNom.tipo === 'lote') p.set('campo', campo);
+    const res = await fetch('/api/agro/costos/nombres/revision?' + p.toString());
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { estado.innerText = data.detail || 'No se pudo revisar.'; return; }
+    revNom.datos = data;
+    llenarCamposNombres(data.campos || [], campo);
+    const que = revNom.tipo === 'campo' ? 'campos' : 'lotes de ' + campo;
+    estado.innerText = (data.nombres || []).length + ' nombres de ' + que + ' · ' + (data.grupos || []).length + ' grupo(s) que parecen el mismo.';
+    pintarRevisionNombres();
+}
+
+function llenarCamposNombres(campos, elegido) {
+    const sel = document.getElementById('revNomCampo');
+    const actual = elegido || sel.value;
+    sel.innerHTML = '';
+    opt(sel, '', 'Elegí el campo');
+    campos.forEach(c => opt(sel, c, c));
+    if (actual) {
+        const hit = campos.find(c => c.toUpperCase() === actual.toUpperCase());
+        sel.value = hit || '';
+    }
+}
+
+function pintarRevisionNombres() {
+    const d = revNom.datos || {};
+    const nombres = d.nombres || [];
+    const porNombre = Object.fromEntries(nombres.map(n => [n.nombre, n]));
+    const lista = new Set([...(d.maestros || []), ...nombres.map(n => n.nombre)]);
+    document.getElementById('revNomLista').innerHTML = [...lista].map(v => `<option value="${escHtml(v)}"></option>`).join('');
+    const maestros = new Set(d.maestros || []);
+    document.getElementById('revNomGrupos').innerHTML = (d.grupos || []).map((g, gi) => {
+        const chips = g.nombres.map((n, ni) => {
+            const info = porNombre[n] || { n: 0 };
+            return `<label class="badge text-bg-light border me-1 mb-1 fw-normal" style="font-size:.85rem;cursor:pointer;">
+                <input type="checkbox" class="form-check-input me-1" id="revNomG${gi}_${ni}" checked> ${escHtml(n)} <span class="text-muted">(${info.n})</span></label>`;
+        }).join('');
+        const alta = maestros.has(g.sugerido) ? ' <span class="hint" title="Así está escrito en el alta del campo">alta del campo</span>' : '';
+        return `<div class="border rounded p-2 mb-2 d-flex flex-wrap align-items-center gap-2">
+            <div class="flex-grow-1">${chips}</div>
+            <div class="d-flex align-items-center gap-1">
+                <span class="small">pasar a</span>
+                <input id="revNomGD${gi}" class="form-control form-control-sm" style="width:220px;" list="revNomLista" value="${escHtml(g.sugerido)}">${alta}
+                <button class="btn btn-sm btn-success fw-bold" onclick="unificarGrupoNombres(${gi})">Unificar</button>
+            </div>
+        </div>`;
+    }).join('') || '<div class="hint mb-2">No se encontraron nombres parecidos.</div>';
+    const verLotes = revNom.tipo === 'campo';
+    document.getElementById('revNomBody').innerHTML = nombres.map((n, i) => {
+        const camp = n.desde ? (n.desde === n.hasta ? n.desde : n.desde + ' a ' + n.hasta) : '';
+        return `<tr>
+            <td><input type="checkbox" class="form-check-input" id="revNomS${i}" onchange="contarMarcadosNombres()"></td>
+            <td><label for="revNomS${i}" style="cursor:pointer;">${escHtml(n.nombre)}</label>${maestros.has(n.nombre) ? ' <span class="hint">alta del campo</span>' : ''}</td>
+            <td class="text-end font-mono">${n.n}</td>
+            ${verLotes ? `<td class="text-end font-mono">${n.lotes}</td>` : ''}
+            <td class="font-mono small">${escHtml(camp)}</td>
+            <td class="text-end font-mono">${moneyAr(n.usd)}</td>
+        </tr>`;
+    }).join('') || `<tr><td colspan="6" class="text-center text-muted py-3">Sin nombres para mostrar.</td></tr>`;
+    contarMarcadosNombres();
+    pintarHistorialNombres(d.historial || []);
+}
+
+function contarMarcadosNombres() {
+    const nombres = (revNom.datos || {}).nombres || [];
+    const marcados = nombres.filter((n, i) => document.getElementById('revNomS' + i)?.checked);
+    const lineas = marcados.reduce((s, n) => s + n.n, 0);
+    document.getElementById('revNomMarcados').innerText = marcados.length ? marcados.length + ' marcados · ' + lineas + ' líneas' : '';
+    const dest = document.getElementById('revNomDestinoSel');
+    if (marcados.length && !dest.value) {
+        dest.value = marcados.slice().sort((a, b) => b.n - a.n)[0].nombre;
+    }
+}
+
+function pintarHistorialNombres(hist) {
+    document.getElementById('revNomHistorial').innerHTML = hist.length
+        ? `<table class="table table-sm align-middle mb-0"><tbody>${hist.map((h, i) => `<tr>
+            <td class="small text-nowrap font-mono">${escHtml((h.fecha || '').slice(0, 16))}</td>
+            <td class="small">${h.tipo === 'lote' ? 'Lotes de ' + escHtml(h.campo) : 'Campos'}: <span class="text-muted">${escHtml(h.origenes)}</span> → <strong>${escHtml(h.destino)}</strong></td>
+            <td class="small text-end font-mono">${h.lineas} líneas</td>
+            <td class="small text-muted">${escHtml(h.usuario || '')}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="deshacerNombres(${i})">Deshacer</button></td>
+        </tr>`).join('')}</tbody></table>`
+        : '<div class="hint">Todavía no hay cambios de nombres.</div>';
+}
+
+async function aplicarNombres(origenes, destino) {
+    destino = (destino || '').trim();
+    if (!destino) return alert('Escribí el nombre final.');
+    const cambian = origenes.filter(o => o !== destino);
+    if (!cambian.length) return alert('Elegí al menos un nombre distinto del final.');
+    const porNombre = Object.fromEntries(((revNom.datos || {}).nombres || []).map(n => [n.nombre, n.n]));
+    const lineas = cambian.reduce((s, o) => s + (porNombre[o] || 0), 0);
+    const campo = revNom.tipo === 'lote' ? document.getElementById('revNomCampo').value : '';
+    const que = revNom.tipo === 'lote' ? 'Lotes del campo ' + campo : 'Campos';
+    const pregunta = `${que}: pasar ${lineas} líneas de costo de\n  ${cambian.join('\n  ')}\na «${destino}».\n\n`
+        + 'No se borra nada y se puede deshacer desde "Últimos cambios". ¿Confirmás?';
+    if (!confirm(pregunta)) return;
+    const res = await fetch('/api/agro/costos/nombres/renombrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: revNom.tipo, origenes: cambian, destino, campo }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(data.detail || 'No se pudo unificar.');
+    alert(data.message || 'Listo.');
+    if (revNom.tipo === 'campo') {
+        await cargarRevisionNombres();
+    } else {
+        await cargarRevisionNombres(campo);
+    }
+    document.getElementById('revNomDestinoSel').value = '';
+    await cargarOpcionesCosto();
+}
+
+async function unificarGrupoNombres(gi) {
+    const g = revNom.datos.grupos[gi];
+    const elegidos = g.nombres.filter((n, ni) => document.getElementById(`revNomG${gi}_${ni}`).checked);
+    await aplicarNombres(elegidos, document.getElementById('revNomGD' + gi).value);
+}
+
+async function unificarSeleccionNombres() {
+    const nombres = (revNom.datos || {}).nombres || [];
+    const elegidos = nombres.filter((n, i) => document.getElementById('revNomS' + i)?.checked).map(n => n.nombre);
+    if (!elegidos.length) return alert('Marcá en la lista los nombres que van juntos.');
+    await aplicarNombres(elegidos, document.getElementById('revNomDestinoSel').value);
+}
+
+async function deshacerNombres(i) {
+    const h = ((revNom.datos || {}).historial || [])[i];
+    if (!h) return;
+    if (!confirm(`Deshacer: ${h.origenes} → ${h.destino} (${h.lineas} líneas vuelven a su nombre anterior). ¿Confirmás?`)) return;
+    const res = await fetch('/api/agro/costos/nombres/' + encodeURIComponent(h.operacion) + '/deshacer', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(data.detail || 'No se pudo deshacer.');
+    alert(data.message || 'Listo.');
+    await cargarRevisionNombres();
     await cargarOpcionesCosto();
 }
 
