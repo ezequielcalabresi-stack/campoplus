@@ -543,6 +543,50 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
         finally:
             conn.close()
 
+    def _exigir_admin(request: Request) -> None:
+        from saas_auth import es_admin_de_cuenta, sesion_actual
+
+        try:
+            ses = sesion_actual(get_db, request)
+        except Exception:
+            ses = None
+        if not es_admin_de_cuenta(ses):
+            raise HTTPException(403, "Solo un administrador de la empresa puede hacer esto.")
+
+    @app.post("/api/tambo/repro/prueba")
+    def api_tambo_repro_cargar_prueba(request: Request, data: dict = Body(...)):
+        import tambo_repro
+
+        _exigir_admin(request)
+        conn = get_db()
+        try:
+            r = tambo_repro.cargar_prueba(conn, get_empresa_activa_id(), (data or {}).get("campo") or "")
+            conn.commit()
+            r["message"] = f"Se cargaron {r['animales']} animales de prueba (caravanas {r['prefijo']}-101 a {r['prefijo']}-{100 + r['animales']}) en el campo {r['campo']}."
+            return r
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(400, str(exc)) from exc
+        finally:
+            conn.close()
+
+    @app.delete("/api/tambo/repro/prueba")
+    def api_tambo_repro_borrar_prueba(request: Request):
+        import tambo_repro
+
+        _exigir_admin(request)
+        conn = get_db()
+        try:
+            r = tambo_repro.borrar_prueba(conn, get_empresa_activa_id())
+            conn.commit()
+            r["message"] = f"Se borraron {r['animales']} animales de prueba con sus eventos."
+            return r
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(400, str(exc)) from exc
+        finally:
+            conn.close()
+
     @app.post("/api/tambo/repro/eventos")
     def api_tambo_repro_eventos(request: Request, data: dict = Body(...)):
         import tambo_repro

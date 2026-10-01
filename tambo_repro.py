@@ -11,12 +11,15 @@ vaquillonas, formación de rodeos e indicadores reproductivos.
 from __future__ import annotations
 
 import json
+import random
 import re
 import unicodedata
 from datetime import date, timedelta
 from typing import Dict, List, Optional
 
-from ganaderia import registrar_evento, listar_rodeos
+from ganaderia import _asegurar_rodeos_tambo, _insert_evento, registrar_evento, listar_rodeos
+
+ORIGEN_PRUEBA = "Prueba listados tambo"
 
 PARAMETROS_DEFECTO = {
     "pev": 50,                  # período de espera voluntaria (días posparto sin servir)
@@ -378,13 +381,112 @@ def estado_tambo(conn, empresa_id: int, hoy: Optional[date] = None) -> dict:
         v["rodeo_sugerido"] = sug["nombre"] if sug else ""
         vacas.append(v)
 
+    prueba = cur.execute(
+        "SELECT COUNT(*), MAX(observaciones) FROM gan_animales WHERE empresa_id=? AND origen=?;",
+        (empresa_id, ORIGEN_PRUEBA),
+    ).fetchone()
     return {
         "hoy": hoy.isoformat(),
+        "prueba": {"animales": int(prueba[0] or 0), "detalle": prueba[1] or ""},
         "parametros": p,
         "rodeos": [{"id": r["id"], "nombre": r["nombre"], "cabezas": r.get("cabezas")} for r in rodeos],
         "vacas": vacas,
         "indicadores": indicadores(vacas, p),
     }
+
+
+def cargar_prueba(conn, empresa_id: int, campo: str, hoy: Optional[date] = None) -> dict:
+    """Plantel ficticio (48 vacas + 12 vaquillonas) con historia reproductiva, marcado como prueba."""
+    campo = (campo or "").strip() or "Prueba"
+    hoy = hoy or date.today()
+    cur = conn.cursor()
+    if cur.execute("SELECT 1 FROM gan_animales WHERE empresa_id=? AND origen=? LIMIT 1;", (empresa_id, ORIGEN_PRUEBA)).fetchone():
+        raise ValueError("Ya hay datos de prueba cargados. Borralos antes de volver a cargarlos.")
+    _asegurar_rodeos_tambo(conn, empresa_id)
+    rod = {_fold(r[1]): r[0] for r in cur.execute(
+        "SELECT id, nombre FROM gan_rodeos WHERE empresa_id=? AND sistema='tambo' AND activo=1;", (empresa_id,)
+    ).fetchall()}
+    rodeo = lambda clave: next((i for n, i in rod.items() if clave in n), None)
+    if not cur.execute(
+        "SELECT 1 FROM tambo_establecimientos WHERE empresa_id=? AND activo=1 AND LOWER(TRIM(nombre))=LOWER(?);",
+        (empresa_id, campo),
+    ).fetchone():
+        cur.execute(
+            "INSERT INTO tambo_establecimientos (empresa_id, nombre, observaciones, activo) VALUES (?, ?, 'Creado con los datos de prueba', 1);",
+            (empresa_id, campo),
+        )
+    prefijo = "".join(w[0] for w in re.findall(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]+", campo)).upper()[:3] or "PR"
+    obs = f"Datos de prueba · Campo {campo}"
+    rnd = random.Random(7)
+    d = lambda n: (hoy - timedelta(days=n)).isoformat()
+    toros = ["Holstein Elite 7HO", "Sexado 14HO", "Toro repaso", "Jersey 2JE"]
+
+    def vaca(nro, clave_rodeo, edad_dias, peso):
+        cur.execute(
+            """
+            INSERT INTO gan_animales (empresa_id, caravana_visual, raza, sexo, fecha_nacimiento, rodeo_id,
+                sistema_actual, estado, es_tambo, peso_ultimo, fecha_alta, origen, observaciones)
+            VALUES (?, ?, 'Holando', 'Hembra', ?, ?, 'tambo', 'activo', 1, ?, ?, ?, ?);
+            """,
+            (empresa_id, f"{prefijo}-{100 + nro}", d(edad_dias), rodeo(clave_rodeo), peso, hoy.isoformat(), ORIGEN_PRUEBA, obs),
+        )
+        return cur.lastrowid
+
+    def ev(aid, tipo, dias, **kw):
+        _insert_evento(cur, empresa_id, {"animal_id": aid, "tipo": tipo, "fecha": d(dias), "origen_dato": "prueba", **kw})
+
+    n = 0
+    for _ in range(48):
+        n += 1
+        del_ = rnd.randint(5, 420)
+        seca = del_ > 330
+        a = vaca(n, "seca" if seca else "orde", rnd.randint(1100, 2600), rnd.randint(480, 650))
+        ev(a, "parto", del_ + rnd.randint(360, 420))
+        ev(a, "parto", del_)
+        if del_ > 55:
+            s = del_ - rnd.randint(50, 80)
+            nserv = 0
+            while s > 0 and nserv < 4:
+                ev(a, "inseminacion", s, toro_nombre=rnd.choice(toros))
+                nserv += 1
+                if s - 35 <= 0:
+                    break
+                prenada = rnd.random() < 0.45
+                ev(a, "diagnostico_prenez", s - 35, resultado="Preñada" if prenada else "Vacía", tecnico="Veterinario de prueba")
+                if prenada:
+                    break
+                s -= rnd.randint(40, 60)
+        if seca:
+            ev(a, "secado", del_ - 305)
+    for _ in range(12):
+        n += 1
+        edad = rnd.randint(150, 800)
+        a = vaca(n, "vaquill" if edad > 400 else "recr", edad, int(edad * 0.5))
+        if edad > 480:
+            ev(a, "inseminacion", rnd.randint(20, 200), toro_nombre="Sexado 14HO")
+            if rnd.random() < 0.6:
+                ev(a, "diagnostico_prenez", 10, resultado="Preñada", tecnico="Veterinario de prueba")
+    return {"animales": n, "campo": campo, "prefijo": prefijo}
+
+
+def borrar_prueba(conn, empresa_id: int) -> dict:
+    """Borra solo los animales de prueba (y las crías que se les hayan cargado) con sus eventos."""
+    cur = conn.cursor()
+    ids = [r[0] for r in cur.execute(
+        "SELECT id FROM gan_animales WHERE empresa_id=? AND origen=?;", (empresa_id, ORIGEN_PRUEBA)
+    ).fetchall()]
+    if not ids:
+        raise ValueError("No hay datos de prueba cargados.")
+    marcas = ",".join("?" * len(ids))
+    ids += [r[0] for r in cur.execute(
+        f"SELECT id FROM gan_animales WHERE empresa_id=? AND origen='Nacimiento' AND madre_id IN ({marcas});",
+        (empresa_id, *ids),
+    ).fetchall()]
+    marcas = ",".join("?" * len(ids))
+    for tabla in ("gan_eventos", "tambo_lactancias", "tambo_controles_lecheros"):
+        cur.execute(f"DELETE FROM {tabla} WHERE empresa_id=? AND animal_id IN ({marcas});", (empresa_id, *ids))
+    cur.execute(f"DELETE FROM gan_animales WHERE empresa_id=? AND id IN ({marcas});", (empresa_id, *ids))
+    return {"animales": len(ids)}
 
 
 def registrar_eventos(conn, empresa_id: int, eventos: List[dict], usuario: str = "") -> dict:

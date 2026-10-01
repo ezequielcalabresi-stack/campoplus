@@ -217,7 +217,11 @@ function vResumen() {
     const grupo = (etapa, estado, titulo, valor) => `<button type="button" onclick="verPlanilla('${etapa}','${estado}')" class="text-left border rounded-lg px-3 py-2 bg-white hover:border-sky-500">
         <div class="text-[11px] font-bold uppercase text-slate-500">${esc(titulo)}</div><div class="text-xl font-extrabold">${valor}</div></button>`;
     const partos30 = L.partos.filter(v => v.dias_a_parto <= 30).length;
-    let html = `
+    const pr = D.prueba || {};
+    let html = pr.animales ? `<div class="no-print mb-4 text-xs border border-amber-300 bg-amber-50 text-amber-900 rounded-lg p-3 flex flex-wrap gap-2 items-center justify-between">
+        <span><b>${pr.animales} animales de prueba</b> cargados (${esc(pr.detalle)}). No son reales: borralos cuando termines de probar.</span>
+        <button type="button" onclick="borrarPrueba()" class="bg-white border border-rose-300 text-rose-700 px-3 py-1 rounded font-bold">Borrar datos de prueba</button></div>` : '';
+    html += `
     <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         ${kpi('Vacas', I.vacas, `${I.en_ordene} en ordeñe · ${I.secas} secas`, 'bg-sky-50')}
         ${kpi('Vaquillonas', I.vaquillonas, '', 'bg-violet-50')}
@@ -253,6 +257,9 @@ function vResumen() {
     ];
     html += seccion('Vacas que están en otro rodeo del que les corresponde', 'Según su etapa: paridas en ordeñe → Vacas en ordeñe; secas → Vacas secas o Preparto; vaquillonas → Vaquillonas / Recría. Marcá y movelas; queda registrado como cambio de rodeo en cada ficha.', cols, L.moverRodeo,
         { vacio: 'Todas las vacas están en el rodeo que les corresponde.', extra: L.moverRodeo.length ? `<button type="button" onclick="moverRodeos()" class="no-print mb-2 bg-sky-700 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-sky-800">Mover marcadas</button>` : '' });
+    if (!pr.animales) html += `<div class="no-print mt-6 pt-3 border-t text-xs text-slate-500 flex flex-wrap gap-2 items-center">
+        <span>¿Querés ver los listados funcionando? Cargá un plantel ficticio de 60 hembras con historia reproductiva (se borra con un botón).</span>
+        <button type="button" onclick="cargarPrueba()" class="border border-slate-300 bg-white text-slate-700 px-3 py-1 rounded font-bold hover:bg-slate-50">Cargar datos de prueba</button></div>`;
     return html;
 }
 
@@ -394,6 +401,23 @@ async function moverRodeos() {
     }));
     if (!confirm(`Mover ${eventos.length} vaca(s) de rodeo?`)) return;
     await enviarEventos(eventos);
+}
+
+async function cargarPrueba() {
+    const campo = prompt('¿En qué campo cargo el plantel de prueba?', 'La Malvina');
+    if (campo == null) return;
+    const res = await fetch('/api/tambo/repro/prueba', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campo }) });
+    const data = await res.json().catch(() => ({}));
+    alert(data.message || data.detail || 'No se pudo cargar.');
+    if (res.ok) await cargar();
+}
+
+async function borrarPrueba() {
+    if (!confirm(`Borrar los ${D.prueba.animales} animales de prueba y todos sus eventos? Los animales reales no se tocan.`)) return;
+    const res = await fetch('/api/tambo/repro/prueba', { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    alert(data.message || data.detail || 'No se pudo borrar.');
+    if (res.ok) await cargar();
 }
 
 function abrirParametros() {
