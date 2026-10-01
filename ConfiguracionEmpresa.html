@@ -181,8 +181,8 @@
                 if (!res.ok) throw new Error("No se pudo conectar con el servidor API.");
                 
                 const r = await res.json();
-                document.getElementById('estado-db').innerText = "Conectado al backend FastAPI en tiempo real.";
-                document.getElementById('estado-db').className = "text-xs text-emerald-600 mt-1 font-medium";
+                document.getElementById('estado-db').innerText = `Editando la configuración de: ${r.razon_social || '(sin nombre)'}${r.cuit ? ' - CUIT ' + r.cuit : ''}`;
+                document.getElementById('estado-db').className = "text-sm text-emerald-700 mt-1 font-bold";
 
                 document.getElementById('cfgRazonSocial').value = r.razon_social || "";
                 document.getElementById('cfgCuit').value = r.cuit || "";
@@ -272,16 +272,30 @@
             };
 
             try {
-                const response = await fetch('/api/configuracion', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const texto = await response.text();
-                let result = {};
-                try { result = JSON.parse(texto); } catch (_) { result = { detail: texto }; }
-                if (!response.ok) throw new Error(result.detail || `Error ${response.status} al guardar.`);
+                const enviar = async () => {
+                    const response = await fetch('/api/configuracion', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const texto = await response.text();
+                    let result = {};
+                    try { result = JSON.parse(texto); } catch (_) { result = { detail: texto }; }
+                    return { response, result };
+                };
+                let { response, result } = await enviar();
+                if (response.status === 409 && result.detail && result.detail.code === 'confirmar_identidad') {
+                    if (!confirm(result.detail.message + '\n\n¿Confirmás el cambio? Si no lo hiciste vos a propósito, tocá Cancelar.')) {
+                        cargarConfiguracion();
+                        return;
+                    }
+                    payload.confirmar_cambio_identidad = true;
+                    ({ response, result } = await enviar());
+                }
+                if (!response.ok) {
+                    const det = result.detail;
+                    throw new Error((det && det.message) || det || `Error ${response.status} al guardar.`);
+                }
 
                 alert("¡Configuración comercial de la empresa guardada con éxito en el servidor!");
             } catch (err) {

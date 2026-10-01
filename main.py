@@ -1995,6 +1995,7 @@ class ConfiguracionModel(BaseModel):
     sisa_estado: str = "1"
     sisa_caracter: str = "productor"
     criterio_costo: str = "peps"
+    confirmar_cambio_identidad: bool = False
 
 class CuentaBancariaModel(BaseModel):
     nro_cta_cte: str
@@ -2388,10 +2389,38 @@ def guardar_cit_arba(data: CitArbaModel, request: Request):
             mensaje += " Se inició la descarga del padrón del mes."
     return {"status": "success", "verificada": verificada, "message": mensaje}
 
+def _verificar_cambio_identidad(conn, data: ConfiguracionModel, request: Request) -> None:
+    """CUIT y razón social no cambian de pasada: solo el administrador y confirmándolo."""
+    cursor = conn.cursor()
+    _asegurar_columnas_configuracion(cursor)
+    row = cursor.execute("SELECT razon_social, cuit FROM configuracion_empresa WHERE id = 1;").fetchone()
+    if not row:
+        return
+    cuit_actual = re.sub(r"\D", "", row["cuit"] or "")
+    cuit_nuevo = re.sub(r"\D", "", data.cuit or "")
+    rs_actual = (row["razon_social"] or "").strip()
+    rs_nueva = (data.razon_social or "").strip()
+    cambios = []
+    if cuit_actual and cuit_nuevo != cuit_actual:
+        cambios.append(f"CUIT {cuit_actual} → {cuit_nuevo or '(vacío)'}")
+    if rs_actual and rs_nueva.lower() != rs_actual.lower():
+        cambios.append(f"razón social «{rs_actual}» → «{rs_nueva or '(vacía)'}»")
+    if not cambios:
+        return
+    if not _es_admin_empresa(request):
+        raise HTTPException(403, "Solo el administrador de la empresa puede cambiar el CUIT o la razón social.")
+    if not data.confirmar_cambio_identidad:
+        raise HTTPException(409, {
+            "code": "confirmar_identidad",
+            "message": f"Vas a cambiar en «{rs_actual}»: " + "; ".join(cambios) + ".",
+        })
+
+
 @app.post("/api/configuracion")
-def guardar_configuracion(data: ConfiguracionModel):
+def guardar_configuracion(data: ConfiguracionModel, request: Request):
     conn = get_db()
     try:
+        _verificar_cambio_identidad(conn, data, request)
         return _guardar_configuracion(conn, data)
     except HTTPException:
         raise
@@ -8767,7 +8796,9 @@ def crear_empresa(data: EmpresaItemModel, request: Request):
     return {"status": "success", "id": nuevo_id, "message": "Empresa registrada correctamente."}
 
 @app.put("/api/empresas/{empresa_id}")
-def actualizar_empresa(empresa_id: int, data: EmpresaItemModel):
+def actualizar_empresa(empresa_id: int, data: EmpresaItemModel, request: Request):
+    if not _es_admin_empresa(request):
+        raise HTTPException(403, "Solo el administrador de la empresa puede cambiar sus datos.")
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM empresas WHERE id = ?;", (empresa_id,))

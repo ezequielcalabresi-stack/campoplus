@@ -174,7 +174,7 @@ def _resumen_body(raw: bytes, content_type: str) -> str:
                 safe = {
                     k: v
                     for k, v in data.items()
-                    if k.lower() not in ("password", "pass", "clave", "token", "cit")
+                    if k.lower() not in ("password", "pass", "clave", "token", "cit", "cit_arba")
                 }
                 return json.dumps(safe, ensure_ascii=False, default=str)[:3500]
             return json.dumps(data, ensure_ascii=False, default=str)[:3500]

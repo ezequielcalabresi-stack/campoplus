@@ -70,6 +70,67 @@
     return h;
   }
 
+  // Cada pestaña trabaja con la empresa con la que abrió la pantalla. Si en otra pestaña se
+  // cambia de empresa, esta sigue mandando la suya: si no, guardaría los datos que muestra
+  // (p. ej. el CUIT de Configuración) dentro de la otra empresa.
+  var KEY_TENANT = "campoplus_tenant_activo";
+  var empresaPestana = localStorage.getItem(KEY_TENANT) || "";
+  var nombrePestana = (function () {
+    var e = sessionEmpresa();
+    return e && String(e.id) === empresaPestana ? e.razon_social || "" : "";
+  })();
+
+  if (!window.__campoplusTenantPatched) {
+    window.__campoplusTenantPatched = true;
+    var _setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      if (this === window.localStorage) {
+        if (k === KEY_TENANT) {
+          empresaPestana = String(v || "");
+          ocultarAvisoEmpresa();
+        } else if (k === KEY_EMP) {
+          try {
+            var e = JSON.parse(v || "null");
+            if (e && String(e.id) === empresaPestana) nombrePestana = e.razon_social || "";
+          } catch (_) {}
+        }
+      }
+      return _setItem.apply(this, arguments);
+    };
+    window.addEventListener("storage", function (ev) {
+      if (ev.key === KEY_TENANT && ev.newValue && ev.newValue !== empresaPestana) mostrarAvisoEmpresa();
+    });
+  }
+
+  function ocultarAvisoEmpresa() {
+    var a = document.getElementById("campoplusAvisoEmpresa");
+    if (a) a.remove();
+  }
+
+  function mostrarAvisoEmpresa() {
+    if (!document.body || document.getElementById("campoplusAvisoEmpresa")) return;
+    var a = document.createElement("div");
+    a.id = "campoplusAvisoEmpresa";
+    a.style.cssText =
+      "position:fixed;top:0;left:0;right:0;z-index:2147483000;background:#b91c1c;color:#fff;" +
+      "padding:10px 16px;font:600 14px 'Segoe UI',sans-serif;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;";
+    var txt = document.createElement("span");
+    txt.textContent =
+      "En otra pestaña se cambió de empresa. Esta pestaña sigue trabajando con " +
+      (nombrePestana || "la empresa con la que la abriste") +
+      " y guarda ahí. Recargala para trabajar con la empresa nueva.";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Recargar";
+    btn.style.cssText = "background:#fff;color:#b91c1c;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;";
+    btn.onclick = function () {
+      location.reload();
+    };
+    a.appendChild(txt);
+    a.appendChild(btn);
+    document.body.appendChild(a);
+  }
+
   // Inyecta token en fetch /api/ (excepto login: debe ir siempre a la base master)
   if (!window.__campoplusAuthFetchPatched) {
     window.__campoplusAuthFetchPatched = true;
@@ -93,9 +154,8 @@
         if (!hdrs.has("X-Cuenta-Id")) {
           hdrs.set("X-Cuenta-Id", cuentaImp || "0");
         }
-        var empresaAbierta = localStorage.getItem("campoplus_tenant_activo");
-        if (empresaAbierta && !hdrs.has("X-Empresa-Id")) {
-          hdrs.set("X-Empresa-Id", empresaAbierta);
+        if (empresaPestana && !hdrs.has("X-Empresa-Id")) {
+          hdrs.set("X-Empresa-Id", empresaPestana);
         }
         init.headers = hdrs;
       }
