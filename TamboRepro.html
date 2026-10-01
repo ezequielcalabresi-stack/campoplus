@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ - Tambo · Listados veterinarios</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
+    <style>
+        .tab-btn.activo { background: #0369a1; color: #fff; border-color: #0369a1; }
+        .print-col, .print-only { display: none; }
+        table.lst th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .print-col { display: table-cell !important; min-width: 90px; }
+            body { background: #fff !important; }
+            .hoja { box-shadow: none !important; margin: 0 !important; max-width: none !important; padding: 0 !important; }
+            table.lst { font-size: 10.5px; }
+            table.lst td, table.lst th { padding: 3px 5px !important; border-bottom: 1px solid #cbd5e1; }
+            .max-h-scroll { max-height: none !important; overflow: visible !important; }
+            a { color: inherit !important; text-decoration: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+<div class="hoja max-w-7xl mx-auto p-4 md:p-6 my-4 bg-white rounded-xl shadow-lg">
+    <div class="no-print flex flex-col md:flex-row justify-between gap-3 border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Tambo <span class="text-sm font-normal text-sky-700">Listados veterinarios y reproducción</span></h1>
+            <p class="text-xs text-slate-500 mt-1">Tacto, vacas abiertas, partos, secado, preparto y formación de rodeos. Se calcula con los eventos de cada vaca (partos, servicios, tactos, secados).</p>
+        </div>
+        <div class="flex flex-wrap gap-2 items-start">
+            <button type="button" onclick="abrirParametros()" class="bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-md text-sm font-bold hover:bg-slate-50">Parámetros</button>
+            <button type="button" onclick="window.print()" class="bg-slate-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-slate-800">Imprimir</button>
+            <button type="button" onclick="exportarExcel()" class="bg-emerald-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:bg-emerald-800">Excel</button>
+            <a href="Tambo.html" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md text-sm font-medium">← Tambo</a>
+        </div>
+    </div>
+
+    <div class="print-only mb-3">
+        <div class="text-lg font-bold" id="printTitulo"></div>
+        <div class="text-xs" id="printSub"></div>
+    </div>
+
+    <div id="tabs" class="no-print flex flex-wrap gap-1 mb-4"></div>
+
+    <div id="barraAcciones" class="no-print hidden mb-4 border rounded-lg p-3 bg-sky-50/60 flex flex-wrap gap-3 items-end">
+        <div>
+            <label class="text-[11px] font-bold text-slate-600 block">Fecha de lo que registrás</label>
+            <input id="evFecha" type="date" class="mt-1 border rounded p-1.5 text-sm">
+        </div>
+        <div>
+            <label class="text-[11px] font-bold text-slate-600 block">Veterinario / responsable</label>
+            <input id="evTecnico" class="mt-1 border rounded p-1.5 text-sm w-56" placeholder="Ej. Dr. Pérez">
+        </div>
+        <p class="text-[11px] text-slate-500 max-w-md">Los botones de cada fila registran el evento en la ficha de la vaca con esta fecha (tacto, secado o cambio de rodeo).</p>
+    </div>
+
+    <div id="contenido"><div class="p-10 text-center text-slate-400">Cargando…</div></div>
+</div>
+
+<div id="modalParam" class="no-print hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-5 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-3">
+            <h2 class="font-bold text-slate-800">Parámetros reproductivos</h2>
+            <button type="button" onclick="cerrarParametros()" class="text-slate-500 font-bold">✕</button>
+        </div>
+        <div id="paramCampos" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+        <div class="flex gap-2 mt-4">
+            <button type="button" onclick="guardarParametros()" class="bg-sky-700 text-white px-4 py-2 rounded text-sm font-bold hover:bg-sky-800">Guardar</button>
+            <button type="button" onclick="cerrarParametros()" class="bg-slate-200 px-4 py-2 rounded text-sm">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fd = iso => iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(2,4)}` : '';
+const num = v => v == null || v === '' ? '' : String(v);
+
+let D = null;
+let tabActiva = 'resumen';
+let exportActual = [];
+const filtros = { partosDias: '60', servirFiltro: 'todas', vaqEstado: 'todas', todasEtapa: '', todasEstado: '', todasQ: '', todasRodeo: '' };
+
+const ESTADOS = { espera: 'Espera voluntaria', a_servir: 'A servir', servida: 'Servida', prenada: 'Preñada', vacia: 'Vacía', recria: 'Recría' };
+const ETAPAS = { ordene: 'Ordeñe', seca: 'Seca', vaquillona: 'Vaquillona' };
+const COLOR_ESTADO = { espera: 'bg-slate-100 text-slate-700', a_servir: 'bg-amber-100 text-amber-800', servida: 'bg-sky-100 text-sky-800', prenada: 'bg-emerald-100 text-emerald-800', vacia: 'bg-rose-100 text-rose-800', recria: 'bg-violet-100 text-violet-800' };
+
+const PARAM_LABELS = {
+    pev: 'Período de espera voluntaria (días posparto)',
+    dias_tacto: 'Días desde el servicio para tacto',
+    gestacion: 'Días de gestación',
+    dias_secado: 'Secar estos días antes del parto',
+    preparto: 'Días de preparto',
+    posparto_desde: 'Revisión posparto desde (DEL)',
+    posparto_hasta: 'Revisión posparto hasta (DEL)',
+    anestro_extra: 'Anestro: sin celo pasados PEV + días',
+    edad_servicio_meses: 'Vaquillonas: edad de servicio (meses)',
+    peso_servicio_kg: 'Vaquillonas: peso de servicio (kg)',
+    dias_abiertos_alerta: 'Alerta de días abiertos',
+    servicios_problema: 'Repetidora desde N servicios',
+    ventana_secado: 'A secar: secado previsto hasta hoy + días',
+};
+
+const TABS = [
+    ['resumen', 'Resumen y rodeos'],
+    ['tacto', 'Para tacto / revisión'],
+    ['servir', 'A servir / abiertas'],
+    ['partos', 'Próximos partos'],
+    ['secar', 'A secar'],
+    ['secas', 'Secas y preparto'],
+    ['vaquillonas', 'Vaquillonas'],
+    ['todas', 'Planilla completa'],
+];
+
+const C = {
+    caravana: { t: 'Caravana', v: r => r.caravana, h: r => `<a class="font-bold text-sky-800 hover:underline" href="AnimalFicha.html?id=${r.id}">${esc(r.caravana)}</a>${r.rp && r.rp !== r.caravana ? ` <span class="text-[10px] text-slate-400">RP ${esc(r.rp)}</span>` : ''}` },
+    rodeo: { t: 'Rodeo', v: r => r.rodeo },
+    etapa: { t: 'Etapa', v: r => ETAPAS[r.etapa] || r.etapa },
+    estado: { t: 'Estado', v: r => ESTADOS[r.estado] || r.estado, h: r => `<span class="px-2 py-0.5 rounded text-[11px] font-bold ${COLOR_ESTADO[r.estado] || ''}">${esc(ESTADOS[r.estado] || r.estado)}</span>${r.sin_datos_parto ? ' <span class="text-[10px] text-rose-600 font-bold" title="No tiene parto cargado">sin parto</span>' : ''}` },
+    lact: { t: 'Lact.', v: r => num(r.lactancia), a: 'r' },
+    ultParto: { t: 'Últ. parto', v: r => fd(r.ult_parto) },
+    del: { t: 'DEL', v: r => num(r.del), a: 'r' },
+    servs: { t: 'Serv.', v: r => num(r.n_servicios), a: 'r', h: r => r.n_servicios >= D.parametros.servicios_problema ? `<span class="font-bold text-rose-700">${r.n_servicios}</span>` : num(r.n_servicios) },
+    ultServ: { t: 'Últ. servicio', v: r => fd(r.ult_servicio) },
+    diasServ: { t: 'Días serv.', v: r => num(r.dias_desde_servicio), a: 'r' },
+    toro: { t: 'Toro / pajuela', v: r => r.ult_toro || '' },
+    toroConc: { t: 'Toro', v: r => r.toro_concepcion || r.ult_toro || '' },
+    ultCelo: { t: 'Últ. celo', v: r => fd(r.ult_celo) },
+    diasAb: { t: 'Días abiertos', v: r => num(r.dias_abiertos), a: 'r', h: r => (r.dias_abiertos || 0) > D.parametros.dias_abiertos_alerta ? `<span class="font-bold text-rose-700">${r.dias_abiertos}</span>` : num(r.dias_abiertos) },
+    diag: { t: 'Últ. tacto', v: r => r.diagnostico ? `${fd(r.diagnostico.fecha)} ${r.diagnostico.resultado}` : '' },
+    concep: { t: 'Concepción', v: r => fd(r.concepcion) },
+    gest: { t: 'Días gest.', v: r => num(r.dias_gestacion), a: 'r' },
+    fpp: { t: 'Parto probable', v: r => fd(r.fpp), h: r => `<span class="font-bold">${fd(r.fpp)}</span>` },
+    diasParto: { t: 'Días a parto', v: r => num(r.dias_a_parto), a: 'r', h: r => r.dias_a_parto < 0 ? `<span class="font-bold text-rose-700" title="Pasó la fecha probable y no hay parto cargado">${r.dias_a_parto}</span>` : num(r.dias_a_parto) },
+    secadoPrev: { t: 'Secado previsto', v: r => fd(r.secado_previsto), h: r => r.dias_a_secado < 0 ? `<span class="font-bold text-rose-700">${fd(r.secado_previsto)}</span>` : fd(r.secado_previsto) },
+    ultSecado: { t: 'Secada el', v: r => fd(r.ult_secado) },
+    diasSeca: { t: 'Días seca', v: r => num(r.dias_seca), a: 'r' },
+    edad: { t: 'Edad (meses)', v: r => num(r.edad_meses), a: 'r' },
+    peso: { t: 'Peso', v: r => r.peso != null ? Math.round(r.peso) : '', a: 'r' },
+    sugerido: { t: 'Rodeo sugerido', v: r => r.rodeo_sugerido || '' },
+    iep: { t: 'IEP', v: r => num(r.iep), a: 'r' },
+};
+const PRINT_COL = titulo => ({ t: titulo, v: () => '', print: true });
+
+function tabla(cols, rows, opts = {}) {
+    if (!rows.length) return `<div class="p-4 text-sm text-slate-400 border rounded-lg">${esc(opts.vacio || 'No hay vacas en este listado.')}</div>`;
+    const th = cols.map(c => `<th class="p-2 text-${c.a === 'r' ? 'right' : 'left'} text-[11px] uppercase text-slate-500 ${c.print ? 'print-col' : ''} ${c.accion ? 'no-print' : ''}">${esc(c.t)}</th>`).join('');
+    const tr = rows.map(r => `<tr class="hover:bg-slate-50 ${opts.claseFila ? opts.claseFila(r) : ''}" data-id="${r.id}">${cols.map(c =>
+        `<td class="p-2 ${c.a === 'r' ? 'text-right font-mono' : ''} ${c.print ? 'print-col' : ''} ${c.accion ? 'no-print whitespace-nowrap' : ''}">${c.h ? c.h(r) : esc(c.v(r))}</td>`).join('')}</tr>`).join('');
+    return `<div class="overflow-x-auto max-h-scroll max-h-[65vh] border rounded-lg"><table class="lst w-full text-sm"><thead class="border-b"><tr>${th}</tr></thead><tbody class="divide-y">${tr}</tbody></table></div>
+        <div class="text-[11px] text-slate-500 mt-1">${rows.length} animal(es)</div>`;
+}
+
+function seccion(titulo, ayuda, cols, rows, opts = {}) {
+    exportActual.push({ titulo, cols: cols.filter(c => !c.accion), rows });
+    return `<div class="mb-6">
+        <h3 class="font-bold text-slate-800">${esc(titulo)} <span class="text-sm font-normal text-slate-500">(${rows.length})</span></h3>
+        ${ayuda ? `<p class="text-[11px] text-slate-500 mb-2">${ayuda}</p>` : ''}
+        ${opts.extra || ''}
+        ${tabla(cols, rows, opts)}
+    </div>`;
+}
+
+const porNum = (k, desc) => (a, b) => ((a[k] ?? -1e9) - (b[k] ?? -1e9)) * (desc ? -1 : 1);
+
+function listas() {
+    const p = D.parametros, V = D.vacas;
+    return {
+        tacto: V.filter(v => v.estado === 'servida' && v.dias_desde_servicio >= p.dias_tacto).sort(porNum('dias_desde_servicio', true)),
+        posparto: V.filter(v => v.etapa === 'ordene' && v.del != null && v.del >= p.posparto_desde && v.del <= p.posparto_hasta).sort(porNum('del', true)),
+        anestro: V.filter(v => v.etapa === 'ordene' && v.estado === 'a_servir' && v.del != null && v.del > p.pev + p.anestro_extra && !v.ult_celo).sort(porNum('del', true)),
+        servir: V.filter(v => v.etapa !== 'vaquillona' && ['a_servir', 'vacia'].includes(v.estado)).sort(porNum('dias_abiertos', true)),
+        partos: V.filter(v => v.estado === 'prenada' && v.fpp).sort(porNum('dias_a_parto')),
+        secar: V.filter(v => v.etapa === 'ordene' && v.estado === 'prenada' && v.dias_a_secado != null && v.dias_a_secado <= p.ventana_secado).sort(porNum('dias_a_secado')),
+        preparto: V.filter(v => v.estado === 'prenada' && v.dias_a_parto != null && v.dias_a_parto <= p.preparto),
+        moverRodeo: V.filter(v => v.rodeo_sugerido_id && v.rodeo_sugerido_id !== v.rodeo_id),
+    };
+}
+
+function pintarTabs() {
+    const L = D ? listas() : {};
+    const cuenta = { tacto: (L.tacto || []).length, servir: (L.servir || []).length, secar: (L.secar || []).length };
+    document.getElementById('tabs').innerHTML = TABS.map(([id, t]) =>
+        `<button type="button" class="tab-btn border border-slate-300 rounded-md px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 ${id === tabActiva ? 'activo' : ''}" onclick="irTab('${id}')">${esc(t)}${cuenta[id] ? ` <span class="ml-1 text-[11px] bg-amber-400 text-slate-900 rounded px-1.5">${cuenta[id]}</span>` : ''}</button>`).join('');
+}
+
+function irTab(id) {
+    tabActiva = id;
+    pintar();
+}
+
+function pintar() {
+    if (!D) return;
+    pintarTabs();
+    exportActual = [];
+    const titulo = (TABS.find(t => t[0] === tabActiva) || [])[1] || '';
+    document.getElementById('printTitulo').textContent = 'Tambo · ' + titulo;
+    document.getElementById('printSub').textContent = 'Emitido el ' + fd(D.hoy) + ' · PEV ' + D.parametros.pev + ' d · tacto a ' + D.parametros.dias_tacto + ' d del servicio · gestación ' + D.parametros.gestacion + ' d';
+    document.getElementById('barraAcciones').classList.toggle('hidden', !['resumen', 'tacto', 'secar'].includes(tabActiva));
+    const fn = { resumen: vResumen, tacto: vTacto, servir: vServir, partos: vPartos, secar: vSecar, secas: vSecas, vaquillonas: vVaquillonas, todas: vTodas }[tabActiva];
+    document.getElementById('contenido').innerHTML = fn();
+}
+
+function kpi(titulo, valor, sub, clase = 'bg-white') {
+    return `<div class="${clase} border rounded-lg p-3"><div class="text-[11px] font-bold text-slate-600 uppercase">${esc(titulo)}</div><div class="text-2xl font-extrabold text-slate-800">${valor ?? '—'}</div>${sub ? `<div class="text-[11px] text-slate-500">${sub}</div>` : ''}</div>`;
+}
+
+function vResumen() {
+    const I = D.indicadores, p = D.parametros, L = listas(), V = D.vacas;
+    const n = (etapa, estado) => V.filter(v => v.etapa === etapa && (!estado || v.estado === estado)).length;
+    const prepSecas = V.filter(v => v.etapa === 'seca' && v.dias_a_parto != null && v.dias_a_parto <= p.preparto).length;
+    const grupo = (etapa, estado, titulo, valor) => `<button type="button" onclick="verPlanilla('${etapa}','${estado}')" class="text-left border rounded-lg px-3 py-2 bg-white hover:border-sky-500">
+        <div class="text-[11px] font-bold uppercase text-slate-500">${esc(titulo)}</div><div class="text-xl font-extrabold">${valor}</div></button>`;
+    const partos30 = L.partos.filter(v => v.dias_a_parto <= 30).length;
+    let html = `
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        ${kpi('Vacas', I.vacas, `${I.en_ordene} en ordeñe · ${I.secas} secas`, 'bg-sky-50')}
+        ${kpi('Vaquillonas', I.vaquillonas, '', 'bg-violet-50')}
+        ${kpi('% preñez', I.pct_prenez != null ? I.pct_prenez + '%' : null, 'vacas paridas preñadas', 'bg-emerald-50')}
+        ${kpi('Días abiertos prom.', I.dias_abiertos_prom, `${I.pct_abiertas_alerta ?? 0}% con más de ${p.dias_abiertos_alerta} d`)}
+        ${kpi('DEL promedio', I.del_prom, 'vacas en ordeñe')}
+        ${kpi('IEP real', I.iep_prom, 'días entre los 2 últimos partos')}
+        ${kpi('IEP proyectado', I.iep_proyectado, 'preñadas: días abiertos + gestación')}
+        ${kpi('Servicios por preñez', I.servicios_por_prenez, 'preñadas actuales')}
+        ${kpi('Concepción 1er servicio', I.concepcion_1er_servicio != null ? I.concepcion_1er_servicio + '%' : null)}
+        ${kpi('Edad al 1er parto', I.edad_1er_parto, 'meses')}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        ${[['tacto', 'Para tacto', L.tacto.length], ['servir', 'A servir / abiertas', L.servir.length], ['partos', 'Partos en 30 días', partos30], ['secar', 'A secar', L.secar.length], ['secas', 'En preparto', L.preparto.length]]
+            .map(([t, ti, val]) => `<button type="button" onclick="irTab('${t}')" class="text-left border-2 border-amber-300 bg-amber-50 rounded-lg p-3 hover:border-amber-500"><div class="text-[11px] font-bold uppercase text-amber-900">${ti}</div><div class="text-2xl font-extrabold">${val}</div></button>`).join('')}
+    </div>
+    ${I.sin_datos_parto ? `<div class="mb-4 text-xs border border-rose-200 bg-rose-50 text-rose-800 rounded-lg p-3"><b>${I.sin_datos_parto} vaca(s)</b> en ordeñe o secas no tienen el último parto cargado: no se les puede calcular DEL, días abiertos ni secado. Cargalo desde la ficha o la carga masiva (tipo <code>parto</code>).</div>` : ''}
+    <h3 class="font-bold text-slate-800 mb-2">Formación de rodeos (estado reproductivo)</h3>
+    <div class="grid md:grid-cols-3 gap-4 mb-6">
+        <div class="border rounded-xl p-3 bg-sky-50/50"><div class="font-bold text-sky-900 text-sm mb-2">Ordeñe (${n('ordene')})</div>
+            <div class="grid grid-cols-2 gap-2">${grupo('ordene', 'espera', 'Espera voluntaria', n('ordene', 'espera'))}${grupo('ordene', 'a_servir', 'A servir', n('ordene', 'a_servir'))}${grupo('ordene', 'servida', 'Servidas', n('ordene', 'servida'))}${grupo('ordene', 'prenada', 'Preñadas', n('ordene', 'prenada'))}${grupo('ordene', 'vacia', 'Vacías', n('ordene', 'vacia'))}</div></div>
+        <div class="border rounded-xl p-3 bg-amber-50/50"><div class="font-bold text-amber-900 text-sm mb-2">Secas (${n('seca')})</div>
+            <div class="grid grid-cols-2 gap-2">${grupo('seca', '', 'Secas', n('seca') - prepSecas)}<button type="button" onclick="irTab('secas')" class="text-left border rounded-lg px-3 py-2 bg-white hover:border-sky-500">
+                <div class="text-[11px] font-bold uppercase text-slate-500">Preparto (≤ ${p.preparto} d)</div><div class="text-xl font-extrabold">${prepSecas}</div></button></div></div>
+        <div class="border rounded-xl p-3 bg-violet-50/50"><div class="font-bold text-violet-900 text-sm mb-2">Vaquillonas (${n('vaquillona')})</div>
+            <div class="grid grid-cols-2 gap-2">${grupo('vaquillona', 'recria', 'Recría', n('vaquillona', 'recria'))}${grupo('vaquillona', 'a_servir', 'A servir', n('vaquillona', 'a_servir'))}${grupo('vaquillona', 'servida', 'Servidas', n('vaquillona', 'servida'))}${grupo('vaquillona', 'prenada', 'Preñadas', n('vaquillona', 'prenada'))}</div></div>
+    </div>`;
+    const opcRodeos = sel => D.rodeos.map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('');
+    const cols = [
+        { t: '', accion: true, v: () => '', h: r => `<input type="checkbox" class="chkMover" value="${r.id}" checked>` },
+        C.caravana, C.etapa, C.estado, C.rodeo, C.sugerido,
+        { t: 'Mover a', accion: true, v: () => '', h: r => `<select class="selMover border rounded p-1 text-xs" data-id="${r.id}">${opcRodeos(r.rodeo_sugerido_id)}</select>` },
+    ];
+    html += seccion('Vacas que están en otro rodeo del que les corresponde', 'Según su etapa: paridas en ordeñe → Vacas en ordeñe; secas → Vacas secas o Preparto; vaquillonas → Vaquillonas / Recría. Marcá y movelas; queda registrado como cambio de rodeo en cada ficha.', cols, L.moverRodeo,
+        { vacio: 'Todas las vacas están en el rodeo que les corresponde.', extra: L.moverRodeo.length ? `<button type="button" onclick="moverRodeos()" class="no-print mb-2 bg-sky-700 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-sky-800">Mover marcadas</button>` : '' });
+    return html;
+}
+
+function vTacto() {
+    const L = listas(), p = D.parametros;
+    const accion = { t: 'Resultado', accion: true, v: () => '', h: r => `<div class="flex gap-1 items-center">
+        <button type="button" onclick="tacto(${r.id}, true)" class="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-bold">Preñada</button>
+        <button type="button" onclick="tacto(${r.id}, false)" class="bg-rose-600 text-white px-2 py-1 rounded text-xs font-bold">Vacía</button>
+        <input id="gest_${r.id}" type="number" min="0" class="w-16 border rounded p-1 text-xs" placeholder="días gest." title="Opcional: días de gestación que estima el veterinario (servicio a toro)"></div>` };
+    return seccion('Diagnóstico de preñez', `Servidas hace ${p.dias_tacto} días o más y todavía sin tacto. Si el servicio fue a toro, cargá los días de gestación que estima el veterinario.`,
+            [C.caravana, C.rodeo, C.lact, C.del, C.ultServ, C.diasServ, C.servs, C.toro, PRINT_COL('Resultado'), PRINT_COL('Obs.'), accion], L.tacto)
+        + seccion('Revisión posparto', `Vacas con ${p.posparto_desde} a ${p.posparto_hasta} días de paridas (control de útero / puerperio).`,
+            [C.caravana, C.rodeo, C.lact, C.ultParto, C.del, PRINT_COL('Diagnóstico'), PRINT_COL('Tratamiento')], L.posparto)
+        + seccion('Anestro (sin celo)', `Pasaron más de ${p.pev + p.anestro_extra} días del parto y no tienen celo ni servicio registrado.`,
+            [C.caravana, C.rodeo, C.lact, C.ultParto, C.del, C.diasAb, PRINT_COL('Diagnóstico'), PRINT_COL('Tratamiento')], L.anestro);
+}
+
+function vServir() {
+    const p = D.parametros;
+    let rows = listas().servir;
+    if (filtros.servirFiltro === 'alerta') rows = rows.filter(v => (v.dias_abiertos || 0) > p.dias_abiertos_alerta);
+    if (filtros.servirFiltro === 'repetidoras') rows = rows.filter(v => v.n_servicios >= p.servicios_problema);
+    if (filtros.servirFiltro === 'espera') rows = D.vacas.filter(v => v.estado === 'espera').sort(porNum('del', true));
+    const extra = `<div class="no-print mb-2"><select data-orden-fijo class="border rounded p-1.5 text-sm" onchange="filtros.servirFiltro=this.value;pintar()">
+        ${[['todas', 'Todas las abiertas (a servir y vacías)'], ['alerta', `Más de ${p.dias_abiertos_alerta} días abiertos`], ['repetidoras', `Repetidoras (${p.servicios_problema}+ servicios)`], ['espera', 'En espera voluntaria (todavía no)']]
+            .map(([k, t]) => `<option value="${k}" ${filtros.servirFiltro === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
+    return seccion('Vacas abiertas', `Paridas no preñadas pasado el período de espera voluntaria (${p.pev} días), ordenadas por días abiertos. En rojo: más de ${p.dias_abiertos_alerta} días abiertos o repetidoras.`,
+        [C.caravana, C.rodeo, C.estado, C.lact, C.ultParto, C.del, C.diasAb, C.servs, C.ultServ, C.ultCelo, C.diag, PRINT_COL('Obs.')], rows, { extra });
+}
+
+function vPartos() {
+    let rows = listas().partos;
+    if (filtros.partosDias !== 'todos') rows = rows.filter(v => v.dias_a_parto <= Number(filtros.partosDias));
+    const extra = `<div class="no-print mb-2"><select data-orden-fijo class="border rounded p-1.5 text-sm" onchange="filtros.partosDias=this.value;pintar()">
+        ${[['30', 'Próximos 30 días'], ['60', 'Próximos 60 días'], ['90', 'Próximos 90 días'], ['120', 'Próximos 120 días'], ['todos', 'Todas las preñadas']]
+            .map(([k, t]) => `<option value="${k}" ${filtros.partosDias === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
+    return seccion('Próximos partos', `Fecha probable = concepción + ${D.parametros.gestacion} días. En rojo las que pasaron la fecha sin parto registrado.`,
+        [C.caravana, C.etapa, C.rodeo, C.lact, C.concep, C.toroConc, C.gest, C.fpp, C.diasParto, PRINT_COL('Parió / cría')], rows, { extra });
+}
+
+function vSecar() {
+    const accion = { t: '', accion: true, v: () => '', h: r => `<button type="button" onclick="secar(${r.id})" class="bg-amber-600 text-white px-2 py-1 rounded text-xs font-bold">Secar</button>` };
+    return seccion('Vacas a secar', `Preñadas en ordeñe con secado previsto (parto probable − ${D.parametros.dias_secado} días) hasta dentro de ${D.parametros.ventana_secado} días. En rojo: ya pasó la fecha de secado.`,
+        [C.caravana, C.rodeo, C.lact, C.del, C.concep, C.fpp, C.diasParto, C.secadoPrev, PRINT_COL('Secada / trat.'), accion], listas().secar);
+}
+
+function vSecas() {
+    const p = D.parametros;
+    const secas = D.vacas.filter(v => v.etapa === 'seca').sort(porNum('dias_a_parto'));
+    const prep = listas().preparto.sort(porNum('dias_a_parto'));
+    return seccion('Preparto', `Preñadas (vacas secas y vaquillonas) a ${p.preparto} días o menos del parto: deberían estar en el rodeo de preparto.`,
+            [C.caravana, C.etapa, C.rodeo, C.fpp, C.diasParto, C.toroConc, PRINT_COL('Obs.')], prep)
+        + seccion('Vacas secas', 'Todas las vacas secas con días de seca y parto probable.',
+            [C.caravana, C.rodeo, C.estado, C.lact, C.ultSecado, C.diasSeca, C.fpp, C.diasParto, PRINT_COL('Obs.')], secas,
+            { claseFila: r => r.estado !== 'prenada' ? 'bg-rose-50' : '' });
+}
+
+function vVaquillonas() {
+    let rows = D.vacas.filter(v => v.etapa === 'vaquillona');
+    if (filtros.vaqEstado !== 'todas') rows = rows.filter(v => v.estado === filtros.vaqEstado);
+    rows.sort(porNum('edad_meses', true));
+    const p = D.parametros;
+    const extra = `<div class="no-print mb-2"><select data-orden-fijo class="border rounded p-1.5 text-sm" onchange="filtros.vaqEstado=this.value;pintar()">
+        ${[['todas', 'Todas'], ['a_servir', 'A servir'], ['servida', 'Servidas'], ['prenada', 'Preñadas'], ['vacia', 'Vacías'], ['recria', 'Recría']]
+            .map(([k, t]) => `<option value="${k}" ${filtros.vaqEstado === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
+    return seccion('Vaquillonas', `A servir desde ${p.edad_servicio_meses} meses o ${p.peso_servicio_kg} kg. Las preñadas muestran el parto probable.`,
+        [C.caravana, C.rodeo, C.estado, C.edad, C.peso, C.servs, C.ultServ, C.toro, C.diag, C.fpp, C.diasParto, PRINT_COL('Obs.')], rows, { extra });
+}
+
+function verPlanilla(etapa, estado) {
+    Object.assign(filtros, { todasEtapa: etapa, todasEstado: estado, todasQ: '', todasRodeo: '' });
+    irTab('todas');
+}
+
+function vTodas() {
+    let rows = D.vacas.slice();
+    if (filtros.todasEtapa) rows = rows.filter(v => v.etapa === filtros.todasEtapa);
+    if (filtros.todasEstado) rows = rows.filter(v => v.estado === filtros.todasEstado);
+    if (filtros.todasRodeo) rows = rows.filter(v => String(v.rodeo_id || '') === filtros.todasRodeo);
+    const q = filtros.todasQ.trim().toLowerCase();
+    if (q) rows = rows.filter(v => [v.caravana, v.rp, v.nombre, v.eid].some(x => String(x || '').toLowerCase().includes(q)));
+    rows.sort((a, b) => String(a.caravana).localeCompare(String(b.caravana), 'es', { numeric: true }));
+    const op = (lista, sel) => lista.map(([k, t]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(t)}</option>`).join('');
+    const extra = `<div class="no-print mb-2 flex flex-wrap gap-2">
+        <input class="border rounded p-1.5 text-sm" placeholder="Buscar caravana / RP" value="${esc(filtros.todasQ)}" onchange="filtros.todasQ=this.value;pintar()">
+        <select data-orden-fijo class="border rounded p-1.5 text-sm" onchange="filtros.todasEtapa=this.value;pintar()">${op([['', 'Todas las etapas'], ...Object.entries(ETAPAS)], filtros.todasEtapa)}</select>
+        <select data-orden-fijo class="border rounded p-1.5 text-sm" onchange="filtros.todasEstado=this.value;pintar()">${op([['', 'Todos los estados'], ...Object.entries(ESTADOS)], filtros.todasEstado)}</select>
+        <select class="border rounded p-1.5 text-sm" onchange="filtros.todasRodeo=this.value;pintar()">${op([['', 'Todos los rodeos'], ...D.rodeos.map(r => [String(r.id), r.nombre])], filtros.todasRodeo)}</select>
+    </div>`;
+    return seccion('Planilla reproductiva completa', 'Todas las hembras del tambo con su situación reproductiva.',
+        [C.caravana, C.rodeo, C.etapa, C.estado, C.lact, C.ultParto, C.del, C.diasAb, C.servs, C.ultServ, C.diag, C.fpp, C.diasParto, C.secadoPrev, C.iep], rows, { extra });
+}
+
+async function cargar() {
+    const y = window.scrollY;
+    const res = await fetch('/api/tambo/repro');
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        document.getElementById('contenido').innerHTML = `<div class="p-6 text-rose-700">No se pudo cargar: ${esc(err.detail || res.status)}</div>`;
+        return;
+    }
+    D = await res.json();
+    pintar();
+    window.scrollTo(0, y);
+}
+
+async function enviarEventos(eventos) {
+    const res = await fetch('/api/tambo/repro/eventos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventos }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.detail || 'No se pudo registrar.'); return false; }
+    if (data.errores && data.errores.length) alert('Algunos no se registraron:\n' + data.errores.map(e => `#${e.animal_id}: ${e.error}`).join('\n'));
+    await cargar();
+    return true;
+}
+
+const fechaEv = () => document.getElementById('evFecha').value || D.hoy;
+const tecnicoEv = () => document.getElementById('evTecnico').value.trim();
+
+async function tacto(id, prenada) {
+    const gest = document.getElementById('gest_' + id)?.value;
+    const resultado = prenada ? ('Preñada' + (gest ? ` ${gest} días` : '')) : 'Vacía';
+    await enviarEventos([{ animal_id: id, tipo: 'diagnostico_prenez', fecha: fechaEv(), resultado, tecnico: tecnicoEv() }]);
+}
+
+async function secar(id) {
+    const v = D.vacas.find(x => x.id === id);
+    if (!confirm(`Registrar secado de ${v ? v.caravana : id} el ${fd(fechaEv())}? Pasa al rodeo de vacas secas.`)) return;
+    await enviarEventos([{ animal_id: id, tipo: 'secado', fecha: fechaEv(), tecnico: tecnicoEv() }]);
+}
+
+async function moverRodeos() {
+    const ids = [...document.querySelectorAll('.chkMover:checked')].map(x => Number(x.value));
+    if (!ids.length) return alert('Marcá al menos una vaca.');
+    const eventos = ids.map(id => ({
+        animal_id: id, tipo: 'cambio_rodeo', fecha: fechaEv(), tecnico: tecnicoEv(),
+        rodeo_id: Number(document.querySelector(`.selMover[data-id="${id}"]`).value),
+    }));
+    if (!confirm(`Mover ${eventos.length} vaca(s) de rodeo?`)) return;
+    await enviarEventos(eventos);
+}
+
+function abrirParametros() {
+    const p = D.parametros;
+    document.getElementById('paramCampos').innerHTML = Object.entries(PARAM_LABELS).map(([k, t]) => `
+        <label class="text-xs font-bold text-slate-600">${esc(t)}
+            <input type="number" min="0" data-param="${k}" value="${p[k]}" class="mt-1 w-full border rounded p-2 text-sm font-normal"></label>`).join('');
+    document.getElementById('modalParam').classList.remove('hidden');
+}
+function cerrarParametros() { document.getElementById('modalParam').classList.add('hidden'); }
+async function guardarParametros() {
+    const datos = {};
+    document.querySelectorAll('[data-param]').forEach(i => { datos[i.dataset.param] = i.value; });
+    const res = await fetch('/api/tambo/repro/parametros', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(data.detail || 'No se pudo guardar.');
+    cerrarParametros();
+    await cargar();
+}
+
+function exportarExcel() {
+    if (!exportActual.length) return;
+    const celda = v => {
+        const s = String(v ?? '');
+        return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lineas = [];
+    exportActual.forEach((sec, i) => {
+        if (i) lineas.push('');
+        lineas.push(celda(sec.titulo));
+        lineas.push(sec.cols.map(c => celda(c.t)).join(';'));
+        sec.rows.forEach(r => lineas.push(sec.cols.map(c => celda(c.v(r))).join(';')));
+    });
+    const blob = new Blob(['\ufeff' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `tambo_${tabActiva}_${D.hoy}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+window.onload = () => {
+    if (window.CampoAuth) CampoAuth.applyModuleVisibility(CampoAuth.sessionEmpresa());
+    document.getElementById('evFecha').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const t = new URLSearchParams(location.search).get('tab');
+    if (t && TABS.some(x => x[0] === t)) tabActiva = t;
+    cargar();
+};
+</script>
+</body>
+</html>

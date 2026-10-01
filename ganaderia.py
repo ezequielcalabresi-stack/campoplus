@@ -36,6 +36,7 @@ ESTADOS_ANIMAL = (
 RODEOS_TAMBO_SEED = (
     ("Vacas en ordeñe", "tambo"),
     ("Vacas secas", "tambo"),
+    ("Preparto", "tambo"),
     ("Vaquillonas", "tambo"),
     ("Recría lechera", "tambo"),
     ("Terneros/as", "tambo"),

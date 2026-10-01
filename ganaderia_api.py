@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from fastapi import HTTPException, Request
+from fastapi import Body, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ganaderia import (
@@ -514,5 +514,44 @@ def register_ganaderia_routes(app, get_db, get_empresa_activa_id) -> None:
                 usuario=_firma(request),
             )
             return {"status": "ok", **result}
+        finally:
+            conn.close()
+
+    @app.get("/api/tambo/repro")
+    def api_tambo_repro():
+        import tambo_repro
+
+        conn = get_db()
+        try:
+            out = tambo_repro.estado_tambo(conn, get_empresa_activa_id())
+            conn.commit()
+            return out
+        finally:
+            conn.close()
+
+    @app.put("/api/tambo/repro/parametros")
+    def api_tambo_repro_parametros(data: dict = Body(...)):
+        import tambo_repro
+
+        conn = get_db()
+        try:
+            p = tambo_repro.guardar_parametros(conn.cursor(), get_empresa_activa_id(), data or {})
+            conn.commit()
+            return {"parametros": p, "message": "Parámetros guardados."}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        finally:
+            conn.close()
+
+    @app.post("/api/tambo/repro/eventos")
+    def api_tambo_repro_eventos(request: Request, data: dict = Body(...)):
+        import tambo_repro
+
+        eventos = (data or {}).get("eventos") or []
+        if not eventos:
+            raise HTTPException(400, "Sin eventos para registrar")
+        conn = get_db()
+        try:
+            return tambo_repro.registrar_eventos(conn, get_empresa_activa_id(), eventos, usuario=_firma(request))
         finally:
             conn.close()
