@@ -144,7 +144,8 @@ let pollTimer = null;
 let localTick = null;
 let jobStartTs = null;
 let lastJobStatus = 'idle';
-let doneAlertShown = false;
+// En true al abrir: el resultado de una carga anterior se ve en el panel, sin volver a saltar el aviso.
+let doneAlertShown = true;
 
 function fmtClock(sec) {
     sec = Math.max(0, Math.floor(Number(sec) || 0));
