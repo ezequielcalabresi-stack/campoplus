@@ -345,7 +345,7 @@ def init_db():
         cursor.executemany(
             "INSERT INTO empresas (razon_social, cuit, tenant_id, localidad) VALUES (?, ?, ?, ?);",
             [
-                ("Silo Chico S.A.", "30717802868", "silochico", "Chivilcoy"),
+                ("Silo Chico S.A.", "30665193337", "silochico", "Chivilcoy"),
                 ("Ezequiel Calabresi", "20270684271", "cala", "Chivilcoy"),
             ],
         )
@@ -6365,7 +6365,7 @@ def api_certificado_retencion(nro: Optional[str] = None, cc_id: Optional[int] = 
 
     agente = {
         "razon_social": (cfg["razon_social"] if cfg else None) or "SILO CHICO S.A.",
-        "cuit": (cfg["cuit"] if cfg else None) or "30717802868",
+        "cuit": (cfg["cuit"] if cfg else None) or "",
         "domicilio": (cfg["domicilio"] if cfg else None) or "",
         "localidad": (cfg["localidad"] if cfg else None) or "",
     }
@@ -9488,6 +9488,64 @@ def _indices_cuit_normalizado() -> None:
 
 
 _indices_cuit_normalizado()
+
+
+def _bases_del_servidor() -> List[str]:
+    raiz = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
+    return list(dict.fromkeys([DB_PATH] + arba_bases_candidatas(raiz)))
+
+
+def _quitar_cit_de_auditoria() -> None:
+    """El guardado de configuración viejo dejaba la CIT en texto plano en audit_log."""
+    patron = re.compile(r'"cit_arba":\s*"(?:[^"\\]|\\.)*"\s*,?\s*')
+    for ruta in _bases_del_servidor():
+        try:
+            conn = sqlite3.connect(ruta, timeout=10)
+            if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log';").fetchone():
+                conn.close()
+                continue
+            filas = conn.execute("SELECT id, detalle FROM audit_log WHERE detalle LIKE '%\"cit_arba\"%';").fetchall()
+            for fid, det in filas:
+                conn.execute("UPDATE audit_log SET detalle = ? WHERE id = ?;", (patron.sub("", det or ""), fid))
+            conn.commit()
+            conn.close()
+            if filas:
+                print(f"[seguridad] CIT quitada de {len(filas)} registro(s) de auditoría en {os.path.basename(ruta)}")
+        except sqlite3.Error as exc:
+            print(f"[seguridad] {ruta}: {exc}")
+
+
+def _corregir_cuit_silo_chico_una_vez() -> None:
+    """El alta inicial dejó a Silo Chico con 30717802868; su CUIT es 30665193337."""
+    flag_dir = os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
+    flag = os.path.join(flag_dir, ".cuit_silo_chico_v1")
+    if os.path.exists(flag):
+        return
+    for ruta in _bases_del_servidor():
+        try:
+            conn = sqlite3.connect(ruta, timeout=10)
+            tablas = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';")}
+            n = 0
+            for tabla in ("empresas", "configuracion_empresa"):
+                if tabla in tablas:
+                    n += conn.execute(
+                        f"UPDATE {tabla} SET cuit = '30665193337' "
+                        "WHERE REPLACE(cuit, '-', '') = '30717802868' AND LOWER(razon_social) LIKE 'silo chico%';"
+                    ).rowcount
+            conn.commit()
+            conn.close()
+            if n:
+                print(f"[empresas] CUIT de Silo Chico corregido en {os.path.basename(ruta)} ({n} fila/s)")
+        except sqlite3.Error as exc:
+            print(f"[empresas] {ruta}: {exc}")
+            return
+    os.makedirs(flag_dir, exist_ok=True)
+    with open(flag, "w", encoding="utf-8") as fh:
+        fh.write("ok")
+
+
+_quitar_cit_de_auditoria()
+_corregir_cuit_silo_chico_una_vez()
 arba_iniciar_actualizador(
     lambda: [DB_PATH] + arba_bases_candidatas(
         os.environ.get("CAMPO_DATA_DIR", "").strip() or os.path.dirname(os.path.abspath(DB_PATH))
