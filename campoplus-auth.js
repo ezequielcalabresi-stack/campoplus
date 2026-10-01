@@ -629,6 +629,97 @@
     if (e.target && e.target.classList) mejorarVentanas(e.target);
   });
 
+  /**
+   * Desplegables y listas de sugerencias en orden alfabético (sin distinguir mayúsculas ni acentos).
+   * Quedan arriba "Todos…", "Seleccione…" y la opción vacía; al final las que empiezan con "+".
+   * No se tocan listas cortas (menos de 6), meses, días, campañas o períodos (26-27, 10/2026, 2026),
+   * ni las que tengan el atributo data-orden-fijo.
+   */
+  var COLLATOR = window.Intl && Intl.Collator ? new Intl.Collator("es", { sensitivity: "base", numeric: true }) : null;
+  var RE_CABECERA = /^(todos|todas|seleccion|elegí|elegi|elegir|ninguno|ninguna|cualquier|--|—|\(sin|sin asignar)/i;
+  var RE_CALENDARIO = /^(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)\b/i;
+  var RE_PERIODO = /^(\d{2}\s*[-\/]\s*\d{2}\b|\d{1,2}\/\d{4}|\d{4}(-\d{2})?\b|\d{2}\/\d{2}\/\d{2,4})/;
+
+  function textoOpcion(o) {
+    return String(o.textContent || o.label || o.value || "").trim();
+  }
+
+  function compararOpciones(a, b) {
+    var x = textoOpcion(a), y = textoOpcion(b);
+    return COLLATOR ? COLLATOR.compare(x, y) : x.toLowerCase() < y.toLowerCase() ? -1 : x.toLowerCase() > y.toLowerCase() ? 1 : 0;
+  }
+
+  function ordenarContenedor(cont) {
+    var opts = Array.prototype.filter.call(cont.children, function (n) {
+      return n.tagName === "OPTION";
+    });
+    if (opts.length < 6) return;
+    var cab = [], cuerpo = [], fin = [];
+    var i = 0;
+    while (i < opts.length && (opts[i].value === "" || RE_CABECERA.test(textoOpcion(opts[i])))) cab.push(opts[i++]);
+    for (; i < opts.length; i++) (/^\+/.test(textoOpcion(opts[i])) ? fin : cuerpo).push(opts[i]);
+    if (cuerpo.length < 6) return;
+    var fijas = cuerpo.filter(function (o) {
+      var t = textoOpcion(o);
+      return RE_CALENDARIO.test(t) || RE_PERIODO.test(t);
+    }).length;
+    if (fijas * 2 >= cuerpo.length) return;
+    var deseado = cab.concat(cuerpo.slice().sort(compararOpciones), fin);
+    var igual = deseado.every(function (o, k) {
+      return o === opts[k];
+    });
+    if (igual) return;
+    deseado.forEach(function (o) {
+      cont.appendChild(o);
+    });
+  }
+
+  function ordenarLista(el) {
+    if (!el || !el.isConnected || el.hasAttribute("data-orden-fijo")) return;
+    var valor = el.tagName === "SELECT" && !el.multiple ? el.value : null;
+    ordenarContenedor(el);
+    Array.prototype.forEach.call(el.querySelectorAll("optgroup"), ordenarContenedor);
+    if (valor !== null && el.value !== valor) el.value = valor;
+  }
+
+  var listasPendientes = [];
+  var ordenProgramado = false;
+
+  function programarOrden(el) {
+    if (!el || listasPendientes.indexOf(el) >= 0) return;
+    listasPendientes.push(el);
+    if (ordenProgramado) return;
+    ordenProgramado = true;
+    (window.queueMicrotask || function (f) { Promise.resolve().then(f); })(function () {
+      var lista = listasPendientes;
+      listasPendientes = [];
+      ordenProgramado = false;
+      lista.forEach(ordenarLista);
+    });
+  }
+
+  function listaDe(nodo) {
+    return nodo && nodo.closest ? nodo.closest("select, datalist") : null;
+  }
+
+  if (window.MutationObserver && !window.__campoplusOrdenListas) {
+    window.__campoplusOrdenListas = true;
+    new MutationObserver(function (cambios) {
+      cambios.forEach(function (c) {
+        var t = c.target;
+        if (t.nodeType === 1 && (t.tagName === "SELECT" || t.tagName === "DATALIST" || t.tagName === "OPTGROUP")) {
+          programarOrden(listaDe(t));
+          return;
+        }
+        Array.prototype.forEach.call(c.addedNodes, function (n) {
+          if (n.nodeType !== 1) return;
+          if (n.tagName === "SELECT" || n.tagName === "DATALIST") programarOrden(n);
+          else if (n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll("select, datalist"), programarOrden);
+        });
+      });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", injectFormBrand);
     document.addEventListener("DOMContentLoaded", aplicarFondoInicial);

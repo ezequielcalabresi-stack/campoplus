@@ -3031,24 +3031,34 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             (eid,),
         )
         campanias = [{"codigo": r["campania_codigo"] or "", "n": r["n"]} for r in cur.fetchall()]
-        where, params = _where_costos(eid, campania, None, None, None)
-        cur.execute(
-            f"SELECT DISTINCT TRIM(campo) AS v FROM margenes_access m {where} AND TRIM(COALESCE(campo,''))!='' ORDER BY 1;",
-            params,
-        )
-        campos = [r["v"] for r in cur.fetchall()]
-        where, params = _where_costos(eid, campania, campo, None, None)
-        cur.execute(
-            f"SELECT DISTINCT TRIM(cultivo) AS v FROM margenes_access m {where} AND TRIM(COALESCE(cultivo,''))!='' ORDER BY 1;",
-            params,
-        )
-        cultivos = [r["v"] for r in cur.fetchall()]
-        where, params = _where_costos(eid, campania, campo, cultivo, None)
-        cur.execute(
-            f"SELECT DISTINCT TRIM(lote) AS v FROM margenes_access m {where} AND TRIM(COALESCE(lote,''))!='' ORDER BY 1;",
-            params,
-        )
-        lotes = [r["v"] for r in cur.fetchall()]
+
+        def valores(col, where, params):
+            """Un valor por nombre sin distinguir mayúsculas (el filtro ya las ignora), con la forma más usada,
+            en orden alfabético sin acentos."""
+            import unicodedata
+
+            filas = cur.execute(
+                f"""
+                SELECT TRIM({col}) AS v, COUNT(*) AS n FROM margenes_access m {where}
+                AND TRIM(COALESCE({col},''))!='' GROUP BY TRIM({col});
+                """,
+                params,
+            ).fetchall()
+            mejor: dict = {}
+            for r in filas:
+                k = r["v"].upper()
+                if k not in mejor or r["n"] > mejor[k][1]:
+                    mejor[k] = (r["v"], r["n"])
+
+            def clave(v):
+                s = unicodedata.normalize("NFKD", v).encode("ascii", "ignore").decode().lower()
+                return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", s)]
+
+            return sorted((v for v, _ in mejor.values()), key=clave)
+
+        campos = valores("campo", *_where_costos(eid, campania, None, None, None))
+        cultivos = valores("cultivo", *_where_costos(eid, campania, campo, None, None))
+        lotes = valores("lote", *_where_costos(eid, campania, campo, cultivo, None))
         conn.close()
         return {"campanias": campanias, "campos": campos, "cultivos": cultivos, "lotes": lotes}
 
