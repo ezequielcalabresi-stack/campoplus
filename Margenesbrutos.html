@@ -21,6 +21,21 @@
         .badge-arrendado { background: #fef3c7; color: #92400e; }
         .rotacion-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #065f46; font-size: 12px; font-weight: 600; margin-right: 4px; }
         table.table td, table.table th { vertical-align: middle; }
+        .scroll-costos { max-height: 560px; overflow-x: scroll; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+        .scroll-costos::-webkit-scrollbar { height: 14px; width: 12px; }
+        .scroll-costos::-webkit-scrollbar-track { background: #f1f5f9; }
+        .scroll-costos::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 8px; border: 3px solid #f1f5f9; }
+        .scroll-costos::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        .tabla-costos { font-size: 13px; }
+        .tabla-costos th, .tabla-costos td { padding: .55rem .75rem; }
+        .tabla-costos thead th { white-space: nowrap; line-height: 1.25; }
+        .tabla-costos td.num, .tabla-costos th.num { text-align: right; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .tabla-costos tbody tr { border-bottom: 1px solid #e2e8f0; }
+        .tabla-costos .col-texto { min-width: 220px; }
+        .tabla-costos .col-lote { min-width: 190px; }
+        .tabla-costos .ha-lote { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #e0f2fe; color: #075985; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .tabla-costos .sin-siembra { color: #b45309; font-size: 12px; font-style: italic; white-space: nowrap; text-align: center; }
+        #tabCostos .filtros-costos .form-select { padding-top: .4rem; padding-bottom: .4rem; }
     </style>
 <script src="/campoplus-firma.js?v=2"></script>
 <script src="/campoplus-money.js"></script>
@@ -136,7 +151,7 @@
                     <a href="ordenestrabajo.html" class="btn btn-sm btn-outline-dark fw-bold">Órdenes de trabajo</a>
                 </div>
             </div>
-            <div class="row g-2 align-items-end mb-3">
+            <div class="row g-3 align-items-end mb-3 filtros-costos">
                 <div class="col-md-2">
                     <label class="form-label small fw-bold mb-1">Campaña</label>
                     <select id="costoCampania" class="form-select form-select-sm" onchange="cambiarFiltroCosto('campania')"></select>
@@ -160,17 +175,17 @@
                 </div>
             </div>
             <p id="costoEstado" class="hint mb-2">Elegí campaña y campo.</p>
-            <div id="costoDetalle" class="table-responsive" style="max-height:520px;">
-                <table class="table table-sm table-hover mb-0">
-                    <thead class="table-dark" style="position:sticky;top:0;">
+            <div id="costoDetalle" class="scroll-costos">
+                <table class="table table-hover mb-0 tabla-costos" style="min-width:1650px;">
+                    <thead class="table-dark" style="position:sticky;top:0;z-index:2;">
                         <tr>
-                            <th>Fecha</th><th>Lote</th><th>Cultivo</th><th>Producto / laboreo</th>
-                            <th class="text-end">Has</th><th class="text-end">Dosis</th><th class="text-end">Cant.</th>
-                            <th class="text-end">Precio</th><th class="text-end">Costo $</th><th class="text-end">Costo U$S</th>
-                            <th class="text-end" title="Superficie del lote cargada en el alta del campo">Has semb.</th>
-                            <th class="text-end">$/ha semb.</th><th class="text-end">U$S/ha semb.</th>
-                            <th class="text-end" title="Precio actual del ítem en el almacén">Precio almacén</th>
-                            <th class="text-end">Stock almacén</th>
+                            <th>Fecha</th><th class="col-lote">Lote</th><th>Cultivo</th><th class="col-texto">Producto / laboreo</th>
+                            <th class="num">Has</th><th class="num">Dosis</th><th class="num">Cant.</th>
+                            <th class="num">Precio</th><th class="num">Costo $</th><th class="num">Costo U$S</th>
+                            <th class="num" title="Hectáreas sembradas de ese cultivo en el lote, según la siembra cargada en la orden de trabajo">Has semb.</th>
+                            <th class="num">$/ha semb.</th><th class="num">U$S/ha semb.</th>
+                            <th class="num" title="Precio actual del ítem en el almacén">Precio almacén</th>
+                            <th class="num">Stock almacén</th>
                         </tr>
                     </thead>
                     <tbody id="tablaCostosBody"></tbody>
@@ -183,15 +198,15 @@
                         <div class="hint" id="estSub"></div>
                     </div>
                 </div>
-                <div class="table-responsive" style="max-height:520px;">
-                    <table class="table table-sm mb-0">
-                        <thead class="table-dark" style="position:sticky;top:0;">
+                <div class="scroll-costos">
+                    <table class="table mb-0 tabla-costos" style="min-width:1500px;">
+                        <thead class="table-dark" style="position:sticky;top:0;z-index:2;">
                             <tr>
-                                <th>Producto</th><th>Laboreo</th><th>Lote</th>
-                                <th class="text-end">Has</th><th class="text-end">Dosis/ha</th><th class="text-end">Und. total</th>
-                                <th class="text-end">Precio prom.</th><th class="text-end">Costo $</th><th class="text-end">Costo U$S</th><th class="text-end">T/C</th>
-                                <th class="text-end" title="Superficie del lote cargada en el alta del campo">Has semb.</th>
-                                <th class="text-end">$/ha semb.</th><th class="text-end">U$S/ha semb.</th>
+                                <th class="col-texto">Producto</th><th>Laboreo</th><th class="col-lote">Lote</th>
+                                <th class="num">Has</th><th class="num">Dosis/ha</th><th class="num">Und. total</th>
+                                <th class="num">Precio prom.</th><th class="num">Costo $</th><th class="num">Costo U$S</th><th class="num">T/C</th>
+                                <th class="num" title="Hectáreas sembradas de ese cultivo en el lote, según la siembra cargada en la orden de trabajo">Has semb.</th>
+                                <th class="num">$/ha semb.</th><th class="num">U$S/ha semb.</th>
                             </tr>
                         </thead>
                         <tbody id="tablaEstructuraBody"></tbody>
@@ -674,10 +689,7 @@ function pintarDetalle(data) {
     const filas = data.filas || [];
     const estado = document.getElementById('costoEstado');
     const extra = data.total_filas > filas.length ? ' Mostrando ' + filas.length + ' de ' + data.total_filas + '. Afiná cultivo o lote.' : '';
-    const porHa = data.has_sembradas
-        ? ' Has sembradas ' + moneyAr(data.has_sembradas) + ' · $/ha ' + moneyAr(data.ars_por_ha) + ' · U$S/ha ' + moneyAr(data.usd_por_ha) + '.'
-        : '';
-    estado.innerText = data.total_filas + ' líneas. Costo $ ' + moneyAr(data.costo_ars) + ' · U$S ' + moneyAr(data.costo_usd) + '.' + porHa + extra + avisoSinSuperficie(data);
+    estado.innerText = data.total_filas + ' líneas. Costo ' + ars(data.costo_ars) + ' · ' + usd(data.costo_usd) + '.' + resumenSiembra(data) + extra + avisoSinSuperficie(data);
     const tb = document.getElementById('tablaCostosBody');
     if (!filas.length) {
         tb.innerHTML = '<tr><td colspan="15" class="text-center text-muted py-4">No hay costos con ese filtro.</td></tr>';
@@ -685,39 +697,59 @@ function pintarDetalle(data) {
     }
     tb.innerHTML = filas.map(r => {
         const que = escHtml(r.producto || r.laboreo || '');
-        const precioAlm = r.item_id ? '$ ' + moneyAr(r.costo_almacen) : '';
+        const precioAlm = r.item_id ? ars(r.costo_almacen) : '';
         const stockAlm = r.item_id && r.stock_cantidad != null ? Number(r.stock_cantidad).toLocaleString('es-AR') : '';
         return `<tr>
-            <td class="font-mono">${fechaCorta(r.fecha_aplicacion || r.fecha_orden)}</td>
-            <td>${escHtml(r.lote)}</td>
+            <td class="font-mono text-nowrap">${fechaCorta(r.fecha_aplicacion || r.fecha_orden)}</td>
+            <td>${celdaLote(r)}</td>
             <td>${escHtml(r.cultivo)}</td>
             <td>${que}${r.producto && r.laboreo ? ' <span class="hint">' + escHtml(r.laboreo) + '</span>' : ''}</td>
-            <td class="text-end font-mono">${moneyAr(r.cantidad_has)}</td>
-            <td class="text-end font-mono">${Number(r.dosis_ha || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}</td>
-            <td class="text-end font-mono">${Number(r.cantidad_total || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>
-            <td class="text-end font-mono">${moneyAr(r.precio)}</td>
-            <td class="text-end font-mono">${moneyAr(r.costo_ars)}</td>
-            <td class="text-end font-mono">${moneyAr(r.costo_usd)}</td>
+            <td class="num">${moneyAr(r.cantidad_has)}</td>
+            <td class="num">${Number(r.dosis_ha || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}</td>
+            <td class="num">${Number(r.cantidad_total || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>
+            <td class="num">${(r.moneda_costo || '') === 'USD' ? usd(r.precio) : ars(r.precio)}</td>
+            <td class="num">${ars(r.costo_ars)}</td>
+            <td class="num">${usd(r.costo_usd)}</td>
             ${celdasPorHa(r)}
-            <td class="text-end font-mono small">${precioAlm}</td>
-            <td class="text-end font-mono small">${stockAlm}</td>
+            <td class="num small">${precioAlm}</td>
+            <td class="num small">${stockAlm}</td>
         </tr>`;
     }).join('');
 }
 
+function ars(n) { return '$ ' + moneyAr(n); }
+function usd(n) { return 'U$S ' + moneyAr(n); }
+
+function celdaLote(r) {
+    const ha = r.has_lote != null
+        ? `<span class="ha-lote" title="Superficie del lote en el alta del campo">${moneyAr(r.has_lote)} ha</span>`
+        : '';
+    return escHtml(r.lote) + ha;
+}
+
 function celdasPorHa(r) {
     if (r.has_sembradas == null) {
-        return '<td class="text-end text-muted small" colspan="3" title="Este lote no coincide con los lotes del alta del campo">sin superficie</td>';
+        return '<td class="sin-siembra" colspan="3" title="Todavía no hay una siembra cargada para este lote y cultivo">sin datos de siembra</td>';
     }
-    return `<td class="text-end font-mono">${moneyAr(r.has_sembradas)}</td>
-            <td class="text-end font-mono">${moneyAr(r.costo_ars_ha)}</td>
-            <td class="text-end font-mono">${moneyAr(r.costo_usd_ha)}</td>`;
+    return `<td class="num">${moneyAr(r.has_sembradas)}</td>
+            <td class="num">${ars(r.costo_ars_ha)}</td>
+            <td class="num">${usd(r.costo_usd_ha)}</td>`;
+}
+
+function resumenSiembra(t) {
+    const lotes = t.has_lotes ? ' Sup. de los lotes (alta del campo) ' + moneyAr(t.has_lotes) + ' ha.' : '';
+    if (!t.has_sembradas) return lotes + ' Has sembradas: sin datos de siembra todavía.';
+    return lotes + ' Has sembradas ' + moneyAr(t.has_sembradas) + ' · ' + ars(t.ars_por_ha) + '/ha · ' + usd(t.usd_por_ha) + '/ha.';
 }
 
 function avisoSinSuperficie(data) {
+    let txt = '';
+    const lista = (s) => s.slice(0, 6).join(', ') + (s.length > 6 ? ' y ' + (s.length - 6) + ' más' : '');
+    const sinSiembra = data.lotes_sin_siembra || [];
+    if (sinSiembra.length) txt += ' Sin datos de siembra (no entran en el costo por ha): ' + lista(sinSiembra) + '.';
     const s = data.lotes_sin_superficie || [];
-    if (!s.length) return '';
-    return ' Sin superficie en el alta del campo: ' + s.slice(0, 6).join(', ') + (s.length > 6 ? ' y ' + (s.length - 6) + ' más' : '') + '.';
+    if (s.length) txt += ' Sin superficie en el alta del campo: ' + lista(s) + '.';
+    return txt;
 }
 
 async function exportarCostosExcel() {
@@ -818,32 +850,34 @@ async function corregirCampania(i, accion) {
 function pintarEstructura(data, f) {
     const t = data.totales || {};
     document.getElementById('estTitulo').innerText = (f.campo || '') + (f.cultivo ? ' · ' + f.cultivo : '') + (f.lote ? ' · lote ' + f.lote : '');
-    const origenHas = t.has_sembradas ? 'Has sembradas (alta del campo) ' : 'Has siembra (órdenes) ';
-    document.getElementById('estSub').innerText = 'Campaña ' + (data.campania || f.campania) + ' · ' + origenHas + moneyAr(t.has_siembra)
-        + ' · $/ha ' + moneyAr(t.ars_por_ha) + ' · U$S/ha ' + moneyAr(t.usd_por_ha);
+    document.getElementById('estSub').innerText = 'Campaña ' + (data.campania || f.campania) + '.' + resumenSiembra(t);
     document.getElementById('costoEstado').innerText = (data.lineas || []).length + ' renglones en la estructura.' + avisoSinSuperficie(data);
     const tb = document.getElementById('tablaEstructuraBody');
+    const verCultivo = !f.cultivo;
     tb.innerHTML = (data.lineas || []).map(r => `<tr>
         <td>${escHtml(r.producto)}</td>
         <td>${escHtml(r.laboreo)}</td>
-        <td>${escHtml(r.lote)}</td>
-        <td class="text-end font-mono">${moneyAr(r.has)}</td>
-        <td class="text-end font-mono">${Number(r.dosis_ha || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}</td>
-        <td class="text-end font-mono">${Number(r.und_total || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>
-        <td class="text-end font-mono">${moneyAr(r.precio_prom)}</td>
-        <td class="text-end font-mono">${moneyAr(r.costo_ars)}</td>
-        <td class="text-end font-mono">${moneyAr(r.costo_usd)}</td>
-        <td class="text-end font-mono">${moneyAr(r.tc)}</td>
+        <td>${celdaLote(r)}${verCultivo && r.cultivo ? '<div class="hint">' + escHtml(r.cultivo) + '</div>' : ''}</td>
+        <td class="num">${moneyAr(r.has)}</td>
+        <td class="num">${Number(r.dosis_ha || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}</td>
+        <td class="num">${Number(r.und_total || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>
+        <td class="num">${ars(r.precio_prom)}</td>
+        <td class="num">${ars(r.costo_ars)}</td>
+        <td class="num">${usd(r.costo_usd)}</td>
+        <td class="num">${moneyAr(r.tc)}</td>
         ${celdasPorHa(r)}
     </tr>`).join('') || '<tr><td colspan="13" class="text-center text-muted py-4">Sin costos para armar la estructura.</td></tr>';
+    const pieHa = t.has_sembradas
+        ? `<th class="num">${moneyAr(t.has_sembradas)}</th>
+           <th class="num">${ars(t.ars_por_ha)}</th>
+           <th class="num">${usd(t.usd_por_ha)}</th>`
+        : '<th colspan="3" class="text-center fst-italic fw-normal">sin datos de siembra</th>';
     document.getElementById('tablaEstructuraFoot').innerHTML = `<tr>
         <th colspan="7">Suma total</th>
-        <th class="text-end font-mono">$ ${moneyAr(t.costo_ars)}</th>
-        <th class="text-end font-mono">U$S ${moneyAr(t.costo_usd)}</th>
-        <th class="text-end font-mono">${moneyAr(t.tc)}</th>
-        <th class="text-end font-mono">${moneyAr(t.has_siembra)}</th>
-        <th class="text-end font-mono">$ ${moneyAr(t.ars_por_ha)}</th>
-        <th class="text-end font-mono">U$S ${moneyAr(t.usd_por_ha)}</th>
+        <th class="num">${ars(t.costo_ars)}</th>
+        <th class="num">${usd(t.costo_usd)}</th>
+        <th class="num">${moneyAr(t.tc)}</th>
+        ${pieHa}
     </tr>`;
 }
 

@@ -2530,6 +2530,8 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         cols = [r[1] for r in cur.execute("PRAGMA table_info(margenes_access)").fetchall()]
         if "almacen_item_id" not in cols:
             cur.execute("ALTER TABLE margenes_access ADD COLUMN almacen_item_id INTEGER;")
+        if "moneda_costo" not in cols:
+            cur.execute("ALTER TABLE margenes_access ADD COLUMN moneda_costo TEXT;")
         cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_margenes_filtro
@@ -2665,8 +2667,84 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                 return None, []
             return round(sum(s for _, s in elegidos), 2), [lid for lid, _ in elegidos]
 
+    def _cultivo_coincide(a: frozenset, b: frozenset) -> bool:
+        """'Vicia' coincide con 'Vicia + Centeno'; 'Soja 1ª' no coincide con 'Soja 2ª'."""
+        return bool(a and b and (a == b or a <= b or b <= a))
+
+    class _SiembraLotes:
+        """Hectáreas realmente sembradas de cada lote y cultivo, según las líneas de siembra de las órdenes
+        (último laboreo de la implantación). Un lote repartido entre dos cultivos da las has de cada uno."""
+
+        def __init__(self, cur, eid: int, campania: Optional[str], campo: Optional[str]):
+            where, params = _where_costos(eid, campania, campo, None, None)
+            self.siembras: dict = {}
+            for r in cur.execute(
+                f"""
+                SELECT UPPER(TRIM(m.campo)) AS campo, UPPER(TRIM(m.lote)) AS lote, m.cultivo, m.nro_orden,
+                       COALESCE(m.cantidad_has, 0) AS has
+                FROM margenes_access m {where}
+                  AND (UPPER(TRIM(m.laboreo))='SIEMBRA' OR UPPER(TRIM(m.labor_cultural))='SIEMBRA')
+                  AND COALESCE(m.cantidad_has, 0) > 0;
+                """,
+                params,
+            ).fetchall():
+                self.siembras.setdefault((r["campo"], r["lote"]), []).append(
+                    (_tokens_nombre(r["cultivo"]), r["nro_orden"], float(r["has"]))
+                )
+            self.ordenes: dict = {}
+            if self.siembras:
+                for r in cur.execute(
+                    f"""
+                    SELECT DISTINCT UPPER(TRIM(m.campo)) AS campo, UPPER(TRIM(m.lote)) AS lote, m.nro_orden, m.cultivo
+                    FROM margenes_access m {where} AND m.nro_orden IS NOT NULL;
+                    """,
+                    params,
+                ).fetchall():
+                    self.ordenes.setdefault((r["campo"], r["lote"], r["nro_orden"]), set()).add(_tokens_nombre(r["cultivo"]))
+
+        def medir(self, campo, lote, cultivo, tope=None):
+            """(has sembradas, siembras usadas) o (None, None) si todavía no hay siembra cargada para ese lote y cultivo."""
+            clave = ((campo or "").strip().upper(), (lote or "").strip().upper())
+            lista = self.siembras.get(clave)
+            if not lista:
+                return None, None
+            ct = _tokens_nombre(cultivo)
+            elegidas = [i for i, x in enumerate(lista) if _cultivo_coincide(x[0], ct)]
+            if not elegidas:
+                # La siembra puede venir con otro nombre de cultivo en la misma orden que los insumos.
+                elegidas = [i for i, x in enumerate(lista) if ct and ct in self.ordenes.get(clave + (x[1],), set())]
+            if not elegidas:
+                return None, None
+            total = sum(lista[i][2] for i in elegidas)
+            if tope:
+                total = min(total, float(tope))
+            return round(total, 2), (clave, frozenset(elegidas))
+
+        def has(self, campo, lote, cultivo, tope=None):
+            return self.medir(campo, lote, cultivo, tope)[0]
+
     def _por_ha(monto, has_val):
         return round(float(monto or 0) / has_val, 2) if has_val else None
+
+    def _totales_siembra(siembra, sup, grupos):
+        """grupos: {(campo, lote, cultivo): [costo $, costo U$S]} → has sembradas, costos con siembra, lotes sin siembra.
+        Cada siembra se suma una vez aunque la usen dos nombres de cultivo ('Vicia' y 'Vicia + Centeno')."""
+        has_total = ars_ok = usd_ok = 0.0
+        sin_siembra = []
+        contadas = set()
+        for (campo_g, lote_g, cultivo_g), (ars, usd) in grupos.items():
+            has_lote, _ = sup.resolver(campo_g, lote_g)
+            has_s, usadas = siembra.medir(campo_g, lote_g, cultivo_g, has_lote)
+            if has_s is None:
+                if (lote_g or "").strip():
+                    sin_siembra.append(f"{campo_g} / {lote_g}" + (f" · {cultivo_g}" if cultivo_g else ""))
+                continue
+            if usadas not in contadas:
+                contadas.add(usadas)
+                has_total += has_s
+            ars_ok += ars
+            usd_ok += usd
+        return round(has_total, 2), round(ars_ok, 2), round(usd_ok, 2), sorted(set(sin_siembra))
 
     def _datos_costos_detalle(cur, eid, campania, campo, cultivo, lote, limit):
         where, params = _where_costos(eid, campania, campo, cultivo, lote)
@@ -2677,7 +2755,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             SELECT m.id, m.id_access, m.campania_codigo, m.campo, m.lote, m.cultivo,
                    m.fecha_orden, m.fecha_aplicacion, m.cantidad_has, m.laboreo, m.producto,
                    m.dosis_ha, m.cantidad_total, m.precio, m.tc, m.costo_ars, m.costo_usd,
-                   m.unidad, m.contratista, m.almacen_item_id,
+                   m.unidad, m.contratista, m.almacen_item_id, m.moneda_costo,
                    i.id AS item_id, i.costo_promedio_neto AS costo_almacen, i.stock_cantidad, i.unidad AS unidad_almacen
             FROM margenes_access m
             LEFT JOIN almacen_items i
@@ -2696,28 +2774,36 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         )
         rows = [dict(r) for r in cur.fetchall()]
         sup = _SuperficiesLotes(cur, eid, campania)
+        siembra = _SiembraLotes(cur, eid, campania, campo)
         for r in rows:
-            has_s, _ = sup.resolver(r["campo"], r["lote"])
+            has_lote, _ = sup.resolver(r["campo"], r["lote"])
+            has_s = siembra.has(r["campo"], r["lote"], r["cultivo"], has_lote)
+            r["has_lote"] = has_lote
             r["has_sembradas"] = has_s
             r["costo_ars_ha"] = _por_ha(r["costo_ars"], has_s)
             r["costo_usd_ha"] = _por_ha(r["costo_usd"], has_s)
         cur.execute(
             f"""
-            SELECT TRIM(m.campo) AS campo, TRIM(m.lote) AS lote,
+            SELECT TRIM(m.campo) AS campo, TRIM(m.lote) AS lote, TRIM(COALESCE(m.cultivo,'')) AS cultivo,
                    COALESCE(SUM(m.costo_ars), 0) AS costo_ars, COALESCE(SUM(m.costo_usd), 0) AS costo_usd
-            FROM margenes_access m {where} GROUP BY 1, 2;
+            FROM margenes_access m {where} GROUP BY 1, 2, 3;
             """,
             params,
         )
-        has_total, sin_sup, ars_ok, usd_ok = _sumar_superficies(sup, cur.fetchall())
+        pares = cur.fetchall()
+        grupos = {(p["campo"], p["lote"], p["cultivo"]): [float(p["costo_ars"] or 0), float(p["costo_usd"] or 0)] for p in pares}
+        has_total, ars_ok, usd_ok, sin_siembra = _totales_siembra(siembra, sup, grupos)
+        has_lotes, sin_sup, _a, _u = _sumar_superficies(sup, pares)
         return {
             "total_filas": tot["n"],
             "costo_ars": tot["ars"],
             "costo_usd": tot["usd"],
+            "has_lotes": has_lotes,
             "has_sembradas": has_total,
             "ars_por_ha": _por_ha(ars_ok, has_total),
             "usd_por_ha": _por_ha(usd_ok, has_total),
             "lotes_sin_superficie": sin_sup,
+            "lotes_sin_siembra": sin_siembra,
             "filas": rows,
         }
 
@@ -2748,6 +2834,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             f"""
             SELECT
                 TRIM(lote) AS lote,
+                TRIM(COALESCE(cultivo,'')) AS cultivo,
                 CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN TRIM(producto) ELSE '' END AS producto,
                 CASE WHEN TRIM(COALESCE(producto,'')) != '' THEN '' ELSE TRIM(COALESCE(laboreo,'')) END AS laboreo,
                 MAX(cantidad_has) AS has,
@@ -2758,13 +2845,14 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                 COUNT(*) AS lineas
             FROM margenes_access m
             {where}
-            GROUP BY 1, 2, 3
-            ORDER BY lote, CASE WHEN producto = '' THEN 1 ELSE 0 END, producto, laboreo;
+            GROUP BY 1, 2, 3, 4
+            ORDER BY lote, cultivo, CASE WHEN producto = '' THEN 1 ELSE 0 END, producto, laboreo;
             """,
             params,
         )
         agrupadas = cur.fetchall()
         sup = _SuperficiesLotes(cur, eid, campania)
+        siembra = _SiembraLotes(cur, eid, campania, campo)
         lineas = []
         for r in agrupadas:
             d = dict(r)
@@ -2782,46 +2870,39 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             d["costo_ars"] = round(ars, 2)
             d["costo_usd"] = round(usd, 2)
             d["dosis_ha"] = round(float(d["dosis_ha"] or 0), 4)
-            has_s, _ = sup.resolver(campo, d["lote"])
+            has_lote, _ = sup.resolver(campo, d["lote"])
+            has_s = siembra.has(campo, d["lote"], d["cultivo"], has_lote)
+            d["has_lote"] = has_lote
             d["has_sembradas"] = has_s
             d["costo_ars_ha"] = _por_ha(ars, has_s)
             d["costo_usd_ha"] = _por_ha(usd, has_s)
             lineas.append(d)
-        cur.execute(
-            f"""
-            SELECT COALESCE(SUM(has), 0) AS has_siembra FROM (
-                SELECT MAX(cantidad_has) AS has
-                FROM margenes_access m
-                {where} AND UPPER(TRIM(laboreo))='SIEMBRA'
-                GROUP BY TRIM(lote)
-            );
-            """,
-            params,
-        )
-        has_siembra_ot = float(cur.fetchone()["has_siembra"] or 0)
-        has_total, sin_sup, ars_ok, usd_ok = _sumar_superficies(
+        grupos: dict = {}
+        for x in lineas:
+            g = grupos.setdefault((campo, x["lote"], x["cultivo"]), [0.0, 0.0])
+            g[0] += x["costo_ars"]
+            g[1] += x["costo_usd"]
+        has_total, ars_ok, usd_ok, sin_siembra = _totales_siembra(siembra, sup, grupos)
+        has_lotes, sin_sup, _a, _u = _sumar_superficies(
             sup, [{"campo": campo, "lote": x["lote"], "costo_ars": x["costo_ars"], "costo_usd": x["costo_usd"]} for x in lineas]
         )
         ars = round(sum(x["costo_ars"] for x in lineas), 2)
         usd = round(sum(x["costo_usd"] for x in lineas), 2)
-        if not has_total:
-            ars_ok, usd_ok = ars, usd
-        has_ref = has_total or has_siembra_ot
         return {
             "campania": normalizar_codigo_campania(campania) if campania != "__sin__" else "",
             "campo": campo,
             "cultivo": cultivo or "",
             "lineas": lineas,
             "lotes_sin_superficie": sin_sup,
+            "lotes_sin_siembra": sin_siembra,
             "totales": {
                 "costo_ars": ars,
                 "costo_usd": usd,
                 "tc": round(ars / usd, 2) if usd else 0,
+                "has_lotes": has_lotes,
                 "has_sembradas": has_total,
-                "has_siembra": round(has_ref, 2),
-                "has_siembra_ot": round(has_siembra_ot, 2),
-                "ars_por_ha": _por_ha(ars_ok, has_ref) or 0,
-                "usd_por_ha": _por_ha(usd_ok, has_ref) or 0,
+                "ars_por_ha": _por_ha(ars_ok, has_total),
+                "usd_por_ha": _por_ha(usd_ok, has_total),
             },
         }
 
@@ -2833,13 +2914,16 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
 
         negrita = Font(bold=True)
         fondo = PatternFill("solid", fgColor="E2E8F0")
-        money = "#,##0.00"
+        NUM = "#,##0.00"
+        ARS = '"$" #,##0.00'
+        USD = '"U$S" #,##0.00'
+        SIN_SIEMBRA = "sin datos de siembra"
         filtro = " · ".join(x for x in [
             f"Campaña {campania}" if campania and campania != "__sin__" else "",
             campo or "", cultivo or "", f"lote {lote}" if lote else "",
         ] if x)
 
-        def hoja(ws, titulo, sub, cols, filas, monedas_desde, anchos):
+        def hoja(ws, titulo, sub, cols, filas, formatos, anchos):
             ws["A1"] = titulo
             ws["A1"].font = Font(bold=True, size=13)
             ws["A2"] = sub
@@ -2851,56 +2935,75 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             for i, valores in enumerate(filas, 5):
                 for col, v in enumerate(valores, 1):
                     c = ws.cell(row=i, column=col, value=v)
-                    if col >= monedas_desde and isinstance(v, (int, float)):
-                        c.number_format = money
+                    if col in formatos and isinstance(v, (int, float)):
+                        c.number_format = formatos[col]
             for i, w in enumerate(anchos, 1):
                 ws.column_dimensions[get_column_letter(i)].width = w
             ws.freeze_panes = "A5"
             return 5 + len(filas)
 
+        def total(ws, fila, valores):
+            for col, v, fmt in valores:
+                c = ws.cell(row=fila, column=col, value=v)
+                c.font = negrita
+                if isinstance(v, (int, float)):
+                    c.number_format = fmt
+
+        def sembradas(v):
+            return SIN_SIEMBRA if v is None else v
+
         wb = Workbook()
         det = _datos_costos_detalle(cur, eid, campania, campo, cultivo, lote, 20000)
         ws = wb.active
         ws.title = "Detalle"
-        cols = ["Fecha", "Campo", "Lote", "Cultivo", "Producto", "Laboreo", "Has", "Dosis/ha", "Cant.",
+        cols = ["Fecha", "Campo", "Lote", "Sup. lote (ha)", "Cultivo", "Producto", "Laboreo", "Has", "Dosis/ha", "Cant.",
                 "Precio", "Costo $", "Costo U$S", "Has sembradas", "$/ha sembrada", "U$S/ha sembrada",
                 "Precio almacén", "Stock almacén"]
         filas = [[
-            r.get("fecha_aplicacion") or r.get("fecha_orden") or "", r["campo"], r["lote"], r["cultivo"],
+            r.get("fecha_aplicacion") or r.get("fecha_orden") or "", r["campo"], r["lote"], r.get("has_lote"), r["cultivo"],
             r["producto"] or "", r["laboreo"] or "", r["cantidad_has"], r["dosis_ha"], r["cantidad_total"],
-            r["precio"], r["costo_ars"], r["costo_usd"], r["has_sembradas"], r["costo_ars_ha"], r["costo_usd_ha"],
+            r["precio"], r["costo_ars"], r["costo_usd"], sembradas(r["has_sembradas"]), r["costo_ars_ha"], r["costo_usd_ha"],
             r["costo_almacen"] if r.get("item_id") else None, r["stock_cantidad"] if r.get("item_id") else None,
         ] for r in det["filas"]]
+        formatos = {4: NUM, 8: NUM, 9: NUM, 10: NUM, 12: ARS, 13: USD, 14: NUM, 15: ARS, 16: USD, 17: ARS, 18: NUM}
+        precio_usd = {i for i, r in enumerate(det["filas"], 5) if (r.get("moneda_costo") or "") == "USD"}
         fin = hoja(ws, f"Costos - detalle | {filtro}",
-                   f"{det['total_filas']} líneas · Has sembradas (alta del campo) {det['has_sembradas'] or 0}",
-                   cols, filas, 7, [11, 16, 26, 12, 30, 22, 8, 9, 10, 13, 15, 13, 11, 13, 13, 14, 11])
+                   f"{det['total_filas']} líneas · Has sembradas (según las siembras cargadas) {det['has_sembradas'] or 0}",
+                   cols, filas, formatos, [11, 16, 26, 10, 12, 30, 22, 8, 9, 10, 14, 16, 14, 12, 15, 15, 14, 11])
+        for i in range(5, fin):
+            c = ws.cell(row=i, column=11)
+            if isinstance(c.value, (int, float)):
+                c.number_format = USD if i in precio_usd else ARS
         ws.cell(row=fin, column=1, value="Total").font = negrita
-        for col, v in ((11, det["costo_ars"]), (12, det["costo_usd"]), (13, det["has_sembradas"]),
-                       (14, det["ars_por_ha"]), (15, det["usd_por_ha"])):
-            c = ws.cell(row=fin, column=col, value=v)
-            c.font = negrita
-            c.number_format = money
+        total(ws, fin, [(12, det["costo_ars"], ARS), (13, det["costo_usd"], USD), (14, det["has_sembradas"], NUM),
+                        (15, det["ars_por_ha"], ARS), (16, det["usd_por_ha"], USD)])
+        nota = fin + 2
+        if det["lotes_sin_siembra"]:
+            ws.cell(row=nota, column=1, value="Sin datos de siembra (no entran en el costo por ha): " + ", ".join(det["lotes_sin_siembra"]))
+            nota += 1
         if det["lotes_sin_superficie"]:
-            ws.cell(row=fin + 2, column=1, value="Lotes sin superficie en el alta del campo: " + ", ".join(det["lotes_sin_superficie"]))
+            ws.cell(row=nota, column=1, value="Lotes sin superficie en el alta del campo: " + ", ".join(det["lotes_sin_superficie"]))
 
         if campania and campo:
             est = _datos_costos_estructura(cur, eid, campania, campo, cultivo, lote)
             ws2 = wb.create_sheet("Estructura")
             t = est["totales"]
-            cols2 = ["Producto", "Laboreo", "Lote", "Has", "Dosis/ha", "Und. total", "Precio prom.",
+            cols2 = ["Producto", "Laboreo", "Lote", "Sup. lote (ha)", "Cultivo", "Has", "Dosis/ha", "Und. total", "Precio prom.",
                      "Costo $", "Costo U$S", "T/C", "Has sembradas", "$/ha sembrada", "U$S/ha sembrada"]
-            filas2 = [[x["producto"], x["laboreo"], x["lote"], x["has"], x["dosis_ha"], x["und_total"],
-                       x["precio_prom"], x["costo_ars"], x["costo_usd"], x["tc"], x["has_sembradas"],
-                       x["costo_ars_ha"], x["costo_usd_ha"]] for x in est["lineas"]]
+            filas2 = [[x["producto"], x["laboreo"], x["lote"], x.get("has_lote"), x["cultivo"], x["has"], x["dosis_ha"],
+                       x["und_total"], x["precio_prom"], x["costo_ars"], x["costo_usd"], x["tc"],
+                       sembradas(x["has_sembradas"]), x["costo_ars_ha"], x["costo_usd_ha"]] for x in est["lineas"]]
+            formatos2 = {4: NUM, 6: NUM, 7: NUM, 8: NUM, 9: ARS, 10: ARS, 11: USD, 12: NUM, 13: NUM, 14: ARS, 15: USD}
             fin2 = hoja(ws2, f"Estructura de costos | {filtro}",
-                        f"Has sembradas {t['has_siembra']} · $/ha {t['ars_por_ha']} · U$S/ha {t['usd_por_ha']}",
-                        cols2, filas2, 4, [30, 22, 26, 8, 9, 11, 13, 15, 13, 9, 11, 13, 13])
+                        f"Sup. lotes (alta) {t['has_lotes'] or 0} ha · Has sembradas {t['has_sembradas'] or 0}"
+                        f" · $/ha {t['ars_por_ha'] or 0} · U$S/ha {t['usd_por_ha'] or 0}",
+                        cols2, filas2, formatos2, [30, 22, 26, 10, 14, 8, 9, 11, 14, 16, 14, 9, 12, 15, 15])
             ws2.cell(row=fin2, column=1, value="Suma total").font = negrita
-            for col, v in ((8, t["costo_ars"]), (9, t["costo_usd"]), (10, t["tc"]), (11, t["has_siembra"]),
-                           (12, t["ars_por_ha"]), (13, t["usd_por_ha"])):
-                c = ws2.cell(row=fin2, column=col, value=v)
-                c.font = negrita
-                c.number_format = money
+            total(ws2, fin2, [(10, t["costo_ars"], ARS), (11, t["costo_usd"], USD), (12, t["tc"], NUM),
+                              (13, t["has_sembradas"], NUM), (14, t["ars_por_ha"], ARS), (15, t["usd_por_ha"], USD)])
+            if est["lotes_sin_siembra"]:
+                ws2.cell(row=fin2 + 2, column=1,
+                         value="Sin datos de siembra (no entran en el costo por ha): " + ", ".join(est["lotes_sin_siembra"]))
 
         buf = BytesIO()
         wb.save(buf)
