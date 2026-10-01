@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from agro_almacen import init_almacen_schema
+from agro_almacen import asegurar_schema_unificacion, init_almacen_schema
 from agro_campania import (
     asegurar_campania_activa,
     init_agro_schema,
@@ -983,6 +983,7 @@ def importar_productos(cur, xl: pd.ExcelFile, empresa_id: int) -> int:
     df = _read(xl, sh)
     if df.empty:
         return 0
+    asegurar_schema_unificacion(cur)
     n = 0
     for _, row in df.iterrows():
         nombre = _safe_str(row.get("NOMBRE PRODUCTO"))
@@ -1031,7 +1032,8 @@ def importar_productos(cur, xl: pd.ExcelFile, empresa_id: int) -> int:
                     """
                     UPDATE almacen_items SET
                         nombre=?, presentacion=?, detalle=?,
-                        codigo=COALESCE(codigo, ?), activo=1
+                        codigo=COALESCE(codigo, ?),
+                        activo=CASE WHEN unificado_en IS NULL THEN 1 ELSE activo END
                     WHERE id=?;
                     """,
                     (nombre, presentacion, detalle, codigo, int(existing["id"])),
@@ -1042,7 +1044,8 @@ def importar_productos(cur, xl: pd.ExcelFile, empresa_id: int) -> int:
                     UPDATE almacen_items SET
                         nombre=?, categoria=?, categoria_codigo=COALESCE(?, categoria_codigo),
                         unidad=?, presentacion=?, detalle=?,
-                        codigo=COALESCE(codigo, ?), activo=1, tipo=?
+                        codigo=COALESCE(codigo, ?), tipo=?,
+                        activo=CASE WHEN unificado_en IS NULL THEN 1 ELSE activo END
                     WHERE id=?;
                     """,
                     (
@@ -1091,20 +1094,35 @@ def importar_stock(cur, xl: pd.ExcelFile, empresa_id: int) -> Dict[str, int]:
         cur.execute("ALTER TABLE almacen_items ADD COLUMN clasificacion_manual INTEGER DEFAULT 0;")
     if "categoria_codigo" not in cols:
         cur.execute("ALTER TABLE almacen_items ADD COLUMN categoria_codigo TEXT;")
+    asegurar_schema_unificacion(cur)
 
     cur.execute(
         """
-        SELECT id, nombre, id_access, COALESCE(clasificacion_manual,0) AS clasificacion_manual
-        FROM almacen_items WHERE empresa_id=?;
+        SELECT id, nombre, id_access, COALESCE(clasificacion_manual,0) AS clasificacion_manual, unificado_en
+        FROM almacen_items WHERE empresa_id=?
+        ORDER BY CASE WHEN unificado_en IS NULL THEN 1 ELSE 0 END, id;
         """,
         (empresa_id,),
     )
+    filas_items = cur.fetchall()
+    unificado_en = {int(r["id"]): r["unificado_en"] for r in filas_items}
+
+    def _principal(item_id: int) -> int:
+        for _ in range(10):
+            destino = unificado_en.get(item_id)
+            if not destino:
+                break
+            item_id = int(destino)
+        return item_id
+
     by_name: Dict[str, int] = {}
     manual_ids = set()
-    for r in cur.fetchall():
-        by_name[_safe_str(r["nombre"]).upper()] = int(r["id"])
+    for r in filas_items:
+        by_name[_safe_str(r["nombre"]).upper()] = _principal(int(r["id"]))
         if int(r["clasificacion_manual"] or 0):
             manual_ids.add(int(r["id"]))
+    for a in cur.execute("SELECT item_id, nombre FROM almacen_alias WHERE empresa_id=?;", (empresa_id,)).fetchall():
+        by_name.setdefault(_safe_str(a["nombre"]).upper(), _principal(int(a["item_id"])))
 
     # Orden cronológico para saldo corrido
     rows = []
@@ -1305,14 +1323,24 @@ def importar_margenes(cur, xl: pd.ExcelFile, empresa_id: int) -> int:
     df = _read(xl, sh)
     if df.empty:
         return 0
+    asegurar_schema_unificacion(cur)
+    eliminadas = set()
+    if cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='margenes_access_eliminadas';").fetchone():
+        eliminadas = {
+            int(r[0]) for r in cur.execute(
+                "SELECT id_access FROM margenes_access_eliminadas WHERE empresa_id=? AND id_access IS NOT NULL;",
+                (empresa_id,),
+            ).fetchall()
+        }
     n = 0
     batch: List[tuple] = []
     for _, row in df.iterrows():
         ida = int(_safe_float(row.get("Id")))
-        if not ida:
+        if not ida or ida in eliminadas:
             continue
         camp = normalizar_codigo_campania(_safe_str(row.get("Campaña")))
-        if camp:
+        m_camp = re.match(r"^(\d{2})-(\d{2})$", camp or "")
+        if m_camp and int(m_camp.group(2)) == (int(m_camp.group(1)) + 1) % 100:
             asegurar_campania_activa(cur, empresa_id, camp)
         batch.append(
             (
@@ -1357,17 +1385,20 @@ def importar_margenes(cur, xl: pd.ExcelFile, empresa_id: int) -> int:
                     fecha_compra, nro_remito, proveedor, cantidad_ingresada, unidad, empresa_nombre
                 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(empresa_id, id_access) DO UPDATE SET
-                    campania_codigo=excluded.campania_codigo,
+                    campania_codigo=CASE WHEN margenes_access.campania_original IS NOT NULL
+                        THEN margenes_access.campania_codigo ELSE excluded.campania_codigo END,
                     cultivo=excluded.cultivo,
                     nro_orden=excluded.nro_orden,
                     campo=excluded.campo,
                     lote=excluded.lote,
                     cantidad_has=excluded.cantidad_has,
                     fecha_orden=excluded.fecha_orden,
-                    laboreo=excluded.laboreo,
+                    laboreo=CASE WHEN margenes_access.laboreo_original IS NOT NULL
+                        THEN margenes_access.laboreo ELSE excluded.laboreo END,
                     labor_cultural=excluded.labor_cultural,
                     contratista=excluded.contratista,
-                    producto=excluded.producto,
+                    producto=CASE WHEN margenes_access.producto_original IS NOT NULL
+                        THEN margenes_access.producto ELSE excluded.producto END,
                     tipo=excluded.tipo,
                     dosis_ha=excluded.dosis_ha,
                     cantidad_total=excluded.cantidad_total,
@@ -1399,17 +1430,20 @@ def importar_margenes(cur, xl: pd.ExcelFile, empresa_id: int) -> int:
                 fecha_compra, nro_remito, proveedor, cantidad_ingresada, unidad, empresa_nombre
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(empresa_id, id_access) DO UPDATE SET
-                campania_codigo=excluded.campania_codigo,
+                campania_codigo=CASE WHEN margenes_access.campania_original IS NOT NULL
+                    THEN margenes_access.campania_codigo ELSE excluded.campania_codigo END,
                 cultivo=excluded.cultivo,
                 nro_orden=excluded.nro_orden,
                 campo=excluded.campo,
                 lote=excluded.lote,
                 cantidad_has=excluded.cantidad_has,
                 fecha_orden=excluded.fecha_orden,
-                laboreo=excluded.laboreo,
+                laboreo=CASE WHEN margenes_access.laboreo_original IS NOT NULL
+                    THEN margenes_access.laboreo ELSE excluded.laboreo END,
                 labor_cultural=excluded.labor_cultural,
                 contratista=excluded.contratista,
-                producto=excluded.producto,
+                producto=CASE WHEN margenes_access.producto_original IS NOT NULL
+                    THEN margenes_access.producto ELSE excluded.producto END,
                 tipo=excluded.tipo,
                 dosis_ha=excluded.dosis_ha,
                 cantidad_total=excluded.cantidad_total,

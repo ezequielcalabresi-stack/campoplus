@@ -32,6 +32,63 @@
         </div>
     </div>
 
+    <ul class="nav nav-tabs mb-3" id="tabsAlmacen">
+        <li class="nav-item"><button type="button" class="nav-link active fw-bold" data-tab="tabStock" onclick="verTabAlmacen(this)">Stock e ingresos</button></li>
+        <li class="nav-item"><button type="button" class="nav-link fw-bold" data-tab="tabUnificar" onclick="verTabAlmacen(this)">Unificar productos</button></li>
+    </ul>
+
+    <div id="tabUnificar" class="tab-almacen" style="display:none;">
+        <div class="main-card">
+            <h5 class="fw-bold mb-1">Unificar productos</h5>
+            <p class="hint mb-3">Cuando el mismo producto entró con distintos nombres comerciales (ej. <em>2,4 D Etilhexilico 89% x 20 Lts</em> y <em>2,4 D Sigma x 20 Lts</em>),
+                elegí el nombre correcto como <strong>principal</strong> y tildá los demás. Queda un solo stock (suma de todos, con costo promedio ponderado),
+                y se pasan al principal los movimientos, las órdenes de trabajo y las líneas de costo de <strong>todas las campañas</strong>.
+                Los nombres viejos quedan como alias: las próximas facturas que lleguen con ese nombre entran al principal. Se puede deshacer.</p>
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-md-4">
+                    <label class="small fw-bold">Buscar</label>
+                    <input id="uniBuscar" class="form-control form-control-sm" placeholder="Ej: 2,4 D / glifosato" oninput="pintarUnificar()">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Tipo</label>
+                    <select id="uniTipo" class="form-select form-select-sm" onchange="pintarUnificar()">
+                        <option value="producto">Productos</option>
+                        <option value="laboreo">Laboreos</option>
+                    </select>
+                </div>
+                <div class="col-md-6 d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="limpiarSeleccionUnificar()">Limpiar selección</button>
+                    <button type="button" class="btn btn-sm btn-dark fw-bold" onclick="previaUnificar()">Ver qué cambia</button>
+                </div>
+            </div>
+            <div id="uniSeleccion" class="mb-2"></div>
+            <div class="table-responsive" style="max-height:420px;">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-dark" style="position:sticky;top:0;">
+                        <tr>
+                            <th class="text-center" title="Nombre que queda">Principal</th>
+                            <th class="text-center" title="Se unifican en el principal">Unificar</th>
+                            <th>Nombre</th><th>Presentación</th><th>Un.</th>
+                            <th class="text-end">Stock</th><th class="text-end">Costo U$S</th><th class="text-end">Costo $</th>
+                        </tr>
+                    </thead>
+                    <tbody id="uniTabla"><tr><td colspan="8" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+            <div id="uniPrevia" class="mt-3"></div>
+        </div>
+        <div class="main-card">
+            <h6 class="fw-bold">Unificaciones hechas</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light"><tr><th>Fecha</th><th>Usuario</th><th>Producto principal</th><th>Nombres unificados</th><th></th></tr></thead>
+                    <tbody id="uniHistorial"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="tabStock" class="tab-almacen">
     <div class="main-card">
         <h5 class="fw-bold">Ingreso a almacén</h5>
         <div class="row g-2">
@@ -130,6 +187,7 @@
                 <tbody id="tablaStock"><tr><td colspan="12" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
             </table>
         </div>
+    </div>
     </div>
 </div>
 
@@ -440,6 +498,142 @@ async function recalcularStockExcel() {
     if (!res.ok) return alert(d.detail || 'Error al recalcular');
     const s = d.stock || {};
     alert(`OK: ${s.items_con_stock || 0} ítems con stock - ${s.movimientos_actualizados || 0} movs actualizados`);
+    await cargarStock();
+}
+
+function verTabAlmacen(btn) {
+    document.querySelectorAll('.tab-almacen').forEach(el => el.style.display = 'none');
+    document.getElementById(btn.dataset.tab).style.display = 'block';
+    document.querySelectorAll('#tabsAlmacen .nav-link').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (btn.dataset.tab === 'tabUnificar') cargarUnificar();
+}
+
+let uniItems = [];
+let uniPrincipal = null;
+const uniOtros = new Set();
+
+function fmtNum(n, dec) {
+    return Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+async function cargarUnificar() {
+    const res = await fetch('/api/agro/almacen/items?solo_con_stock=false&orden=nombre');
+    uniItems = await res.json().catch(() => []);
+    pintarUnificar();
+    await cargarHistorialUnificar();
+}
+
+function sinAcentos(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function pintarUnificar() {
+    const tipo = document.getElementById('uniTipo').value;
+    const palabras = sinAcentos(document.getElementById('uniBuscar').value).split(/\s+/).filter(Boolean);
+    const filas = uniItems.filter(i => (i.tipo || 'producto') === tipo
+        && (uniPrincipal === i.id || uniOtros.has(i.id) || palabras.every(p => sinAcentos(i.nombre).includes(p))));
+    const tb = document.getElementById('uniTabla');
+    if (!palabras.length && !uniPrincipal && !uniOtros.size) {
+        tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Escribí parte del nombre para buscar los productos a unificar.</td></tr>';
+    } else {
+        tb.innerHTML = filas.slice(0, 200).map(i => `<tr class="${uniPrincipal === i.id ? 'table-success' : (uniOtros.has(i.id) ? 'table-warning' : '')}">
+            <td class="text-center"><input type="radio" name="uniPrincipal" ${uniPrincipal === i.id ? 'checked' : ''} onchange="elegirPrincipal(${i.id})"></td>
+            <td class="text-center"><input type="checkbox" ${uniOtros.has(i.id) ? 'checked' : ''} ${uniPrincipal === i.id ? 'disabled' : ''} onchange="tildarOtro(${i.id}, this.checked)"></td>
+            <td class="fw-bold">${esc(i.nombre)}</td>
+            <td class="small">${esc(i.presentacion)}</td>
+            <td>${esc(i.unidad)}</td>
+            <td class="text-end font-mono">${Number(i.stock_cantidad || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 })}</td>
+            <td class="text-end font-mono">${Number(i.costo_promedio_usd || 0) ? fmtNum(i.costo_promedio_usd, 2) : ''}</td>
+            <td class="text-end font-mono">${Number(i.costo_promedio_neto || 0) ? fmtNum(i.costo_promedio_neto, 2) : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="8" class="text-center text-muted py-3">Sin coincidencias.</td></tr>';
+    }
+    const p = uniItems.find(i => i.id === uniPrincipal);
+    const otros = uniItems.filter(i => uniOtros.has(i.id));
+    document.getElementById('uniSeleccion').innerHTML = (p || otros.length)
+        ? `<div class="small"><strong>Queda:</strong> ${p ? '<span class="badge text-bg-success">' + esc(p.nombre) + '</span>' : '<span class="text-danger">elegí el principal</span>'}
+           &nbsp; <strong>Se unifican:</strong> ${otros.map(o => '<span class="badge text-bg-warning me-1">' + esc(o.nombre) + '</span>').join('') || '<span class="text-muted">tildá al menos uno</span>'}</div>`
+        : '';
+}
+
+function elegirPrincipal(id) {
+    uniPrincipal = id;
+    uniOtros.delete(id);
+    document.getElementById('uniPrevia').innerHTML = '';
+    pintarUnificar();
+}
+
+function tildarOtro(id, si) {
+    if (si) uniOtros.add(id); else uniOtros.delete(id);
+    document.getElementById('uniPrevia').innerHTML = '';
+    pintarUnificar();
+}
+
+function limpiarSeleccionUnificar() {
+    uniPrincipal = null;
+    uniOtros.clear();
+    document.getElementById('uniPrevia').innerHTML = '';
+    pintarUnificar();
+}
+
+async function previaUnificar() {
+    const caja = document.getElementById('uniPrevia');
+    if (!uniPrincipal) return alert('Elegí el producto principal (el nombre que queda).');
+    if (!uniOtros.size) return alert('Tildá al menos un producto para unificar en el principal.');
+    caja.innerHTML = '<div class="hint">Calculando...</div>';
+    const res = await fetch(`/api/agro/almacen/unificar/previa?principal_id=${uniPrincipal}&otros=${[...uniOtros].join(',')}`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { caja.innerHTML = `<div class="alert alert-danger py-2">${esc(d.detail || 'No se pudo calcular.')}</div>`; return; }
+    const camp = Object.entries(d.lineas_por_campania || {}).map(([c, n]) => `${esc(c)}: ${n}`).join(' · ');
+    const err = (d.errores || []).map(e => `<li>${esc(e)}</li>`).join('');
+    const p = d.principal || {};
+    caja.innerHTML = `<div class="alert ${err ? 'alert-danger' : 'alert-info'} py-2 mb-0">
+        <div class="fw-bold mb-1">Queda "${esc(p.nombre)}" con stock ${Number(d.stock_resultante || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 })} ${esc(p.unidad)}
+            · costo U$S ${fmtNum((d.costos_resultantes || {}).costo_promedio_usd, 2)} · $ ${fmtNum((d.costos_resultantes || {}).costo_promedio_neto, 2)}</div>
+        <div class="small">Se pasan al principal: ${d.movimientos} movimientos de almacén, ${d.consumos_ot} consumos de OT, ${d.renglones_factura} renglones de factura
+            y ${d.lineas_campania} líneas de costo${camp ? ' (' + camp + ')' : ''}. Las facturas y la cuenta corriente no cambian.</div>
+        ${err ? '<ul class="mb-0 mt-2 small">' + err + '</ul>' : `<div class="text-end mt-2"><button type="button" class="btn btn-sm btn-success fw-bold" onclick="confirmarUnificar()">Unificar</button></div>`}
+    </div>`;
+}
+
+async function confirmarUnificar() {
+    const p = uniItems.find(i => i.id === uniPrincipal);
+    const otros = uniItems.filter(i => uniOtros.has(i.id)).map(o => '• ' + o.nombre).join('\n');
+    if (!confirm(`Unificar en "${p ? p.nombre : ''}":\n${otros}\n\n¿Confirmás?`)) return;
+    const res = await fetch('/api/agro/almacen/unificar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ principal_id: uniPrincipal, otros_ids: [...uniOtros] }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo unificar.');
+    alert(`Listo: "${d.principal}" quedó con stock ${Number(d.stock_resultante || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 })}.\n`
+        + `Movimientos: ${d.movimientos} · Consumos OT: ${d.consumos_ot} · Líneas de costo: ${d.lineas_campania}`);
+    limpiarSeleccionUnificar();
+    document.getElementById('uniBuscar').value = '';
+    await cargarUnificar();
+    await cargarStock();
+}
+
+async function cargarHistorialUnificar() {
+    const res = await fetch('/api/agro/almacen/unificaciones');
+    const rows = await res.json().catch(() => []);
+    document.getElementById('uniHistorial').innerHTML = (Array.isArray(rows) ? rows : []).map(u => `<tr class="${u.deshecha ? 'text-muted' : ''}">
+        <td class="font-mono small">${esc((u.fecha || '').slice(0, 16))}</td>
+        <td class="small">${esc(u.usuario)}</td>
+        <td class="fw-bold">${esc(u.principal_nombre)}</td>
+        <td class="small">${(u.unificados || []).map(esc).join(' · ')}</td>
+        <td class="text-end">${u.deshecha ? '<span class="badge text-bg-secondary">deshecha</span>'
+            : `<button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="deshacerUnificacion(${u.id})">Deshacer</button>`}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted py-2">Todavía no se unificó ningún producto.</td></tr>';
+}
+
+async function deshacerUnificacion(id) {
+    if (!confirm('Deshacer esta unificación: cada movimiento, consumo y línea de costo vuelve a su producto original. ¿Confirmás?')) return;
+    const res = await fetch(`/api/agro/almacen/unificaciones/${id}/deshacer`, { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo deshacer.');
+    alert(d.message || 'Listo.');
+    await cargarUnificar();
     await cargarStock();
 }
 

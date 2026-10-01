@@ -183,6 +183,7 @@ def init_almacen_schema(cursor) -> None:
     if "destino_id" not in {r[1] for r in cursor.fetchall()}:
         cursor.execute("ALTER TABLE ot_consumos ADD COLUMN destino_id INTEGER;")
     init_lineas_ot_schema(cursor)
+    asegurar_schema_unificacion(cursor)
     _aplicar_costos_usd_access(cursor)
 
 
@@ -851,6 +852,7 @@ def ingresar_almacen(
         cat_cod = _inferir_categoria_codigo(nombre, tipo, categoria)
     cat_nombre = _nombre_categoria(cursor, cat_cod) or categoria or cat_cod
 
+    redirigido = False
     if item_id:
         cursor.execute(
             "SELECT * FROM almacen_items WHERE id=? AND empresa_id=?;",
@@ -860,10 +862,14 @@ def ingresar_almacen(
         if not item:
             raise ValueError("Ítem de almacén no encontrado.")
         item = dict(item)
+        if item.get("unificado_en"):
+            item = _seguir_unificacion(cursor, item)
+            item_id = item["id"]
+            redirigido = True
     else:
         if not (nombre or "").strip():
             raise ValueError("Indicá el nombre del producto o laboreo.")
-        # Buscar por código o crear
+        # Buscar por código, por nombre (o alias de un producto unificado) o crear
         if codigo:
             cursor.execute(
                 "SELECT * FROM almacen_items WHERE empresa_id=? AND codigo=?;",
@@ -872,6 +878,9 @@ def ingresar_almacen(
             item = cursor.fetchone()
         else:
             item = None
+        if not item:
+            item = resolver_item_por_nombre(cursor, empresa_id, nombre)
+            redirigido = bool(item)
         if item:
             item = dict(item)
             item_id = item["id"]
@@ -911,8 +920,9 @@ def ingresar_almacen(
         WHERE id=?;
         """,
         (
-            nuevo_stock, nuevo_prom, nombre or "", cat_nombre or "",
-            cat_cod or "", unidad or "", tipo, item_id,
+            nuevo_stock, nuevo_prom, "" if redirigido else (nombre or ""), cat_nombre or "",
+            cat_cod or "", "" if redirigido else (unidad or ""),
+            (item.get("tipo") or tipo) if redirigido else tipo, item_id,
         ),
     )
     cursor.execute(
@@ -969,16 +979,10 @@ def egresar_almacen_nc(
             (item_id, empresa_id),
         )
         item = cursor.fetchone()
+        if item and item["unificado_en"]:
+            item = _seguir_unificacion(cursor, dict(item))
     if not item and (nombre or "").strip():
-        cursor.execute(
-            """
-            SELECT * FROM almacen_items
-            WHERE empresa_id=? AND UPPER(TRIM(nombre))=UPPER(TRIM(?))
-            ORDER BY id DESC LIMIT 1;
-            """,
-            (empresa_id, nombre.strip()),
-        )
-        item = cursor.fetchone()
+        item = resolver_item_por_nombre(cursor, empresa_id, nombre)
     if not item:
         raise ValueError("No se encontró el ítem de almacén para egresar por NC.")
 
@@ -1870,20 +1874,11 @@ def _item_de_linea(cursor, empresa_id: int, linea: Dict[str, Any]) -> Optional[D
         )
         r = cursor.fetchone()
         if r:
-            return dict(r)
+            return _seguir_unificacion(cursor, dict(r))
     nombre = (linea.get("producto") or linea.get("laboreo") or "").strip()
     if not nombre:
         return None
-    cursor.execute(
-        """
-        SELECT * FROM almacen_items
-        WHERE empresa_id=? AND UPPER(TRIM(nombre))=UPPER(TRIM(?))
-        ORDER BY COALESCE(activo,1) DESC, id LIMIT 1;
-        """,
-        (empresa_id, nombre),
-    )
-    r = cursor.fetchone()
-    return dict(r) if r else None
+    return resolver_item_por_nombre(cursor, empresa_id, nombre)
 
 
 def _cuit_contratista(cursor, empresa_id: int, linea: Dict[str, Any]) -> str:
@@ -2470,3 +2465,381 @@ def excel_participacion_campania(cursor, empresa_id: int, campania_id: int) -> b
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Unificación de productos: varios nombres comerciales → un solo producto/stock.
+# ---------------------------------------------------------------------------
+
+_UNIDADES_EQUIV = {
+    "l": "lt", "lt": "lt", "lts": "lt", "litro": "lt", "litros": "lt",
+    "kg": "kg", "kgs": "kg", "kilo": "kg", "kilos": "kg",
+    "u": "un", "un": "un", "und": "un", "unidad": "un", "unidades": "un",
+    "ha": "ha", "has": "ha", "hs": "hs", "hora": "hs", "horas": "hs",
+    "g": "gr", "gr": "gr", "grs": "gr",
+}
+
+
+def _unidad_normalizada(u: Any) -> str:
+    s = str(u or "").strip().lower().rstrip(".")
+    return _UNIDADES_EQUIV.get(s, s)
+
+
+def asegurar_schema_unificacion(cursor) -> None:
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(almacen_items);").fetchall()}
+    if cols and "unificado_en" not in cols:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN unificado_en INTEGER;")
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS almacen_alias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            item_id INTEGER NOT NULL,
+            nombre TEXT NOT NULL,
+            origen_item_id INTEGER,
+            unificacion_id INTEGER
+        );
+        """
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_almacen_alias_nombre ON almacen_alias(empresa_id, nombre COLLATE NOCASE);")
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS almacen_unificaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            fecha TEXT,
+            usuario TEXT,
+            principal_id INTEGER NOT NULL,
+            principal_nombre TEXT,
+            unificados TEXT,
+            datos TEXT,
+            deshecha INTEGER DEFAULT 0
+        );
+        """
+    )
+    if cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='margenes_access';").fetchone():
+        cols_m = {r[1] for r in cursor.execute("PRAGMA table_info(margenes_access);").fetchall()}
+        if "producto_original" not in cols_m:
+            cursor.execute("ALTER TABLE margenes_access ADD COLUMN producto_original TEXT;")
+        if "campania_original" not in cols_m:
+            cursor.execute("ALTER TABLE margenes_access ADD COLUMN campania_original TEXT;")
+        if "laboreo_original" not in cols_m:
+            cursor.execute("ALTER TABLE margenes_access ADD COLUMN laboreo_original TEXT;")
+
+
+def _activo(item: Dict[str, Any]) -> bool:
+    return item.get("activo") is None or int(item.get("activo") or 0) == 1
+
+
+def _seguir_unificacion(cursor, item: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    for _ in range(10):
+        if not item or not item.get("unificado_en"):
+            return item
+        r = cursor.execute("SELECT * FROM almacen_items WHERE id=?;", (item["unificado_en"],)).fetchone()
+        if not r:
+            return item
+        item = dict(r)
+    return item
+
+
+def resolver_item_por_nombre(cursor, empresa_id: int, nombre: str) -> Optional[Dict[str, Any]]:
+    """Ítem por nombre exacto; si ese nombre quedó unificado (o es un alias), devuelve el producto principal."""
+    nombre = (nombre or "").strip()
+    if not nombre:
+        return None
+    r = cursor.execute(
+        """
+        SELECT * FROM almacen_items
+        WHERE empresa_id=? AND UPPER(TRIM(nombre))=UPPER(TRIM(?))
+        ORDER BY COALESCE(activo,1) DESC, id LIMIT 1;
+        """,
+        (empresa_id, nombre),
+    ).fetchone()
+    item = dict(r) if r else None
+    if item and _activo(item) and not item.get("unificado_en"):
+        return item
+    try:
+        a = cursor.execute(
+            """
+            SELECT i.* FROM almacen_alias a JOIN almacen_items i ON i.id = a.item_id
+            WHERE a.empresa_id=? AND UPPER(TRIM(a.nombre))=UPPER(TRIM(?))
+            ORDER BY a.id DESC LIMIT 1;
+            """,
+            (empresa_id, nombre),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        a = None
+    if a:
+        return _seguir_unificacion(cursor, dict(a))
+    return _seguir_unificacion(cursor, item)
+
+
+def _tabla_existe(cursor, nombre: str) -> bool:
+    return bool(cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (nombre,)).fetchone())
+
+
+def _items_para_unificar(cursor, empresa_id: int, principal_id: int, otros_ids: List[int]):
+    ids = [int(principal_id)] + [int(x) for x in otros_ids if int(x) != int(principal_id)]
+    ids = list(dict.fromkeys(ids))
+    if len(ids) < 2:
+        raise ValueError("Elegí el producto principal y al menos otro para unificar.")
+    marcas = ",".join("?" * len(ids))
+    filas = cursor.execute(
+        f"SELECT * FROM almacen_items WHERE empresa_id=? AND id IN ({marcas});", [empresa_id] + ids
+    ).fetchall()
+    por_id = {int(r["id"]): dict(r) for r in filas}
+    faltan = [i for i in ids if i not in por_id]
+    if faltan:
+        raise ValueError(f"No se encontraron los productos {faltan}.")
+    principal = por_id[ids[0]]
+    otros = [por_id[i] for i in ids[1:]]
+    return principal, otros
+
+
+def _columna_nombre_linea(item: Dict[str, Any]) -> str:
+    """En las líneas de costo el producto va en 'producto'; un laboreo sin producto, en 'laboreo'."""
+    return "laboreo" if (item.get("tipo") or "producto") == "laboreo" else "producto"
+
+
+def _lineas_campania_de(cursor, empresa_id: int, otros: List[Dict[str, Any]], col: str = "producto") -> List[Dict[str, Any]]:
+    if not _tabla_existe(cursor, "margenes_access"):
+        return []
+    ids = [int(o["id"]) for o in otros]
+    nombres = [str(o["nombre"] or "").strip().upper() for o in otros if str(o["nombre"] or "").strip()]
+    m_ids = ",".join("?" * len(ids))
+    m_nom = ",".join("?" * len(nombres)) or "''"
+    solo_labor = " AND TRIM(COALESCE(producto,''))=''" if col == "laboreo" else ""
+    filas = cursor.execute(
+        f"""
+        SELECT id, campania_codigo, {col} AS nombre, almacen_item_id FROM margenes_access
+        WHERE empresa_id=? AND (
+            almacen_item_id IN ({m_ids})
+            OR (almacen_item_id IS NULL AND UPPER(TRIM({col})) IN ({m_nom}){solo_labor})
+        );
+        """,
+        [empresa_id] + ids + nombres,
+    ).fetchall()
+    return [dict(r) for r in filas]
+
+
+def vista_previa_unificacion(cursor, empresa_id: int, principal_id: int, otros_ids: List[int]) -> Dict[str, Any]:
+    asegurar_schema_unificacion(cursor)
+    principal, otros = _items_para_unificar(cursor, empresa_id, principal_id, otros_ids)
+    errores = []
+    for o in otros:
+        if (o.get("tipo") or "producto") != (principal.get("tipo") or "producto"):
+            errores.append(f'"{o["nombre"]}" es {o.get("tipo")} y el principal es {principal.get("tipo")}.')
+        if _unidad_normalizada(o.get("unidad")) != _unidad_normalizada(principal.get("unidad")):
+            errores.append(
+                f'"{o["nombre"]}" está en {o.get("unidad") or "?"} y el principal en {principal.get("unidad") or "?"}: '
+                "corregí la unidad en la ficha antes de unificar, si no el stock se mezcla mal."
+            )
+        if o.get("unificado_en"):
+            errores.append(f'"{o["nombre"]}" ya está unificado en otro producto.')
+    if principal.get("unificado_en") or not _activo(principal):
+        errores.append(f'El principal "{principal["nombre"]}" no está activo.')
+    ids = [int(o["id"]) for o in otros]
+    marcas = ",".join("?" * len(ids))
+
+    def contar(tabla, col):
+        if not _tabla_existe(cursor, tabla):
+            return 0
+        return int(cursor.execute(f"SELECT COUNT(*) FROM {tabla} WHERE {col} IN ({marcas});", ids).fetchone()[0])
+
+    lineas = _lineas_campania_de(cursor, empresa_id, otros, _columna_nombre_linea(principal))
+    por_campania: Dict[str, int] = {}
+    for l in lineas:
+        k = l["campania_codigo"] or "(sin campaña)"
+        por_campania[k] = por_campania.get(k, 0) + 1
+    stock_total = float(principal.get("stock_cantidad") or 0) + sum(float(o.get("stock_cantidad") or 0) for o in otros)
+    return {
+        "principal": {k: principal.get(k) for k in ("id", "nombre", "unidad", "stock_cantidad", "costo_promedio_usd", "costo_promedio_neto")},
+        "otros": [{k: o.get(k) for k in ("id", "nombre", "unidad", "stock_cantidad", "costo_promedio_usd", "costo_promedio_neto")} for o in otros],
+        "movimientos": contar("almacen_movimientos", "item_id"),
+        "consumos_ot": contar("ot_consumos", "item_id"),
+        "renglones_factura": contar("factura_imputaciones", "item_almacen_id"),
+        "lineas_campania": len(lineas),
+        "lineas_por_campania": dict(sorted(por_campania.items(), reverse=True)),
+        "stock_resultante": round(stock_total, 4),
+        "costos_resultantes": _costos_unificados(principal, otros),
+        "errores": errores,
+    }
+
+
+def _costos_unificados(principal: Dict[str, Any], otros: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Promedio ponderado por stock positivo; sin stock, se queda el costo del principal (o el primero con costo)."""
+    todos = [principal] + otros
+    out = {}
+    for campo in ("costo_promedio_neto", "costo_promedio_usd"):
+        con = [(float(i.get("stock_cantidad") or 0), float(i.get(campo) or 0)) for i in todos]
+        con = [(s, c) for s, c in con if s > 0 and c > 0]
+        if con:
+            out[campo] = round(sum(s * c for s, c in con) / sum(s for s, _ in con), 6)
+        else:
+            out[campo] = next((float(i.get(campo) or 0) for i in todos if float(i.get(campo) or 0) > 0), 0.0)
+    return out
+
+
+def unificar_items(cursor, empresa_id: int, principal_id: int, otros_ids: List[int], usuario: str = "") -> Dict[str, Any]:
+    """Pasa movimientos, consumos de OT, renglones de factura y líneas de todas las campañas al principal.
+    Los otros quedan inactivos y sus nombres como alias (las próximas facturas con ese nombre van al principal)."""
+    import json
+
+    previa = vista_previa_unificacion(cursor, empresa_id, principal_id, otros_ids)
+    if previa["errores"]:
+        raise ValueError(" ".join(previa["errores"]))
+    principal, otros = _items_para_unificar(cursor, empresa_id, principal_id, otros_ids)
+    pid = int(principal["id"])
+    ids = [int(o["id"]) for o in otros]
+    marcas = ",".join("?" * len(ids))
+    datos: Dict[str, Any] = {
+        "principal": {k: principal.get(k) for k in ("stock_cantidad", "costo_promedio_neto", "costo_promedio_usd")},
+        "items": {str(o["id"]): {k: o.get(k) for k in ("nombre", "activo", "stock_cantidad", "costo_promedio_neto", "costo_promedio_usd")} for o in otros},
+    }
+    for clave, tabla, col in (
+        ("movimientos", "almacen_movimientos", "item_id"),
+        ("consumos_ot", "ot_consumos", "item_id"),
+        ("renglones_factura", "factura_imputaciones", "item_almacen_id"),
+        ("alias", "almacen_alias", "item_id"),
+    ):
+        if not _tabla_existe(cursor, tabla):
+            datos[clave] = []
+            continue
+        filas = cursor.execute(f"SELECT id, {col} FROM {tabla} WHERE {col} IN ({marcas});", ids).fetchall()
+        datos[clave] = [[int(r[0]), int(r[1])] for r in filas]
+        cursor.execute(f"UPDATE {tabla} SET {col}=? WHERE {col} IN ({marcas});", [pid] + ids)
+
+    col = _columna_nombre_linea(principal)
+    lineas = _lineas_campania_de(cursor, empresa_id, otros, col)
+    datos["lineas"] = [[l["id"], l["nombre"], l["almacen_item_id"], col] for l in lineas]
+    for l in lineas:
+        cursor.execute(
+            f"""
+            UPDATE margenes_access
+            SET {col}_original = COALESCE({col}_original, {col}), {col} = ?, almacen_item_id = ?
+            WHERE id = ?;
+            """,
+            (principal["nombre"], pid, l["id"]),
+        )
+
+    costos = previa["costos_resultantes"]
+    cursor.execute(
+        "UPDATE almacen_items SET stock_cantidad=?, costo_promedio_neto=?, costo_promedio_usd=? WHERE id=?;",
+        (previa["stock_resultante"], costos["costo_promedio_neto"], costos["costo_promedio_usd"], pid),
+    )
+    cursor.execute(
+        f"UPDATE almacen_items SET activo=0, unificado_en=?, stock_cantidad=0 WHERE id IN ({marcas});",
+        [pid] + ids,
+    )
+    cursor.execute(
+        """
+        INSERT INTO almacen_unificaciones (empresa_id, fecha, usuario, principal_id, principal_nombre, unificados, datos)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+        """,
+        (
+            empresa_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), usuario or "", pid, principal["nombre"],
+            json.dumps([o["nombre"] for o in otros], ensure_ascii=False), json.dumps(datos, ensure_ascii=False),
+        ),
+    )
+    uid = cursor.lastrowid
+    for o in otros:
+        if str(o["nombre"] or "").strip().upper() != str(principal["nombre"] or "").strip().upper():
+            cursor.execute(
+                "INSERT INTO almacen_alias (empresa_id, item_id, nombre, origen_item_id, unificacion_id) VALUES (?, ?, ?, ?, ?);",
+                (empresa_id, pid, str(o["nombre"]).strip(), int(o["id"]), uid),
+            )
+    return {
+        "status": "ok",
+        "unificacion_id": uid,
+        "principal": principal["nombre"],
+        "unificados": [o["nombre"] for o in otros],
+        "movimientos": len(datos["movimientos"]),
+        "consumos_ot": len(datos["consumos_ot"]),
+        "renglones_factura": len(datos["renglones_factura"]),
+        "lineas_campania": len(lineas),
+        "stock_resultante": previa["stock_resultante"],
+    }
+
+
+def listar_unificaciones(cursor, empresa_id: int) -> List[Dict[str, Any]]:
+    import json
+
+    asegurar_schema_unificacion(cursor)
+    filas = cursor.execute(
+        """
+        SELECT id, fecha, usuario, principal_id, principal_nombre, unificados, deshecha
+        FROM almacen_unificaciones WHERE empresa_id=? ORDER BY id DESC;
+        """,
+        (empresa_id,),
+    ).fetchall()
+    out = []
+    for r in filas:
+        d = dict(r)
+        try:
+            d["unificados"] = json.loads(d["unificados"] or "[]")
+        except ValueError:
+            d["unificados"] = []
+        out.append(d)
+    return out
+
+
+def deshacer_unificacion(cursor, empresa_id: int, unificacion_id: int) -> Dict[str, Any]:
+    """Vuelve cada movimiento/consumo/renglón/línea a su producto original y reactiva los productos."""
+    import json
+
+    asegurar_schema_unificacion(cursor)
+    r = cursor.execute(
+        "SELECT * FROM almacen_unificaciones WHERE id=? AND empresa_id=?;", (unificacion_id, empresa_id)
+    ).fetchone()
+    if not r:
+        raise ValueError("No se encontró esa unificación.")
+    if int(r["deshecha"] or 0):
+        raise ValueError("Esa unificación ya se deshizo.")
+    datos = json.loads(r["datos"] or "{}")
+    pid = int(r["principal_id"])
+    principal = cursor.execute("SELECT * FROM almacen_items WHERE id=?;", (pid,)).fetchone()
+    if not principal or principal["unificado_en"]:
+        raise ValueError("El producto principal se unificó después en otro: deshacé primero esa unificación.")
+    for oid in datos.get("items", {}):
+        it = cursor.execute("SELECT unificado_en FROM almacen_items WHERE id=?;", (int(oid),)).fetchone()
+        if not it or int(it["unificado_en"] or 0) != pid:
+            raise ValueError("Algún producto unificado cambió después; no se puede deshacer automáticamente.")
+    for clave, tabla, col in (
+        ("movimientos", "almacen_movimientos", "item_id"),
+        ("consumos_ot", "ot_consumos", "item_id"),
+        ("renglones_factura", "factura_imputaciones", "item_almacen_id"),
+        ("alias", "almacen_alias", "item_id"),
+    ):
+        if _tabla_existe(cursor, tabla):
+            for fila_id, original in datos.get(clave, []):
+                cursor.execute(f"UPDATE {tabla} SET {col}=? WHERE id=?;", (original, fila_id))
+    for linea in datos.get("lineas", []):
+        lid, valor, item_original = linea[:3]
+        col = "laboreo" if len(linea) > 3 and linea[3] == "laboreo" else "producto"
+        cursor.execute(
+            f"UPDATE margenes_access SET {col}=?, almacen_item_id=?, {col}_original=NULL WHERE id=?;",
+            (valor, item_original, lid),
+        )
+    devuelto = 0.0
+    for oid, it in datos.get("items", {}).items():
+        devuelto += float(it.get("stock_cantidad") or 0)
+        cursor.execute(
+            """
+            UPDATE almacen_items SET activo=?, unificado_en=NULL, stock_cantidad=?, costo_promedio_neto=?, costo_promedio_usd=?
+            WHERE id=?;
+            """,
+            (it.get("activo") if it.get("activo") is not None else 1, it.get("stock_cantidad") or 0,
+             it.get("costo_promedio_neto") or 0, it.get("costo_promedio_usd") or 0, int(oid)),
+        )
+    p = datos.get("principal", {})
+    cursor.execute(
+        """
+        UPDATE almacen_items SET stock_cantidad=ROUND(COALESCE(stock_cantidad,0)-?, 6),
+               costo_promedio_neto=?, costo_promedio_usd=?
+        WHERE id=?;
+        """,
+        (devuelto, p.get("costo_promedio_neto") or 0, p.get("costo_promedio_usd") or 0, pid),
+    )
+    cursor.execute("DELETE FROM almacen_alias WHERE unificacion_id=?;", (unificacion_id,))
+    cursor.execute("UPDATE almacen_unificaciones SET deshecha=1 WHERE id=?;", (unificacion_id,))
+    return {"status": "ok", "message": f"Se deshizo la unificación en \"{r['principal_nombre']}\"."}

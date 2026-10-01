@@ -131,6 +131,7 @@
                     <p class="hint mb-0">Lo cargado en Access, campaña por campaña. Una línea nueva toma el precio con el que el producto o el laboreo está en el almacén. El costo es hectáreas × dosis × ese precio. El stock se descuenta al validar la orden de trabajo.</p>
                 </div>
                 <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-danger fw-bold" onclick="abrirRevisionCampanias()" title="Campañas mal cargadas en la importación (91-92, 22-22, sin campaña...)">Revisar campañas</button>
                     <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
                     <a href="ordenestrabajo.html" class="btn btn-sm btn-outline-dark fw-bold">Órdenes de trabajo</a>
                 </div>
@@ -460,6 +461,32 @@
     </div>
 </div>
 
+<!-- MODAL REVISIÓN DE CAMPAÑAS -->
+<div class="modal fade" id="modalRevCampanias" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header py-2"><h6 class="modal-title fw-bold">Campañas mal cargadas</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p class="hint mb-2">Son líneas de costo que llegaron de la importación con un código de campaña que no existe (años no consecutivos, futuros o vacíos).
+                    <strong>Según fecha</strong> pasa cada línea a la campaña de su fecha de aplicación u orden (junio en adelante = campaña nueva).
+                    <strong>Mover</strong> pasa todas a la campaña que indiques. <strong>Eliminar</strong> borra esas líneas de costo (solo administrador; queda copia para auditoría).
+                    Nada de esto toca facturas ni la cuenta corriente.</p>
+                <div id="revCampEstado" class="hint mb-2">Buscando...</div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr><th>Campaña</th><th>Problema</th><th class="text-end">Líneas</th><th class="text-end">Costo $</th><th class="text-end">Costo U$S</th>
+                                <th>Según la fecha serían</th><th style="min-width:330px;">Acción</th></tr>
+                        </thead>
+                        <tbody id="revCampBody"></tbody>
+                    </table>
+                </div>
+                <div id="revCampSinUso" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -709,6 +736,83 @@ async function exportarCostosExcel() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
+let revCampanias = [];
+
+async function abrirRevisionCampanias() {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalRevCampanias')).show();
+    await cargarRevisionCampanias();
+}
+
+async function cargarRevisionCampanias() {
+    const estado = document.getElementById('revCampEstado');
+    estado.innerText = 'Buscando...';
+    const res = await fetch('/api/agro/costos/campanias/revision');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { estado.innerText = data.detail || 'No se pudo revisar.'; return; }
+    revCampanias = data.campanias || [];
+    estado.innerText = revCampanias.length
+        ? revCampanias.length + ' código(s) de campaña para revisar.'
+        : 'No hay campañas mal cargadas en las líneas de costo.';
+    document.getElementById('revCampBody').innerHTML = revCampanias.map((c, i) => {
+        const sug = Object.entries(c.sugerencias || {}).map(([k, n]) => `<span class="badge text-bg-light border me-1">${escHtml(k)}: ${n}</span>`).join('');
+        const sinF = c.sin_fecha ? `<span class="hint">${c.sin_fecha} sin fecha</span>` : '';
+        const ot = c.con_ot ? `<div class="hint text-danger">${c.con_ot} de OT emitidas en Campo+</div>` : '';
+        return `<tr>
+            <td class="font-mono fw-bold">${c.codigo ? escHtml(c.codigo) : '(sin campaña)'}</td>
+            <td class="small">${escHtml(c.problema)}</td>
+            <td class="text-end font-mono">${c.n}</td>
+            <td class="text-end font-mono">${moneyAr(c.costo_ars)}</td>
+            <td class="text-end font-mono">${moneyAr(c.costo_usd)}</td>
+            <td>${sug}${sinF}${ot}</td>
+            <td>
+                <div class="d-flex gap-1 flex-wrap">
+                    <button class="btn btn-sm btn-success fw-bold" ${Object.keys(c.sugerencias || {}).length ? '' : 'disabled'} onclick="corregirCampania(${i}, 'fecha')" title="Cada línea a la campaña de su fecha; las sin fecha a la campaña escrita al lado (si ponés una)">Según fecha</button>
+                    <input id="revDestino${i}" class="form-control form-control-sm font-mono" style="width:80px;" placeholder="24-25">
+                    <button class="btn btn-sm btn-outline-primary fw-bold" onclick="corregirCampania(${i}, 'mover')">Mover</button>
+                    <button class="btn btn-sm btn-outline-danger fw-bold" onclick="corregirCampania(${i}, 'eliminar')">Eliminar</button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="7" class="text-center text-muted py-3">Todo en orden.</td></tr>';
+    const sinUso = data.campanias_sin_uso || [];
+    document.getElementById('revCampSinUso').innerHTML = sinUso.length
+        ? `<div class="alert alert-warning py-2 mb-0 d-flex justify-content-between align-items-center">
+               <span>En la lista de campañas quedaron códigos inválidos que no usa nada: <strong>${sinUso.map(escHtml).join(', ')}</strong></span>
+               <button class="btn btn-sm btn-warning fw-bold" onclick="corregirCampania(-1, 'limpiar')">Quitarlos</button>
+           </div>`
+        : '';
+}
+
+async function corregirCampania(i, accion) {
+    const c = i >= 0 ? revCampanias[i] : { codigo: '', n: 0 };
+    const nombre = c.codigo || '(sin campaña)';
+    const destino = i >= 0 ? (document.getElementById('revDestino' + i).value || '').trim() : '';
+    let pregunta = '';
+    if (accion === 'fecha') {
+        const sug = Object.entries(c.sugerencias || {}).map(([k, n]) => n + ' a ' + k).join(', ');
+        pregunta = `Campaña ${nombre}: pasar ${sug}` + (c.sin_fecha ? (destino ? ` y las ${c.sin_fecha} sin fecha a ${destino}` : `. Las ${c.sin_fecha} sin fecha quedan como están`) : '') + '. ¿Confirmás?';
+    } else if (accion === 'mover') {
+        if (!destino) return alert('Escribí la campaña destino (ej. 24-25).');
+        pregunta = `Mover las ${c.n} líneas de ${nombre} a la campaña ${destino}. ¿Confirmás?`;
+    } else if (accion === 'eliminar') {
+        pregunta = `ELIMINAR las ${c.n} líneas de costo de ${nombre} (costo $ ${moneyAr(c.costo_ars)} · U$S ${moneyAr(c.costo_usd)}).\n`
+            + 'Son líneas importadas de Access; no se tocan facturas ni la cuenta corriente. Queda una copia para auditoría.\n¿Confirmás?';
+    } else {
+        pregunta = 'Quitar de la lista las campañas inválidas que no usa nada. ¿Confirmás?';
+    }
+    if (!confirm(pregunta)) return;
+    const res = await fetch('/api/agro/costos/campanias/corregir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion, codigo: c.codigo || '', destino }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(data.detail || 'No se pudo corregir.');
+    alert(data.message || 'Listo.');
+    await cargarRevisionCampanias();
+    await cargarOpcionesCosto();
 }
 
 function pintarEstructura(data, f) {

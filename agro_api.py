@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 import re
 
-from fastapi import Body, HTTPException
+from fastapi import Body, HTTPException, Request
 from pydantic import BaseModel
 
 from agro_campania import (
@@ -898,7 +898,28 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         listar_socios_agro,
         guardar_socio_agro,
         borrar_socio_agro,
+        vista_previa_unificacion,
+        unificar_items,
+        listar_unificaciones,
+        deshacer_unificacion,
     )
+
+    def _sesion(request):
+        from saas_auth import sesion_actual
+
+        try:
+            return sesion_actual(get_db, request) or {}
+        except Exception:
+            return {}
+
+    def _exigir_admin(request):
+        from saas_auth import es_admin_de_cuenta
+
+        if not es_admin_de_cuenta(_sesion(request)):
+            raise HTTPException(403, "Solo un administrador de la empresa puede hacer esto.")
+
+    def _ids_csv(txt) -> List[int]:
+        return [int(x) for x in re.findall(r"\d+", str(txt or ""))]
 
     try:
         _ca = get_db()
@@ -1089,6 +1110,69 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             raise HTTPException(status_code=400, detail=str(e))
         conn.close()
         return result
+
+    @app.get("/api/agro/almacen/unificar/previa")
+    def api_almacen_unificar_previa(principal_id: int, otros: str):
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            data = vista_previa_unificacion(cur, get_empresa_activa_id(), principal_id, _ids_csv(otros))
+            conn.commit()
+            return data
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/almacen/unificar")
+    def api_almacen_unificar(request: Request, data: dict = Body(...)):
+        ses = _sesion(request)
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            res = unificar_items(
+                cur, get_empresa_activa_id(), int(data.get("principal_id") or 0),
+                [int(x) for x in (data.get("otros_ids") or [])],
+                usuario=ses.get("nombre") or ses.get("login") or "",
+            )
+            conn.commit()
+            return res
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @app.get("/api/agro/almacen/unificaciones")
+    def api_almacen_unificaciones():
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            rows = listar_unificaciones(cur, get_empresa_activa_id())
+            conn.commit()
+            return rows
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/almacen/unificaciones/{unificacion_id}/deshacer")
+    def api_almacen_deshacer_unificacion(unificacion_id: int):
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            res = deshacer_unificacion(cur, get_empresa_activa_id(), unificacion_id)
+            conn.commit()
+            return res
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     @app.get("/api/agro/almacen/movimientos")
     def api_almacen_movimientos(item_id: Optional[int] = None, limit: int = 100):
@@ -2922,6 +3006,235 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="costos_{nombre or "campania"}.xlsx"'},
         )
+
+    # ---- Revisión de campañas mal cargadas (líneas de costo importadas) ----
+    def _campania_de_fecha(fecha) -> str:
+        m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(fecha or ""))
+        if not m or not 2000 <= int(m.group(1)) <= 2100:
+            return ""
+        try:
+            datetime.strptime(m.group(0), "%Y-%m-%d")
+        except ValueError:
+            return ""
+        return codigo_campania_actual(m.group(0))
+
+    def _problema_codigo(codigo: str) -> str:
+        """Texto del problema si el código de campaña no es creíble; '' si está bien."""
+        if not (codigo or "").strip():
+            return "Sin campaña"
+        m = re.match(r"^(\d{2})-(\d{2})$", codigo.strip())
+        if not m:
+            return "Formato inválido"
+        a, b = int(m.group(1)), int(m.group(2))
+        if b != (a + 1) % 100:
+            return "Los años no son consecutivos"
+        actual = int(codigo_campania_actual()[:2])
+        if a > actual + 1:
+            return "Campaña futura (año 20%02d)" % a
+        return ""
+
+    def _asegurar_eliminadas(cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS margenes_access_eliminadas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER,
+                margen_id INTEGER,
+                id_access INTEGER,
+                fecha TEXT,
+                usuario TEXT,
+                datos TEXT
+            );
+            """
+        )
+
+    def _campanias_agro_sin_uso(cur, eid) -> List[dict]:
+        """Campañas con código inválido que no usa ninguna tabla (quedaron de la importación)."""
+        if not cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='campanias_agro';").fetchone():
+            return []
+        filas = cur.execute("SELECT id, codigo FROM campanias_agro WHERE empresa_id=?;", (eid,)).fetchall()
+        malas = [dict(r) for r in filas if _problema_codigo(r["codigo"] or "")]
+        if not malas:
+            return []
+        tablas = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()]
+        refs_id, refs_cod = [], []
+        for t in tablas:
+            if t == "campanias_agro" or t.startswith("sqlite_") or t == "margenes_access_campania_bak":
+                continue
+            cols = {r[1] for r in cur.execute(f'PRAGMA table_info("{t}");').fetchall()}
+            if "campania_id" in cols:
+                refs_id.append(t)
+            if "campania_codigo" in cols:
+                refs_cod.append(t)
+        sin_uso = []
+        for c in malas:
+            usado = any(
+                cur.execute(f'SELECT 1 FROM "{t}" WHERE campania_id=? LIMIT 1;', (c["id"],)).fetchone() for t in refs_id
+            ) or any(
+                cur.execute(f'SELECT 1 FROM "{t}" WHERE campania_codigo=? LIMIT 1;', (c["codigo"],)).fetchone()
+                for t in refs_cod
+            )
+            if not usado:
+                sin_uso.append(c)
+        return sin_uso
+
+    def _revision_campanias(cur, eid) -> dict:
+        grupos = cur.execute(
+            """
+            SELECT COALESCE(TRIM(campania_codigo),'') AS codigo, COUNT(*) AS n,
+                   ROUND(COALESCE(SUM(costo_ars),0),2) AS ars, ROUND(COALESCE(SUM(costo_usd),0),2) AS usd
+            FROM margenes_access WHERE empresa_id=?
+            GROUP BY COALESCE(TRIM(campania_codigo),'') ORDER BY 1 DESC;
+            """,
+            (eid,),
+        ).fetchall()
+        out = []
+        for g in grupos:
+            problema = _problema_codigo(g["codigo"])
+            if not problema:
+                continue
+            sug: dict = {}
+            sin_fecha = 0
+            con_ot = 0
+            for r in cur.execute(
+                """
+                SELECT COALESCE(NULLIF(TRIM(fecha_aplicacion),''), NULLIF(TRIM(fecha_orden),'')) AS f, ot_id
+                FROM margenes_access WHERE empresa_id=? AND COALESCE(TRIM(campania_codigo),'')=?;
+                """,
+                (eid, g["codigo"]),
+            ).fetchall():
+                if r["ot_id"]:
+                    con_ot += 1
+                c = _campania_de_fecha(r["f"])
+                if c:
+                    sug[c] = sug.get(c, 0) + 1
+                else:
+                    sin_fecha += 1
+            out.append({
+                "codigo": g["codigo"], "n": g["n"], "costo_ars": g["ars"], "costo_usd": g["usd"],
+                "problema": problema, "sugerencias": dict(sorted(sug.items(), key=lambda kv: -kv[1])),
+                "sin_fecha": sin_fecha, "con_ot": con_ot,
+            })
+        return {"campanias": out, "campanias_sin_uso": [c["codigo"] for c in _campanias_agro_sin_uso(cur, eid)]}
+
+    @app.get("/api/agro/costos/campanias/revision")
+    def api_costos_campanias_revision():
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            return _revision_campanias(cur, get_empresa_activa_id())
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/costos/campanias/corregir")
+    def api_costos_campanias_corregir(request: Request, data: dict = Body(...)):
+        """accion: 'fecha' (cada línea a la campaña de su fecha; las sin fecha a 'destino' si se indica),
+        'mover' (todas a 'destino'), 'eliminar' (solo administrador; no toca líneas de OT emitidas en Campo+),
+        'limpiar' (borra de la lista de campañas los códigos inválidos que nadie usa)."""
+        import json
+
+        from agro_almacen import asegurar_schema_unificacion
+        from agro_campania import asegurar_campania_activa
+
+        eid = get_empresa_activa_id()
+        accion = (data.get("accion") or "").strip()
+        codigo = (data.get("codigo") or "").strip()
+        destino = normalizar_codigo_campania(data.get("destino") or "") if (data.get("destino") or "").strip() else ""
+        if destino and _problema_codigo(destino):
+            raise HTTPException(400, f"La campaña destino {destino} no es válida ({_problema_codigo(destino)}).")
+        if accion == "mover" and not destino:
+            raise HTTPException(400, "Indicá a qué campaña mover las líneas.")
+        if accion == "eliminar":
+            _exigir_admin(request)
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            asegurar_schema_unificacion(cur)
+            if accion != "limpiar" and not _problema_codigo(codigo):
+                raise HTTPException(400, f"La campaña {codigo} parece correcta; desde acá solo se corrigen las mal cargadas.")
+            filas = cur.execute(
+                """
+                SELECT id, COALESCE(NULLIF(TRIM(fecha_aplicacion),''), NULLIF(TRIM(fecha_orden),'')) AS f, ot_id
+                FROM margenes_access WHERE empresa_id=? AND COALESCE(TRIM(campania_codigo),'')=?;
+                """,
+                (eid, codigo),
+            ).fetchall() if accion != "limpiar" else []
+            movidas: dict = {}
+            eliminadas = 0
+            con_ot = 0
+
+            def mover(mid, a):
+                cur.execute(
+                    """
+                    UPDATE margenes_access SET campania_original = COALESCE(campania_original, COALESCE(campania_codigo,'')),
+                           campania_codigo = ? WHERE id = ?;
+                    """,
+                    (a, mid),
+                )
+                movidas[a] = movidas.get(a, 0) + 1
+
+            if accion == "fecha":
+                for r in filas:
+                    c = _campania_de_fecha(r["f"]) or destino
+                    if c:
+                        mover(r["id"], c)
+            elif accion == "mover":
+                for r in filas:
+                    mover(r["id"], destino)
+            elif accion == "eliminar":
+                _asegurar_eliminadas(cur)
+                ses = _sesion(request)
+                usuario = ses.get("nombre") or ses.get("login") or ""
+                ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                for r in filas:
+                    if r["ot_id"]:
+                        con_ot += 1
+                        continue
+                    fila = dict(cur.execute("SELECT * FROM margenes_access WHERE id=?;", (r["id"],)).fetchone())
+                    cur.execute(
+                        """
+                        INSERT INTO margenes_access_eliminadas (empresa_id, margen_id, id_access, fecha, usuario, datos)
+                        VALUES (?, ?, ?, ?, ?, ?);
+                        """,
+                        (eid, r["id"], fila.get("id_access"), ahora, usuario, json.dumps(fila, ensure_ascii=False, default=str)),
+                    )
+                    cur.execute("DELETE FROM margenes_access WHERE id=?;", (r["id"],))
+                    eliminadas += 1
+            elif accion != "limpiar":
+                raise HTTPException(400, "Acción desconocida.")
+            for c in movidas:
+                asegurar_campania_activa(cur, eid, c)
+            borradas = []
+            for c in _campanias_agro_sin_uso(cur, eid):
+                cur.execute("DELETE FROM campanias_agro WHERE id=?;", (c["id"],))
+                borradas.append(c["codigo"])
+            conn.commit()
+            partes = []
+            if movidas:
+                partes.append("Líneas movidas: " + ", ".join(f"{n} a {c}" for c, n in sorted(movidas.items())))
+            if eliminadas:
+                partes.append(f"Líneas eliminadas: {eliminadas}")
+            if con_ot:
+                partes.append(f"{con_ot} línea(s) de OT emitidas en Campo+ no se borraron (anulá la OT si corresponde)")
+            sin_mover = len(filas) - sum(movidas.values()) - eliminadas - con_ot
+            if accion in ("fecha", "mover") and sin_mover > 0:
+                partes.append(f"{sin_mover} línea(s) sin fecha quedaron como estaban")
+            if borradas:
+                partes.append("Campañas quitadas de la lista: " + ", ".join(borradas))
+            return {
+                "status": "ok", "movidas": movidas, "eliminadas": eliminadas, "no_borradas_ot": con_ot,
+                "campanias_borradas": borradas, "message": ". ".join(partes) or "No había nada para cambiar.",
+            }
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     @app.post("/api/agro/costos")
     def api_costos_alta(data: dict = Body(...)):
