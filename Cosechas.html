@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Cosechas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f1f5f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.05); padding: 20px; margin-bottom: 16px; }
+        .nav-pills .nav-link { font-weight: 600; color: #475569; }
+        .nav-pills .nav-link.active { background: #b45309; }
+        .hint { font-size: 12px; color: #64748b; }
+        .num { text-align: right; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .tabla { font-size: 13px; }
+        .tabla th, .tabla td { padding: .45rem .6rem; vertical-align: middle; }
+        .tabla thead th { white-space: nowrap; }
+        .scroll { max-height: 520px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+        .scroll thead th { position: sticky; top: 0; z-index: 1; }
+        .grid-planilla td { padding: 2px 3px; }
+        .grid-planilla input, .grid-planilla select { font-size: 13px; padding: .25rem .4rem; }
+        .grid-planilla .w-fecha { width: 125px; }
+        .grid-planilla .w-num { width: 95px; }
+        .grid-planilla .w-hum { width: 65px; }
+        .chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; margin: 1px 2px 1px 0; white-space: nowrap; }
+        .chip-ok { background: #dcfce7; color: #166534; }
+        .chip-no { background: #fee2e2; color: #991b1b; }
+        .chip-nd { background: #f1f5f9; color: #64748b; }
+        .estado-ok { color: #166534; font-weight: 600; }
+        .estado-pend { color: #b45309; font-weight: 600; }
+        h6.seccion { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: #64748b; font-weight: 700; margin: 18px 0 8px; }
+    </style>
+    <script src="/campoplus-money.js"></script>
+    <script src="/campoplus-fechas.js"></script>
+</head>
+<body>
+<div class="container-fluid my-4" style="max-width: 1360px;">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Cosechas</small></h4>
+            <p class="hint mb-0">Planilla de cosecha (camiones al acopio y silobolsas) → conciliación con el acopio → stock de granos para vender.</p>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <label class="small fw-bold">Campaña</label>
+            <select id="campGlobal" class="form-select form-select-sm" style="width:130px;" onchange="refrescarTab()"></select>
+            <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">Dashboard</a>
+        </div>
+    </div>
+
+    <ul class="nav nav-pills gap-1 mb-3">
+        <li class="nav-item"><button class="nav-link active" data-tab="tabPlanilla" onclick="verTab(this)">Planilla de cosecha</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="tabBolsas" onclick="verTab(this)">Silobolsas</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="tabConciliacion" onclick="verTab(this)">Conciliación con acopio</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="tabStock" onclick="verTab(this)">Stock</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="tabProduccion" onclick="verTab(this)">Producción por lote</button></li>
+    </ul>
+
+    <!-- PLANILLA -->
+    <div id="tabPlanilla" class="tab-cos">
+        <div class="main-card">
+            <h5 class="fw-bold mb-1">Cargar planilla de cosecha</h5>
+            <p class="hint mb-3">Un renglón por camión, como en la planilla del campo. Cada renglón nuevo repite la fecha, el lote, el origen y el destino del anterior.
+                Si el camión sale de una silobolsa, elegila en <strong>Origen</strong> (descuenta de la bolsa).</p>
+            <div class="row g-2 mb-3">
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Campaña</label>
+                    <select id="plCampania" class="form-select form-select-sm"></select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold mb-1">Campo</label>
+                    <input id="plCampo" class="form-control form-control-sm" list="dlCampos" placeholder="Campo" onchange="cambioCabecera()">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Producto (cultivo)</label>
+                    <input id="plCultivo" class="form-control form-control-sm" list="dlCultivos" placeholder="Soja 1ª" onchange="cambioCabecera()">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold mb-1">Destino (acopio)</label>
+                    <input id="plDestino" class="form-control form-control-sm" list="dlAcopios" placeholder="Andreoli">
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered grid-planilla mb-2">
+                    <thead class="table-light">
+                        <tr><th>#</th><th>Fecha</th><th>Origen</th><th>Lote</th><th>Chofer</th><th>Patente chasis</th><th>Carta de porte / remito</th>
+                            <th>Destino</th><th class="text-end">Kilos</th><th class="text-end">Hum.</th><th></th></tr>
+                    </thead>
+                    <tbody id="plBody"></tbody>
+                </table>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button class="btn btn-sm btn-outline-secondary fw-bold" onclick="agregarRenglon(true)">+ Renglón</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="for(let i=0;i<5;i++) agregarRenglon(false)">+ 5 renglones</button>
+                <span class="ms-auto small">Total: <strong id="plTotal" class="num">0</strong> kg en <span id="plCant">0</span> camiones</span>
+                <button class="btn btn-sm btn-success fw-bold" onclick="guardarPlanilla()">Guardar planilla</button>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2">
+                <h5 class="fw-bold mb-0">Camiones cargados</h5>
+                <div class="d-flex gap-2">
+                    <select id="fcGrano" class="form-select form-select-sm" style="width:130px;" onchange="cargarCamiones()"></select>
+                    <input id="fcCampo" class="form-control form-control-sm" style="width:180px;" list="dlCampos" placeholder="Campo" onchange="cargarCamiones()">
+                    <select id="fcEstado" class="form-select form-select-sm" style="width:150px;" onchange="cargarCamiones()">
+                        <option value="">Todos</option><option value="pendiente">Pendientes</option><option value="conciliado">Conciliados</option>
+                    </select>
+                </div>
+            </div>
+            <p id="fcResumen" class="hint mb-2"></p>
+            <div class="scroll">
+                <table class="table table-hover tabla mb-0">
+                    <thead class="table-dark">
+                        <tr><th>Fecha</th><th>Grano</th><th>Campo</th><th>Lote / origen</th><th>Chofer</th><th>Patente</th><th>CPe / remito</th><th>Destino</th>
+                            <th class="num">Kg campo</th><th class="num">Hum.</th><th>Acopio</th><th></th></tr>
+                    </thead>
+                    <tbody id="fcBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SILOBOLSAS -->
+    <div id="tabBolsas" class="tab-cos" style="display:none;">
+        <div class="main-card">
+            <h5 class="fw-bold mb-1" id="sbTitulo">Nueva silobolsa</h5>
+            <p class="hint mb-3">Cuando la cosecha queda embolsada en el campo. Para sacar grano de la bolsa, cargá los camiones en la planilla eligiendo la bolsa como origen.</p>
+            <input type="hidden" id="sbId">
+            <div class="row g-2">
+                <div class="col-md-2"><label class="form-label small fw-bold mb-1">Fecha</label><input id="sbFecha" type="date" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label small fw-bold mb-1">Campaña</label><select id="sbCampania" class="form-select form-select-sm"></select></div>
+                <div class="col-md-2"><label class="form-label small fw-bold mb-1">Producto (cultivo)</label><input id="sbCultivo" class="form-control form-control-sm" list="dlCultivos"></div>
+                <div class="col-md-3"><label class="form-label small fw-bold mb-1">Campo</label><input id="sbCampo" class="form-control form-control-sm" list="dlCampos" onchange="ponerLotes(this.value)"></div>
+                <div class="col-md-3"><label class="form-label small fw-bold mb-1">Lote</label><input id="sbLote" class="form-control form-control-sm" list="dlLotes"></div>
+                <div class="col-md-3"><label class="form-label small fw-bold mb-1">Identificación</label><input id="sbIdent" class="form-control form-control-sm" placeholder="Bolsa 1 / cabecera norte"></div>
+                <div class="col-md-2"><label class="form-label small fw-bold mb-1">Kilos totales</label><input id="sbKilos" class="form-control form-control-sm text-end"></div>
+                <div class="col-md-1"><label class="form-label small fw-bold mb-1">Hum.</label><input id="sbHum" class="form-control form-control-sm text-end"></div>
+                <div class="col-md-4"><label class="form-label small fw-bold mb-1">Observaciones</label><input id="sbObs" class="form-control form-control-sm"></div>
+                <div class="col-md-2 d-flex align-items-end gap-2">
+                    <button class="btn btn-sm btn-success fw-bold flex-fill" onclick="guardarBolsa()">Guardar</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="limpiarBolsa()">Nueva</button>
+                </div>
+            </div>
+        </div>
+        <div class="main-card">
+            <h5 class="fw-bold mb-2">Silobolsas</h5>
+            <div class="scroll">
+                <table class="table table-hover tabla mb-0">
+                    <thead class="table-dark">
+                        <tr><th>Fecha</th><th>Identificación</th><th>Grano</th><th>Campo</th><th>Lote</th><th class="num">Kg embolsados</th>
+                            <th class="num">Extraído</th><th class="num">Saldo</th><th>Estado</th><th></th></tr>
+                    </thead>
+                    <tbody id="sbBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONCILIACION -->
+    <div id="tabConciliacion" class="tab-cos" style="display:none;">
+        <div class="main-card">
+            <h5 class="fw-bold mb-1">Importar reporte del acopio</h5>
+            <p class="hint mb-2">Excel con los romaneos (Nº romaneo, grano, cosecha, kgs. netos, merma, bruto, chofer, Nº carta de porte) y, si viene, la hoja de stock.
+                Se puede volver a importar: actualiza los kilos sin perder lo conciliado.</p>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <input id="acArchivo" type="file" accept=".xlsx,.xls" class="form-control form-control-sm" style="max-width:420px;">
+                <button class="btn btn-sm btn-outline-primary fw-bold" onclick="leerAcopio()">Leer archivo</button>
+            </div>
+            <div id="acPrevia" class="mt-3" style="display:none;">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">Acopio</label><input id="acNombre" class="form-control form-control-sm" list="dlAcopios"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold mb-1">Fecha del informe de stock</label><input id="acFecha" type="date" class="form-control form-control-sm"></div>
+                </div>
+                <div class="small fw-bold mb-1">Productores en el archivo <span class="hint fw-normal">(importá solo los de esta empresa)</span></div>
+                <div id="acProductores" class="mb-2"></div>
+                <div id="acStockPrevia" class="mb-2"></div>
+                <button class="btn btn-sm btn-success fw-bold" onclick="importarAcopio()">Importar y conciliar</button>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2">
+                <div>
+                    <h5 class="fw-bold mb-0">Conciliación</h5>
+                    <p class="hint mb-0">Se concilia solo cuando coinciden grano, carta de porte, chofer y kilos brutos (y patente y fecha si el acopio las informa).
+                        Al conciliar, el camión pasa a contar con los <strong>kilos netos</strong> del acopio.</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <select id="coGrano" class="form-select form-select-sm" style="width:130px;" onchange="cargarConciliacion()"></select>
+                    <button class="btn btn-sm btn-primary fw-bold" onclick="conciliarAuto()">Conciliar automáticamente</button>
+                </div>
+            </div>
+            <div id="coResumen" class="mb-2"></div>
+
+            <h6 class="seccion">Sugeridas para revisar <button id="coBtnTodas" class="btn btn-sm btn-outline-success py-0 ms-2" onclick="confirmarTodas()">Confirmar todas</button></h6>
+            <div class="scroll" style="max-height:340px;">
+                <table class="table table-sm tabla mb-0">
+                    <thead class="table-light"><tr><th>Camión (planilla)</th><th>Romaneo (acopio)</th><th>Coinciden</th><th></th></tr></thead>
+                    <tbody id="coSugBody"></tbody>
+                </table>
+            </div>
+
+            <h6 class="seccion">Camiones sin romaneo</h6>
+            <div class="scroll" style="max-height:340px;">
+                <table class="table table-sm tabla mb-0">
+                    <thead class="table-light"><tr><th>Fecha</th><th>Grano</th><th>Campo / lote</th><th>Chofer</th><th>CPe</th><th class="num">Kg campo</th><th>Vincular con romaneo</th></tr></thead>
+                    <tbody id="coCamBody"></tbody>
+                </table>
+            </div>
+
+            <h6 class="seccion">Romaneos del acopio sin camión en la planilla</h6>
+            <div class="scroll" style="max-height:340px;">
+                <table class="table table-sm tabla mb-0">
+                    <thead class="table-light"><tr><th>Acopio</th><th>Productor</th><th>Romaneo</th><th>Grano</th><th>Procedencia</th><th>Chofer</th><th>CPe</th>
+                        <th class="num">Bruto</th><th class="num">Merma</th><th class="num">Neto</th><th class="num">Hum.</th><th></th></tr></thead>
+                    <tbody id="coRomBody"></tbody>
+                </table>
+            </div>
+
+            <h6 class="seccion">Conciliados</h6>
+            <div class="scroll" style="max-height:400px;">
+                <table class="table table-sm tabla mb-0">
+                    <thead class="table-light"><tr><th>Fecha</th><th>Grano</th><th>Campo / lote</th><th>Chofer</th><th>CPe</th><th class="num">Kg campo</th>
+                        <th class="num">Bruto acopio</th><th class="num">Dif.</th><th class="num">Neto acopio</th><th>Romaneo</th><th></th></tr></thead>
+                    <tbody id="coOkBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- STOCK -->
+    <div id="tabStock" class="tab-cos" style="display:none;">
+        <div class="main-card">
+            <h5 class="fw-bold mb-1">Stock de granos</h5>
+            <p class="hint mb-3">Por especie (Soja 1ª y 2ª suman SOJA). En acopio: kilos netos de lo conciliado + kilos de campo de los camiones pendientes + romaneos que el acopio informó sin camión en la planilla.
+                Vendido: liquidaciones de granos cargadas.</p>
+            <div class="scroll">
+                <table class="table table-hover tabla mb-0">
+                    <thead class="table-dark">
+                        <tr><th>Campaña</th><th>Grano</th><th class="num">Silobolsas</th><th class="num">Acopio conciliado</th><th class="num">Pendiente de conciliar</th>
+                            <th class="num">Romaneos sin camión</th><th class="num">Total en acopio</th><th class="num">Vendido</th><th class="num">Disponible (kg)</th><th class="num">Disponible (tn)</th></tr>
+                    </thead>
+                    <tbody id="stBody"></tbody>
+                </table>
+            </div>
+            <h6 class="seccion">Según el último informe de stock del acopio (toneladas)</h6>
+            <div class="scroll">
+                <table class="table table-sm tabla mb-0">
+                    <thead class="table-light"><tr><th>Acopio</th><th>Informe al</th><th>Campaña</th><th>Grano</th><th class="num">Máx. finales</th><th class="num">Entregadas</th>
+                        <th class="num">Certificadas</th><th class="num">Liquidadas</th><th class="num">A vender</th></tr></thead>
+                    <tbody id="stInfBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRODUCCION -->
+    <div id="tabProduccion" class="tab-cos" style="display:none;">
+        <div class="main-card">
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2">
+                <div>
+                    <h5 class="fw-bold mb-0">Producción por lote</h5>
+                    <p class="hint mb-0">Kilos netos del acopio en lo conciliado; kilos de campo en lo pendiente; silobolsas por sus kilos (o por lo extraído si ya se vació).
+                        kg/ha sobre la superficie del lote en el alta del campo.</p>
+                </div>
+                <select id="prGrano" class="form-select form-select-sm" style="width:130px;" onchange="cargarProduccion()"></select>
+            </div>
+            <div class="scroll">
+                <table class="table table-hover tabla mb-0">
+                    <thead class="table-dark">
+                        <tr><th>Campo</th><th>Lote</th><th>Cultivo</th><th class="num">Camiones</th><th class="num">Silobolsas</th><th class="num">Kilos</th>
+                            <th class="num">Sup. lote (ha)</th><th class="num">kg/ha</th></tr>
+                    </thead>
+                    <tbody id="prBody"></tbody>
+                    <tfoot id="prFoot"></tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalCamion" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2"><h6 class="modal-title fw-bold">Editar camión</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="mcId">
+                <div class="row g-2">
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">Fecha</label><input id="mcFecha" type="date" class="form-control form-control-sm"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">Campaña</label><select id="mcCampania" class="form-select form-select-sm"></select></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">Producto (cultivo)</label><input id="mcCultivo" class="form-control form-control-sm" list="dlCultivos"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">Origen</label><select id="mcOrigen" class="form-select form-select-sm" data-orden-fijo></select></div>
+                    <div class="col-md-4"><label class="form-label small fw-bold mb-1">Campo</label><input id="mcCampo" class="form-control form-control-sm" list="dlCampos" onchange="ponerLotes(this.value)"></div>
+                    <div class="col-md-4"><label class="form-label small fw-bold mb-1">Lote</label><input id="mcLote" class="form-control form-control-sm" list="dlLotes"></div>
+                    <div class="col-md-4"><label class="form-label small fw-bold mb-1">Destino</label><input id="mcDestino" class="form-control form-control-sm" list="dlAcopios"></div>
+                    <div class="col-md-4"><label class="form-label small fw-bold mb-1">Chofer</label><input id="mcChofer" class="form-control form-control-sm" list="dlChoferes"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">Patente</label><input id="mcPatente" class="form-control form-control-sm" list="dlPatentes"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">CPe / remito</label><input id="mcCpe" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold mb-1">Hum.</label><input id="mcHum" class="form-control form-control-sm text-end"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold mb-1">Kilos</label><input id="mcKilos" class="form-control form-control-sm text-end"></div>
+                    <div class="col-md-9"><label class="form-label small fw-bold mb-1">Observaciones</label><input id="mcObs" class="form-control form-control-sm"></div>
+                </div>
+            </div>
+            <div class="modal-footer py-2"><button class="btn btn-sm btn-success fw-bold" onclick="guardarCamion()">Guardar</button></div>
+        </div>
+    </div>
+</div>
+
+<datalist id="dlCampos"></datalist>
+<datalist id="dlLotes"></datalist>
+<datalist id="dlCultivos"></datalist>
+<datalist id="dlAcopios"></datalist>
+<datalist id="dlChoferes"></datalist>
+<datalist id="dlPatentes"></datalist>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let M = { campos: [], campanias: [], cultivos: [], acopios: [], choferes: [], patentes: [], granos: [], actual: '' };
+let bolsas = [];
+let camionesCache = [];
+let conc = null;
+
+function escHtml(s) {
+    return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function kg(n) { return Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 }); }
+function tn(n) { return Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }); }
+function dec(n, d) { return n == null || n === '' ? '' : Number(n).toLocaleString('es-AR', { maximumFractionDigits: d == null ? 1 : d }); }
+function fecha(v) { const s = String(v || '').slice(0, 10); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : s; }
+function numIn(v) {
+    let s = String(v ?? '').trim().replace(/\s/g, '');
+    if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.'); else s = s.replace(',', '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+}
+function opciones(sel, lista, vacio, valor) {
+    sel.innerHTML = (vacio != null ? `<option value="">${escHtml(vacio)}</option>` : '') + lista.map(v => `<option value="${escHtml(v)}">${escHtml(v)}</option>`).join('');
+    if (valor != null) sel.value = valor;
+}
+function datalist(id, lista) { document.getElementById(id).innerHTML = lista.map(v => `<option value="${escHtml(v)}"></option>`).join(''); }
+async function api(url, opts) {
+    const res = await fetch(url, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || ('Error ' + res.status));
+    return data;
+}
+function jsonPost(url, body, method) {
+    return api(url, { method: method || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+function campania() { return document.getElementById('campGlobal').value; }
+function lotesDe(campo) {
+    const c = M.campos.find(x => x.nombre.trim().toUpperCase() === String(campo || '').trim().toUpperCase());
+    return c ? c.lotes : [];
+}
+function ponerLotes(campo) { datalist('dlLotes', lotesDe(campo)); }
+
+function verTab(btn) {
+    document.querySelectorAll('.nav-pills .nav-link').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-cos').forEach(t => t.style.display = t.id === btn.dataset.tab ? '' : 'none');
+    refrescarTab();
+}
+function tabActual() { return document.querySelector('.nav-pills .nav-link.active').dataset.tab; }
+function refrescarTab() {
+    const t = tabActual();
+    if (t === 'tabPlanilla') cargarCamiones();
+    else if (t === 'tabBolsas') cargarBolsas();
+    else if (t === 'tabConciliacion') cargarConciliacion();
+    else if (t === 'tabStock') cargarStock();
+    else if (t === 'tabProduccion') cargarProduccion();
+}
+
+async function cargarMaestros() {
+    M = await api('/api/agro/cosechas/maestros');
+    const campanias = M.campanias.includes(M.actual) ? M.campanias : [M.actual, ...M.campanias];
+    const g = document.getElementById('campGlobal');
+    const prev = g.value;
+    opciones(g, campanias, 'Todas', prev || M.actual);
+    ['plCampania', 'sbCampania', 'mcCampania'].forEach(id => {
+        const s = document.getElementById(id);
+        opciones(s, campanias, null, s.value || M.actual);
+    });
+    datalist('dlCampos', M.campos.map(c => c.nombre));
+    datalist('dlCultivos', M.cultivos);
+    datalist('dlAcopios', M.acopios);
+    datalist('dlChoferes', M.choferes);
+    datalist('dlPatentes', M.patentes);
+    ['fcGrano', 'coGrano', 'prGrano'].forEach(id => {
+        const s = document.getElementById(id);
+        opciones(s, M.granos, 'Todos los granos', s.value);
+    });
+    if (!document.getElementById('plDestino').value && M.acopios.length) document.getElementById('plDestino').value = M.acopios[0];
+}
+
+async function cargarBolsasCache() {
+    bolsas = (await api('/api/agro/cosechas/silobolsas')).silobolsas || [];
+}
+function opcionesOrigen(campo, cultivo, actual) {
+    const gr = granoDe(cultivo);
+    const lista = bolsas.filter(b => (b.id === actual) || (!b.vaciada
+        && (!campo || b.campo.trim().toUpperCase() === campo.trim().toUpperCase())
+        && (!gr || b.grano === gr)));
+    return '<option value="">Lote</option>' + lista.map(b =>
+        `<option value="${b.id}">Silobolsa ${escHtml(b.identificacion || b.id)} · ${escHtml(b.lote || '')} · saldo ${kg(b.saldo)}</option>`).join('');
+}
+function granoDe(cultivo) {
+    const t = String(cultivo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    for (const [k, v] of [['soja', 'SOJA'], ['maiz', 'MAIZ'], ['trigo', 'TRIGO'], ['cebada', 'CEBADA'], ['girasol', 'GIRASOL'], ['sorgo', 'SORGO'], ['avena', 'AVENA']]) {
+        if (t.includes(k)) return v;
+    }
+    return String(cultivo || '').trim().toUpperCase();
+}
+
+// ---------- planilla
+function agregarRenglon(enfocar) {
+    const tb = document.getElementById('plBody');
+    const prev = tb.lastElementChild;
+    const tr = document.createElement('tr');
+    const n = tb.children.length + 1;
+    const campo = document.getElementById('plCampo').value;
+    const cultivo = document.getElementById('plCultivo').value;
+    const val = (cls) => prev ? prev.querySelector('.' + cls).value : '';
+    tr.innerHTML = `
+        <td class="text-muted small text-center">${n}</td>
+        <td><input type="date" class="form-control pl-fecha w-fecha"></td>
+        <td><select class="form-select pl-origen" data-orden-fijo style="min-width:120px;">${opcionesOrigen(campo, cultivo)}</select></td>
+        <td><input class="form-control pl-lote" list="dlLotes" style="min-width:130px;"></td>
+        <td><input class="form-control pl-chofer" list="dlChoferes" style="min-width:140px;"></td>
+        <td><input class="form-control pl-patente" list="dlPatentes" style="width:105px;"></td>
+        <td><input class="form-control pl-cpe" style="width:120px;"></td>
+        <td><input class="form-control pl-destino" list="dlAcopios" style="min-width:110px;"></td>
+        <td><input class="form-control pl-kilos text-end w-num"></td>
+        <td><input class="form-control pl-hum text-end w-hum"></td>
+        <td><button class="btn btn-sm btn-link text-danger p-0" title="Quitar renglón" onclick="this.closest('tr').remove(); renumerar();">✕</button></td>`;
+    tb.appendChild(tr);
+    tr.querySelector('.pl-fecha').value = val('pl-fecha');
+    tr.querySelector('.pl-lote').value = val('pl-lote');
+    tr.querySelector('.pl-destino').value = val('pl-destino') || document.getElementById('plDestino').value;
+    tr.querySelector('.pl-origen').value = val('pl-origen');
+    tr.querySelectorAll('input, select').forEach(el => {
+        el.addEventListener('keydown', teclaGrilla);
+        el.addEventListener('input', totalPlanilla);
+    });
+    if (enfocar) (prev ? tr.querySelector('.pl-chofer') : tr.querySelector('.pl-fecha')).focus();
+    totalPlanilla();
+}
+function renumerar() {
+    [...document.getElementById('plBody').children].forEach((tr, i) => tr.firstElementChild.textContent = i + 1);
+    totalPlanilla();
+}
+function teclaGrilla(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const tr = e.target.closest('tr');
+    const campos = [...tr.querySelectorAll('input, select')];
+    const i = campos.indexOf(e.target);
+    if (i < campos.length - 1) { campos[i + 1].focus(); return; }
+    if (!tr.nextElementSibling) agregarRenglon(true);
+    else tr.nextElementSibling.querySelector('.pl-chofer').focus();
+}
+function totalPlanilla() {
+    let t = 0, n = 0;
+    document.querySelectorAll('#plBody tr').forEach(tr => {
+        const k = numIn(tr.querySelector('.pl-kilos').value);
+        if (k > 0) { t += k; n++; }
+    });
+    document.getElementById('plTotal').textContent = kg(t);
+    document.getElementById('plCant').textContent = n;
+}
+function cambioCabecera() {
+    const campo = document.getElementById('plCampo').value;
+    const cultivo = document.getElementById('plCultivo').value;
+    ponerLotes(campo);
+    document.querySelectorAll('#plBody .pl-origen').forEach(s => {
+        const v = s.value;
+        s.innerHTML = opcionesOrigen(campo, cultivo);
+        s.value = [...s.options].some(o => o.value === v) ? v : '';
+    });
+}
+async function guardarPlanilla() {
+    const cab = {
+        campania: document.getElementById('plCampania').value,
+        campo: document.getElementById('plCampo').value.trim(),
+        cultivo: document.getElementById('plCultivo').value.trim(),
+        destino: document.getElementById('plDestino').value.trim(),
+    };
+    const filas = [...document.querySelectorAll('#plBody tr')].map(tr => ({
+        fecha: tr.querySelector('.pl-fecha').value,
+        silobolsa_id: Number(tr.querySelector('.pl-origen').value || 0) || null,
+        lote: tr.querySelector('.pl-lote').value.trim(),
+        chofer: tr.querySelector('.pl-chofer').value.trim(),
+        patente: tr.querySelector('.pl-patente').value.trim(),
+        cpe: tr.querySelector('.pl-cpe').value.trim(),
+        destino: tr.querySelector('.pl-destino').value.trim(),
+        kilos: numIn(tr.querySelector('.pl-kilos').value),
+        humedad: numIn(tr.querySelector('.pl-hum').value) || null,
+    })).filter(f => f.kilos || f.chofer || f.cpe || f.patente);
+    if (!cab.campo || !cab.cultivo) return alert('Completá campo y producto (cultivo) arriba.');
+    if (!filas.length) return alert('Cargá al menos un camión.');
+    const total = filas.reduce((s, f) => s + f.kilos, 0);
+    if (!confirm(`Guardar ${filas.length} camión(es) de ${cab.cultivo} · ${cab.campo} · ${kg(total)} kg?`)) return;
+    try {
+        const r = await jsonPost('/api/agro/cosechas/camiones', { cabecera: cab, filas });
+        alert(r.message);
+        document.getElementById('plBody').innerHTML = '';
+        agregarRenglon(false);
+        await cargarMaestros();
+        await cargarBolsasCache();
+        cargarCamiones();
+    } catch (e) { alert(e.message); }
+}
+
+async function cargarCamiones() {
+    const p = new URLSearchParams();
+    if (campania()) p.set('campania', campania());
+    const g = document.getElementById('fcGrano').value; if (g) p.set('grano', g);
+    const c = document.getElementById('fcCampo').value.trim(); if (c) p.set('campo', c);
+    const e = document.getElementById('fcEstado').value; if (e) p.set('estado', e);
+    try {
+        camionesCache = (await api('/api/agro/cosechas/camiones?' + p)).camiones || [];
+    } catch (err) { document.getElementById('fcResumen').innerText = err.message; return; }
+    const tot = camionesCache.reduce((s, r) => s + (r.kilos || 0), 0);
+    const conciliados = camionesCache.filter(r => r.romaneo_id);
+    const netos = conciliados.reduce((s, r) => s + (r.kilos_netos_acopio || 0), 0);
+    document.getElementById('fcResumen').innerText = `${camionesCache.length} camiones · ${kg(tot)} kg de campo · ${conciliados.length} conciliados (${kg(netos)} kg netos acopio) · ${camionesCache.length - conciliados.length} pendientes.`;
+    document.getElementById('fcBody').innerHTML = camionesCache.map((r, i) => `<tr>
+        <td class="text-nowrap">${fecha(r.fecha)}</td>
+        <td>${escHtml(r.grano)}<div class="hint">${escHtml(r.cultivo)}</div></td>
+        <td>${escHtml(r.campo)}</td>
+        <td>${escHtml(r.lote)}${r.silobolsa ? `<div class="hint">de silobolsa ${escHtml(r.silobolsa)}</div>` : ''}</td>
+        <td>${escHtml(r.chofer)}</td>
+        <td class="text-nowrap">${escHtml(r.patente)}</td>
+        <td>${escHtml(r.cpe)}</td>
+        <td>${escHtml(r.destino)}</td>
+        <td class="num">${kg(r.kilos)}</td>
+        <td class="num">${dec(r.humedad)}</td>
+        <td>${r.romaneo_id
+            ? `<span class="estado-ok">${kg(r.kilos_netos_acopio)} kg netos</span><div class="hint">romaneo ${escHtml(r.nro_romaneo)}${r.conciliado_modo === 'auto' ? ' · automático' : ''}</div>`
+            : '<span class="estado-pend">Pendiente</span>'}</td>
+        <td class="text-nowrap">
+            <button class="btn btn-sm btn-outline-secondary py-0" onclick="editarCamion(${i})">Editar</button>
+            <button class="btn btn-sm btn-outline-danger py-0" onclick="borrarCamion(${i})">✕</button>
+        </td>
+    </tr>`).join('') || '<tr><td colspan="12" class="text-center text-muted py-4">No hay camiones cargados con ese filtro.</td></tr>';
+}
+function editarCamion(i) {
+    const r = camionesCache[i];
+    document.getElementById('mcId').value = r.id;
+    document.getElementById('mcFecha').value = r.fecha || '';
+    const sc = document.getElementById('mcCampania');
+    if (r.campania && ![...sc.options].some(o => o.value === r.campania)) sc.insertAdjacentHTML('beforeend', `<option>${escHtml(r.campania)}</option>`);
+    sc.value = r.campania || '';
+    document.getElementById('mcCultivo').value = r.cultivo || '';
+    document.getElementById('mcOrigen').innerHTML = opcionesOrigen(r.campo, r.cultivo, r.silobolsa_id);
+    document.getElementById('mcOrigen').value = r.silobolsa_id || '';
+    document.getElementById('mcCampo').value = r.campo || '';
+    ponerLotes(r.campo);
+    document.getElementById('mcLote').value = r.lote || '';
+    document.getElementById('mcDestino').value = r.destino || '';
+    document.getElementById('mcChofer').value = r.chofer || '';
+    document.getElementById('mcPatente').value = r.patente || '';
+    document.getElementById('mcCpe').value = r.cpe || '';
+    document.getElementById('mcHum').value = r.humedad == null ? '' : String(r.humedad).replace('.', ',');
+    document.getElementById('mcKilos').value = r.kilos || '';
+    document.getElementById('mcObs').value = r.observaciones || '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCamion')).show();
+}
+async function guardarCamion() {
+    const id = document.getElementById('mcId').value;
+    const body = {
+        fecha: document.getElementById('mcFecha').value, campania: document.getElementById('mcCampania').value,
+        cultivo: document.getElementById('mcCultivo').value, silobolsa_id: Number(document.getElementById('mcOrigen').value || 0) || null,
+        campo: document.getElementById('mcCampo').value, lote: document.getElementById('mcLote').value,
+        destino: document.getElementById('mcDestino').value, chofer: document.getElementById('mcChofer').value,
+        patente: document.getElementById('mcPatente').value, cpe: document.getElementById('mcCpe').value,
+        humedad: numIn(document.getElementById('mcHum').value) || null, kilos: numIn(document.getElementById('mcKilos').value),
+        observaciones: document.getElementById('mcObs').value,
+    };
+    try {
+        await jsonPost('/api/agro/cosechas/camiones/' + id, body, 'PUT');
+        bootstrap.Modal.getInstance(document.getElementById('modalCamion')).hide();
+        cargarCamiones();
+    } catch (e) { alert(e.message); }
+}
+async function borrarCamion(i) {
+    const r = camionesCache[i];
+    const extra = r.romaneo_id ? '\nEstá conciliado: el romaneo vuelve a quedar sin camión.' : '';
+    if (!confirm(`Borrar el camión de ${r.chofer || 's/chofer'} del ${fecha(r.fecha)} (${kg(r.kilos)} kg)?${extra}`)) return;
+    try { await api('/api/agro/cosechas/camiones/' + r.id, { method: 'DELETE' }); cargarCamiones(); } catch (e) { alert(e.message); }
+}
+
+// ---------- silobolsas
+async function cargarBolsas() {
+    await cargarBolsasCache();
+    const c = campania();
+    const lista = bolsas.filter(b => !c || b.campania === c);
+    document.getElementById('sbBody').innerHTML = lista.map(b => `<tr>
+        <td class="text-nowrap">${fecha(b.fecha)}</td>
+        <td>${escHtml(b.identificacion)}<div class="hint">${escHtml(b.observaciones || '')}</div></td>
+        <td>${escHtml(b.grano)}<div class="hint">${escHtml(b.cultivo)} · ${escHtml(b.campania)}</div></td>
+        <td>${escHtml(b.campo)}</td>
+        <td>${escHtml(b.lote)}</td>
+        <td class="num">${kg(b.kilos)}</td>
+        <td class="num">${kg(b.kilos_extraidos)}<div class="hint">${b.camiones_extraccion} camión(es)</div></td>
+        <td class="num fw-bold">${kg(b.saldo)}</td>
+        <td>${b.vaciada ? '<span class="text-muted">Vaciada</span>' : '<span class="estado-ok">Activa</span>'}</td>
+        <td class="text-nowrap">
+            <button class="btn btn-sm btn-outline-secondary py-0" onclick="editarBolsa(${b.id})">Editar</button>
+            <button class="btn btn-sm btn-outline-dark py-0" onclick="vaciarBolsa(${b.id})">${b.vaciada ? 'Reabrir' : 'Vaciada'}</button>
+            <button class="btn btn-sm btn-outline-danger py-0" onclick="borrarBolsa(${b.id})">✕</button>
+        </td>
+    </tr>`).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">No hay silobolsas en esta campaña.</td></tr>';
+}
+function datosBolsa() {
+    return {
+        fecha: document.getElementById('sbFecha').value, campania: document.getElementById('sbCampania').value,
+        cultivo: document.getElementById('sbCultivo').value, campo: document.getElementById('sbCampo').value,
+        lote: document.getElementById('sbLote').value, identificacion: document.getElementById('sbIdent').value,
+        kilos: numIn(document.getElementById('sbKilos').value), humedad: numIn(document.getElementById('sbHum').value) || null,
+        observaciones: document.getElementById('sbObs').value,
+    };
+}
+async function guardarBolsa() {
+    const id = document.getElementById('sbId').value;
+    const d = datosBolsa();
+    if (id) d.vaciada = (bolsas.find(b => b.id === Number(id)) || {}).vaciada || 0;
+    try {
+        if (id) await jsonPost('/api/agro/cosechas/silobolsas/' + id, d, 'PUT');
+        else await jsonPost('/api/agro/cosechas/silobolsas', d);
+        limpiarBolsa();
+        await cargarMaestros();
+        cargarBolsas();
+    } catch (e) { alert(e.message); }
+}
+function limpiarBolsa() {
+    ['sbId', 'sbFecha', 'sbCultivo', 'sbCampo', 'sbLote', 'sbIdent', 'sbKilos', 'sbHum', 'sbObs'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('sbCampania').value = campania() || M.actual;
+    document.getElementById('sbTitulo').innerText = 'Nueva silobolsa';
+}
+function editarBolsa(id) {
+    const b = bolsas.find(x => x.id === id);
+    if (!b) return;
+    document.getElementById('sbId').value = b.id;
+    document.getElementById('sbFecha').value = b.fecha || '';
+    document.getElementById('sbCampania').value = b.campania || '';
+    document.getElementById('sbCultivo').value = b.cultivo || '';
+    document.getElementById('sbCampo').value = b.campo || '';
+    ponerLotes(b.campo);
+    document.getElementById('sbLote').value = b.lote || '';
+    document.getElementById('sbIdent').value = b.identificacion || '';
+    document.getElementById('sbKilos').value = b.kilos || '';
+    document.getElementById('sbHum').value = b.humedad == null ? '' : String(b.humedad).replace('.', ',');
+    document.getElementById('sbObs').value = b.observaciones || '';
+    document.getElementById('sbTitulo').innerText = 'Editar silobolsa ' + (b.identificacion || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+async function vaciarBolsa(id) {
+    const b = bolsas.find(x => x.id === id);
+    const d = { ...b, vaciada: b.vaciada ? 0 : 1 };
+    if (!b.vaciada && !confirm(`Marcar la silobolsa ${b.identificacion || ''} como vaciada? El saldo (${kg(b.saldo)} kg) deja de contar en el stock.`)) return;
+    try { await jsonPost('/api/agro/cosechas/silobolsas/' + id, d, 'PUT'); cargarBolsas(); } catch (e) { alert(e.message); }
+}
+async function borrarBolsa(id) {
+    const b = bolsas.find(x => x.id === id);
+    if (!confirm(`Borrar la silobolsa ${b.identificacion || ''} (${kg(b.kilos)} kg)?`)) return;
+    try { await api('/api/agro/cosechas/silobolsas/' + id, { method: 'DELETE' }); cargarBolsas(); } catch (e) { alert(e.message); }
+}
+
+// ---------- acopio
+let previaAcopio = null;
+async function leerAcopio() {
+    const f = document.getElementById('acArchivo').files[0];
+    if (!f) return alert('Elegí el Excel del acopio.');
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+        previaAcopio = await api('/api/agro/cosechas/acopio/previa', { method: 'POST', body: fd });
+    } catch (e) { return alert(e.message); }
+    document.getElementById('acPrevia').style.display = '';
+    document.getElementById('acNombre').value = previaAcopio.acopio_sugerido || '';
+    document.getElementById('acFecha').value = previaAcopio.fecha_informe || '';
+    document.getElementById('acProductores').innerHTML = previaAcopio.productores.map((p, i) => `
+        <label class="d-block border rounded px-2 py-1 mb-1" style="cursor:pointer;">
+            <input type="checkbox" class="form-check-input me-1" id="acProd${i}" ${p.es_empresa ? 'checked' : ''}>
+            <strong>${escHtml(p.productor || '(sin productor)')}</strong> · ${p.n} romaneos · ${kg(p.kilos_netos)} kg netos
+            <span class="hint">${escHtml(p.granos.join(', '))}</span>
+        </label>`).join('') || '<div class="hint">El archivo no trae romaneos.</div>';
+    const st = previaAcopio.stock || [];
+    document.getElementById('acStockPrevia').innerHTML = st.length
+        ? `<div class="small fw-bold mb-1">Hoja de stock: ${st.length} renglones</div><div class="hint">${st.map(s => `${escHtml(s.grano)} ${escHtml(s.campania)}: ${tn(s.tt_a_vender)} tn a vender`).join(' · ')}</div>`
+        : '';
+}
+async function importarAcopio() {
+    const f = document.getElementById('acArchivo').files[0];
+    if (!f || !previaAcopio) return alert('Leé primero el archivo.');
+    const productores = previaAcopio.productores.filter((p, i) => document.getElementById('acProd' + i).checked).map(p => p.productor);
+    if (previaAcopio.productores.length && !productores.length) return alert('Marcá al menos un productor.');
+    const acopio = document.getElementById('acNombre').value.trim();
+    if (!acopio) return alert('Indicá el nombre del acopio.');
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('acopio', acopio);
+    fd.append('productores', JSON.stringify(productores));
+    fd.append('fecha_informe', document.getElementById('acFecha').value || '');
+    try {
+        const r = await api('/api/agro/cosechas/acopio/importar', { method: 'POST', body: fd });
+        alert(r.message);
+        document.getElementById('acPrevia').style.display = 'none';
+        document.getElementById('acArchivo').value = '';
+        await cargarMaestros();
+        cargarConciliacion();
+    } catch (e) { alert(e.message); }
+}
+
+// ---------- conciliación
+function chip(nombre, v, extra) {
+    const cls = v === true ? 'chip-ok' : v === false ? 'chip-no' : 'chip-nd';
+    const ico = v === true ? '✓' : v === false ? '✗' : '–';
+    return `<span class="chip ${cls}">${ico} ${nombre}${extra || ''}</span>`;
+}
+function difPct(a, b) { return a && b ? ((a - b) / b * 100) : null; }
+async function cargarConciliacion() {
+    const p = new URLSearchParams();
+    if (campania()) p.set('campania', campania());
+    const g = document.getElementById('coGrano').value; if (g) p.set('grano', g);
+    try { conc = await api('/api/agro/cosechas/conciliacion?' + p); } catch (e) { document.getElementById('coResumen').innerText = e.message; return; }
+    const r = conc.resumen;
+    document.getElementById('coResumen').innerHTML = `
+        <span class="badge text-bg-success me-1">${r.conciliados} conciliados · ${kg(r.kilos_netos_conciliados)} kg netos</span>
+        <span class="badge text-bg-warning me-1">${r.sugerencias} sugeridas</span>
+        <span class="badge text-bg-secondary me-1">${r.camiones_pendientes} camiones sin romaneo · ${kg(r.kilos_campo_pendientes)} kg campo</span>
+        <span class="badge text-bg-light border me-1">${r.romaneos_pendientes} romaneos sin camión · ${kg(r.kilos_netos_sin_camion)} kg netos</span>`;
+    document.getElementById('coBtnTodas').style.display = conc.sugerencias.length ? '' : 'none';
+    document.getElementById('coSugBody').innerHTML = conc.sugerencias.map((s, i) => {
+        const c = s.camion, m = s.romaneo, k = s.coincide;
+        const d = difPct(c.kilos, m.kilos_bruto);
+        return `<tr>
+            <td>${fecha(c.fecha)} · <strong>${escHtml(c.chofer)}</strong> · CPe ${escHtml(c.cpe)}<div class="hint">${escHtml(c.grano)} · ${escHtml(c.campo)} ${escHtml(c.lote)} · ${kg(c.kilos)} kg campo</div></td>
+            <td>${escHtml(m.acopio)} · romaneo ${escHtml(m.nro_romaneo)} · <strong>${escHtml(m.chofer)}</strong> · CPe ${escHtml(m.cpe)}
+                <div class="hint">${escHtml(m.procedencia)} · bruto ${kg(m.kilos_bruto)} · neto ${kg(m.kilos_netos)}</div></td>
+            <td>${chip('CPe', k.cpe)}${chip('Kilos', k.kilos, d == null ? '' : ` (${d > 0 ? '+' : ''}${dec(d, 1)}%)`)}${chip('Chofer', k.chofer)}${k.patente != null ? chip('Patente', k.patente) : ''}${k.fecha != null ? chip('Fecha', k.fecha) : ''}${chip('Campo', k.campo)}</td>
+            <td><button class="btn btn-sm btn-success py-0" onclick="vincularPar(${c.id}, ${m.id})">Confirmar</button></td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="4" class="text-center text-muted py-3">No hay sugerencias pendientes.</td></tr>';
+
+    const sugC = new Set(conc.sugerencias.map(s => s.camion.id));
+    const palabras = s => new Set(String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z]+/).filter(t => t.length >= 3));
+    const cpeN = s => { const g = String(s || '').match(/\d+/g); return g ? String(parseInt(g[g.length - 1], 10)) : ''; };
+    document.getElementById('coCamBody').innerHTML = conc.camiones_pendientes.map(c => {
+        const apellidos = palabras(c.chofer);
+        const puntos = m => (cpeN(m.cpe) && cpeN(m.cpe) === cpeN(c.cpe) ? 1e9 : 0)
+            + ([...palabras(m.chofer)].some(t => apellidos.has(t)) ? 1e8 : 0)
+            - Math.abs((m.kilos_bruto || 0) - c.kilos);
+        const cands = conc.romaneos_pendientes.filter(m => m.grano === c.grano && (!c.campania || !m.campania || m.campania === c.campania))
+            .sort((a, b) => puntos(b) - puntos(a)).slice(0, 40);
+        const ops = cands.map(m => `<option value="${m.id}">Rom. ${escHtml(m.nro_romaneo)} · CPe ${escHtml(m.cpe)} · ${escHtml(m.chofer)} · bruto ${kg(m.kilos_bruto)}</option>`).join('');
+        return `<tr>
+            <td class="text-nowrap">${fecha(c.fecha)}</td><td>${escHtml(c.grano)}</td><td>${escHtml(c.campo)} · ${escHtml(c.lote)}</td>
+            <td>${escHtml(c.chofer)}</td><td>${escHtml(c.cpe)}</td><td class="num">${kg(c.kilos)}</td>
+            <td><div class="d-flex gap-1">${cands.length
+                ? `<select id="coSel${c.id}" class="form-select form-select-sm" data-orden-fijo style="min-width:300px;"><option value="">Elegí el romaneo…</option>${ops}</select>
+                   <button class="btn btn-sm btn-outline-primary py-0" onclick="vincularSel(${c.id})">Vincular</button>`
+                : '<span class="hint">Sin romaneos de ese grano. Importá el reporte del acopio.</span>'}
+                ${sugC.has(c.id) ? '<span class="hint">tiene sugerencia arriba</span>' : ''}</div></td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="7" class="text-center text-muted py-3">Todos los camiones están conciliados.</td></tr>';
+
+    document.getElementById('coRomBody').innerHTML = conc.romaneos_pendientes.map(m => `<tr>
+        <td>${escHtml(m.acopio)}</td><td class="small">${escHtml(m.productor)}</td><td>${escHtml(m.nro_romaneo)}</td>
+        <td>${escHtml(m.grano)} <span class="hint">${escHtml(m.campania)}</span></td><td class="small">${escHtml(m.procedencia)}</td>
+        <td class="small">${escHtml(m.chofer)}</td><td>${escHtml(m.cpe)}</td>
+        <td class="num">${kg(m.kilos_bruto)}</td><td class="num">${kg(m.merma)}</td><td class="num fw-bold">${kg(m.kilos_netos)}</td><td class="num">${dec(m.humedad)}</td>
+        <td><button class="btn btn-sm btn-link text-danger p-0" title="Borrar romaneo (por ejemplo, si no es de esta empresa)" onclick="borrarRomaneo(${m.id})">✕</button></td>
+    </tr>`).join('') || '<tr><td colspan="12" class="text-center text-muted py-3">No hay romaneos sin camión.</td></tr>';
+
+    document.getElementById('coOkBody').innerHTML = conc.conciliados.map(x => {
+        const d = difPct(x.kilos, x.kilos_bruto);
+        return `<tr>
+            <td class="text-nowrap">${fecha(x.fecha)}</td><td>${escHtml(x.grano)}</td><td>${escHtml(x.campo)} · ${escHtml(x.lote)}</td>
+            <td>${escHtml(x.chofer)}</td><td>${escHtml(x.cpe)}</td><td class="num">${kg(x.kilos)}</td><td class="num">${kg(x.kilos_bruto)}</td>
+            <td class="num ${d != null && Math.abs(d) > 0.5 ? 'text-danger' : ''}">${d == null ? '' : dec(d, 1) + '%'}</td>
+            <td class="num fw-bold">${kg(x.kilos_netos)}</td>
+            <td class="small">${escHtml(x.acopio)} ${escHtml(x.nro_romaneo)}<div class="hint">${x.conciliado_modo === 'auto' ? 'automático' : 'manual'}${x.conciliado_por ? ' · ' + escHtml(x.conciliado_por) : ''}</div></td>
+            <td><button class="btn btn-sm btn-outline-secondary py-0" onclick="desvincular(${x.romaneo_id})">Desvincular</button></td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="11" class="text-center text-muted py-3">Todavía no hay camiones conciliados.</td></tr>';
+}
+async function conciliarAuto() {
+    try {
+        const r = await jsonPost('/api/agro/cosechas/conciliacion/auto', { campania: campania(), grano: document.getElementById('coGrano').value });
+        alert(r.message);
+        cargarConciliacion();
+    } catch (e) { alert(e.message); }
+}
+async function vincularPar(camionId, romaneoId) {
+    try { await jsonPost('/api/agro/cosechas/conciliacion/vincular', { camion_id: camionId, romaneo_id: romaneoId }); cargarConciliacion(); }
+    catch (e) { alert(e.message); }
+}
+async function vincularSel(camionId) {
+    const v = Number(document.getElementById('coSel' + camionId).value || 0);
+    if (!v) return alert('Elegí el romaneo.');
+    await vincularPar(camionId, v);
+}
+async function confirmarTodas() {
+    const pares = conc.sugerencias.map(s => ({ camion_id: s.camion.id, romaneo_id: s.romaneo.id }));
+    if (!confirm(`Confirmar las ${pares.length} sugerencias? Revisá antes las que tienen datos en rojo.`)) return;
+    try { await jsonPost('/api/agro/cosechas/conciliacion/vincular', { pares }); cargarConciliacion(); } catch (e) { alert(e.message); }
+}
+async function desvincular(romaneoId) {
+    if (!confirm('Desvincular este camión del romaneo? El camión vuelve a pendiente con sus kilos de campo.')) return;
+    try { await jsonPost('/api/agro/cosechas/conciliacion/desvincular', { romaneo_id: romaneoId }); cargarConciliacion(); } catch (e) { alert(e.message); }
+}
+async function borrarRomaneo(id) {
+    if (!confirm('Borrar este romaneo importado? Si volvés a importar el archivo con ese productor, vuelve a aparecer.')) return;
+    try { await api('/api/agro/cosechas/romaneos/' + id, { method: 'DELETE' }); cargarConciliacion(); } catch (e) { alert(e.message); }
+}
+
+// ---------- stock
+async function cargarStock() {
+    const p = new URLSearchParams();
+    if (campania()) p.set('campania', campania());
+    let d;
+    try { d = await api('/api/agro/cosechas/stock?' + p); } catch (e) { return alert(e.message); }
+    document.getElementById('stBody').innerHTML = d.stock.map(s => `<tr>
+        <td>${escHtml(s.campania)}</td><td class="fw-bold">${escHtml(s.grano)}</td>
+        <td class="num">${kg(s.silobolsas)}</td><td class="num">${kg(s.acopio_conciliado)}</td>
+        <td class="num">${kg(s.acopio_pendiente)}${s.camiones_pendientes ? `<div class="hint">${s.camiones_pendientes} camión(es)</div>` : ''}</td>
+        <td class="num">${kg(s.romaneos_sin_camion)}</td><td class="num">${kg(s.en_acopio)}</td><td class="num">${kg(s.vendido)}</td>
+        <td class="num fw-bold">${kg(s.disponible)}</td><td class="num">${tn(s.disponible / 1000)}</td>
+    </tr>`).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">Sin cosecha cargada en esta campaña.</td></tr>';
+    document.getElementById('stInfBody').innerHTML = d.informado.map(s => `<tr>
+        <td>${escHtml(s.acopio)}</td><td>${fecha(s.fecha_informe)}</td><td>${escHtml(s.campania)}</td><td>${escHtml(s.grano)}</td>
+        <td class="num">${tn(s.tt_max_finales)}</td><td class="num">${tn(s.tt_entregadas)}</td><td class="num">${tn(s.tt_certificadas)}</td>
+        <td class="num">${tn(s.tt_liquidadas)}</td><td class="num fw-bold">${tn(s.tt_a_vender)}</td>
+    </tr>`).join('') || '<tr><td colspan="9" class="text-center text-muted py-3">Sin informe de stock importado.</td></tr>';
+}
+
+// ---------- producción
+async function cargarProduccion() {
+    const tb = document.getElementById('prBody');
+    if (!campania()) {
+        tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Elegí una campaña arriba.</td></tr>';
+        document.getElementById('prFoot').innerHTML = '';
+        return;
+    }
+    const p = new URLSearchParams({ campania: campania() });
+    const g = document.getElementById('prGrano').value; if (g) p.set('grano', g);
+    let d;
+    try { d = await api('/api/agro/cosechas/produccion?' + p); } catch (e) { return alert(e.message); }
+    const filas = d.filas || [];
+    tb.innerHTML = filas.map(r => `<tr>
+        <td>${escHtml(r.campo)}</td><td>${escHtml(r.lote)}</td><td>${escHtml(r.cultivo)}</td>
+        <td class="num">${r.camiones}${r.pendientes ? `<div class="hint">${r.pendientes} sin conciliar</div>` : ''}</td>
+        <td class="num">${r.silobolsas || ''}</td><td class="num fw-bold">${kg(r.kilos)}</td>
+        <td class="num">${r.sup_lote ? dec(r.sup_lote, 2) : '<span class="hint">sin dato</span>'}</td>
+        <td class="num">${r.kg_ha ? kg(r.kg_ha) : ''}</td>
+    </tr>`).join('') || '<tr><td colspan="8" class="text-center text-muted py-4">Sin cosecha cargada en esta campaña.</td></tr>';
+    const tot = filas.reduce((s, r) => s + r.kilos, 0);
+    const sup = filas.reduce((s, r) => s + (r.sup_lote && r.kg_ha ? r.sup_lote : 0), 0);
+    const kConSup = filas.reduce((s, r) => s + (r.sup_lote ? r.kilos : 0), 0);
+    document.getElementById('prFoot').innerHTML = filas.length ? `<tr class="table-light">
+        <th colspan="5">Total</th><th class="num">${kg(tot)}</th><th class="num">${sup ? dec(sup, 2) : ''}</th><th class="num">${sup ? kg(kConSup / sup) : ''}</th>
+    </tr>` : '';
+}
+
+(async function init() {
+    try {
+        await cargarMaestros();
+        await cargarBolsasCache();
+    } catch (e) { alert(e.message); }
+    agregarRenglon(false);
+    cargarCamiones();
+})();
+</script>
+</body>
+</html>

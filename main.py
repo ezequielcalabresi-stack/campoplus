@@ -9292,6 +9292,8 @@ except Exception as e:
 
 from agro_api import register_agro_routes
 register_agro_routes(app, get_db, get_empresa_activa_id)
+from agro_cosechas import register_cosechas_routes
+register_cosechas_routes(app, get_db, get_empresa_activa_id)
 register_audit_routes(app, get_db, get_empresa_activa_id)
 from ganaderia_api import register_ganaderia_routes
 register_ganaderia_routes(app, get_db, get_empresa_activa_id)
