@@ -510,6 +510,7 @@
             <div class="modal-body">
                 <p class="hint mb-2">Las líneas de costo traen el campo y el lote escritos a mano desde Access, a veces de distintas formas.
                     Unificar pasa esas líneas al nombre que elijas: no borra nada, se vuelve a aplicar si reimportás desde Access y se puede deshacer.
+                    Para nombres basura (z, 0...), <strong>Eliminar marcados</strong> borra esas líneas de costo (solo administrador): no toca facturas ni cuenta corriente, no vuelven al reimportar y se pueden restaurar.
                     No toca facturas, la cuenta corriente ni el alta de campos.</p>
                 <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
                     <div class="btn-group" role="group">
@@ -528,6 +529,7 @@
                     <input id="revNomDestinoSel" class="form-control form-control-sm" style="max-width:280px;" list="revNomLista" placeholder="Nombre final">
                     <button class="btn btn-sm btn-primary fw-bold" onclick="unificarSeleccionNombres()">Unificar marcados</button>
                     <span id="revNomMarcados" class="hint"></span>
+                    <button class="btn btn-sm btn-outline-danger fw-bold ms-auto" onclick="eliminarSeleccionNombres()" title="Para nombres basura de Access (z, 0, la a,...). Solo administrador; queda copia y se puede restaurar.">Eliminar marcados</button>
                 </div>
                 <div class="table-responsive" style="max-height:340px;">
                     <table class="table table-sm table-hover align-middle mb-0">
@@ -1006,10 +1008,12 @@ function pintarHistorialNombres(hist) {
     document.getElementById('revNomHistorial').innerHTML = hist.length
         ? `<table class="table table-sm align-middle mb-0"><tbody>${hist.map((h, i) => `<tr>
             <td class="small text-nowrap font-mono">${escHtml((h.fecha || '').slice(0, 16))}</td>
-            <td class="small">${h.tipo === 'lote' ? 'Lotes de ' + escHtml(h.campo) : 'Campos'}: <span class="text-muted">${escHtml(h.origenes)}</span> → <strong>${escHtml(h.destino)}</strong></td>
+            <td class="small">${h.tipo === 'eliminar'
+                ? `<span class="text-danger fw-bold">Eliminado</span> · ${escHtml(h.motivo)}`
+                : `${h.tipo === 'lote' ? 'Lotes de ' + escHtml(h.campo) : 'Campos'}: <span class="text-muted">${escHtml(h.origenes)}</span> → <strong>${escHtml(h.destino)}</strong>`}</td>
             <td class="small text-end font-mono">${h.lineas} líneas</td>
             <td class="small text-muted">${escHtml(h.usuario || '')}</td>
-            <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="deshacerNombres(${i})">Deshacer</button></td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="deshacerNombres(${i})">${h.tipo === 'eliminar' ? 'Restaurar' : 'Deshacer'}</button></td>
         </tr>`).join('')}</tbody></table>`
         : '<div class="hint">Todavía no hay cambios de nombres.</div>';
 }
@@ -1056,11 +1060,39 @@ async function unificarSeleccionNombres() {
     await aplicarNombres(elegidos, document.getElementById('revNomDestinoSel').value);
 }
 
+async function eliminarSeleccionNombres() {
+    const nombres = (revNom.datos || {}).nombres || [];
+    const elegidos = nombres.filter((n, i) => document.getElementById('revNomS' + i)?.checked);
+    if (!elegidos.length) return alert('Marcá en la lista los nombres a eliminar.');
+    const lineas = elegidos.reduce((s, n) => s + n.n, 0);
+    const usd = elegidos.reduce((s, n) => s + (n.usd || 0), 0);
+    const campo = revNom.tipo === 'lote' ? document.getElementById('revNomCampo').value : '';
+    const que = revNom.tipo === 'lote' ? 'lote(s) del campo ' + campo : 'campo(s)';
+    const pregunta = `ELIMINAR ${lineas} líneas de costo (U$S ${moneyAr(usd)}) del ${que}:\n  ${elegidos.map(n => n.nombre).join('\n  ')}\n\n`
+        + 'Son líneas importadas de Access: no se tocan facturas ni la cuenta corriente, y las de OT emitidas en Campo+ no se borran.\n'
+        + 'Queda copia, no vuelven al reimportar desde Access y se pueden restaurar desde "Últimos cambios". ¿Confirmás?';
+    if (!confirm(pregunta)) return;
+    const res = await fetch('/api/agro/costos/nombres/eliminar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: revNom.tipo, nombres: elegidos.map(n => n.nombre), campo }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(data.detail || 'No se pudo eliminar.');
+    alert(data.message || 'Listo.');
+    await cargarRevisionNombres(revNom.tipo === 'lote' ? campo : undefined);
+    await cargarOpcionesCosto();
+}
+
 async function deshacerNombres(i) {
     const h = ((revNom.datos || {}).historial || [])[i];
     if (!h) return;
-    if (!confirm(`Deshacer: ${h.origenes} → ${h.destino} (${h.lineas} líneas vuelven a su nombre anterior). ¿Confirmás?`)) return;
-    const res = await fetch('/api/agro/costos/nombres/' + encodeURIComponent(h.operacion) + '/deshacer', { method: 'POST' });
+    const borrado = h.tipo === 'eliminar';
+    const pregunta = borrado
+        ? `Restaurar las ${h.lineas} líneas de costo eliminadas (${h.motivo}). ¿Confirmás?`
+        : `Deshacer: ${h.origenes} → ${h.destino} (${h.lineas} líneas vuelven a su nombre anterior). ¿Confirmás?`;
+    if (!confirm(pregunta)) return;
+    const res = await fetch('/api/agro/costos/nombres/' + encodeURIComponent(h.operacion) + (borrado ? '/restaurar' : '/deshacer'), { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return alert(data.detail || 'No se pudo deshacer.');
     alert(data.message || 'Listo.');

@@ -184,6 +184,19 @@ def revision(cur, eid: int, tipo: str, campo: str = "") -> dict:
 
 def historial(cur, eid: int, limite: int = 30) -> List[dict]:
     asegurar_schema_renombres(cur)
+    _asegurar_eliminadas(cur)
+    borrados = cur.execute(
+        """
+        SELECT operacion, 'eliminar' AS tipo, MIN(COALESCE(motivo,'')) AS motivo, MIN(fecha) AS fecha,
+               MIN(COALESCE(usuario,'')) AS usuario, COUNT(*) AS lineas
+        FROM margenes_access_eliminadas
+        WHERE empresa_id=? AND operacion IS NOT NULL
+        GROUP BY operacion
+        ORDER BY MIN(fecha) DESC
+        LIMIT ?;
+        """,
+        (eid, limite),
+    ).fetchall()
     ops = cur.execute(
         """
         SELECT r.operacion, MIN(r.tipo) AS tipo, MIN(COALESCE(r.campo,'')) AS campo, MIN(r.destino) AS destino,
@@ -198,7 +211,99 @@ def historial(cur, eid: int, limite: int = 30) -> List[dict]:
         """,
         (eid, limite),
     ).fetchall()
-    return [dict(r) for r in ops]
+    todo = [dict(r) for r in ops] + [dict(r) for r in borrados]
+    todo.sort(key=lambda h: h["fecha"] or "", reverse=True)
+    return todo[:limite]
+
+
+def _asegurar_eliminadas(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS margenes_access_eliminadas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER,
+            margen_id INTEGER,
+            id_access INTEGER,
+            fecha TEXT,
+            usuario TEXT,
+            datos TEXT
+        );
+        """
+    )
+    cols = {r[1] for r in cur.execute("PRAGMA table_info(margenes_access_eliminadas);").fetchall()}
+    for col in ("operacion", "motivo"):
+        if col not in cols:
+            cur.execute(f"ALTER TABLE margenes_access_eliminadas ADD COLUMN {col} TEXT;")
+
+
+def eliminar(cur, eid: int, tipo: str, nombres: List[str], campo: str = "", usuario: str = "") -> dict:
+    """Borra las líneas de costo con esos nombres de campo (o de lote dentro de un campo).
+    Guarda copia (la reimportación desde Access no las vuelve a traer) y no toca líneas de OT emitidas en Campo+."""
+    import json
+
+    _asegurar_eliminadas(cur)
+    asegurar_schema_renombres(cur)
+    tipo = "lote" if tipo == "lote" else "campo"
+    nombres = sorted({(n or "").strip() for n in nombres if (n or "").strip()})
+    if not nombres:
+        raise ValueError("Marcá los nombres a eliminar.")
+    if tipo == "lote" and not (campo or "").strip():
+        raise ValueError("Elegí el campo de los lotes.")
+    col = "lote" if tipo == "lote" else "campo"
+    where = f"empresa_id=? AND TRIM({col}) IN ({','.join('?' * len(nombres))})"
+    params: list = [eid] + nombres
+    if tipo == "lote":
+        fam = _familia_campo(cur, eid, campo)
+        where += f" AND UPPER(TRIM(campo)) IN ({','.join('?' * len(fam))})"
+        params += fam
+    cols = {r[1] for r in cur.execute("PRAGMA table_info(margenes_access);").fetchall()}
+    operacion = datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid4().hex[:6]
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    motivo = ("Lotes de " + campo.strip() + ": " if tipo == "lote" else "Campos: ") + " | ".join(nombres)
+    eliminadas = con_ot = 0
+    for r in cur.execute(f"SELECT * FROM margenes_access WHERE {where};", params).fetchall():
+        fila = dict(r)
+        if "ot_id" in cols and fila.get("ot_id"):
+            con_ot += 1
+            continue
+        cur.execute(
+            """
+            INSERT INTO margenes_access_eliminadas (empresa_id, margen_id, id_access, fecha, usuario, datos, operacion, motivo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (eid, fila["id"], fila.get("id_access"), ahora, usuario, json.dumps(fila, ensure_ascii=False, default=str), operacion, motivo),
+        )
+        cur.execute("DELETE FROM margenes_access WHERE id=?;", (fila["id"],))
+        eliminadas += 1
+    return {"operacion": operacion, "eliminadas": eliminadas, "con_ot": con_ot, "nombres": nombres}
+
+
+def restaurar(cur, eid: int, operacion: str) -> dict:
+    import json
+
+    _asegurar_eliminadas(cur)
+    filas = cur.execute(
+        "SELECT id, datos FROM margenes_access_eliminadas WHERE empresa_id=? AND operacion=?;", (eid, operacion)
+    ).fetchall()
+    if not filas:
+        raise ValueError("Esa eliminación no existe o ya se restauró.")
+    cols = {r[1] for r in cur.execute("PRAGMA table_info(margenes_access);").fetchall()}
+    n = 0
+    for f in filas:
+        datos = {k: v for k, v in json.loads(f["datos"] or "{}").items() if k in cols}
+        if datos.get("id") and cur.execute("SELECT 1 FROM margenes_access WHERE id=?;", (datos["id"],)).fetchone():
+            datos.pop("id")
+        if datos.get("id_access") and cur.execute(
+            "SELECT 1 FROM margenes_access WHERE empresa_id=? AND id_access=?;", (eid, datos["id_access"])
+        ).fetchone():
+            cur.execute("DELETE FROM margenes_access_eliminadas WHERE id=?;", (f["id"],))
+            continue
+        claves = list(datos)
+        cur.execute(f"INSERT INTO margenes_access ({', '.join(claves)}) VALUES ({','.join('?' * len(claves))});",
+                    [datos[k] for k in claves])
+        cur.execute("DELETE FROM margenes_access_eliminadas WHERE id=?;", (f["id"],))
+        n += 1
+    return {"restauradas": n}
 
 
 def _familia_campo(cur, eid: int, campo: str) -> List[str]:

@@ -3393,6 +3393,56 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         finally:
             conn.close()
 
+    @app.post("/api/agro/costos/nombres/eliminar")
+    def api_costos_nombres_eliminar(request: Request, data: dict = Body(...)):
+        """Borra las líneas de costo de campos/lotes mal cargados en Access (solo administrador; queda copia)."""
+        import agro_nombres
+
+        _exigir_admin(request)
+        ses = _sesion(request)
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            _asegurar_margenes(cur)
+            r = agro_nombres.eliminar(
+                cur, get_empresa_activa_id(), data.get("tipo") or "campo", data.get("nombres") or [],
+                data.get("campo") or "", ses.get("nombre") or ses.get("login") or "",
+            )
+            conn.commit()
+            msg = f"Líneas de costo eliminadas: {r['eliminadas']} ({', '.join(r['nombres'])}). Quedó copia; se pueden restaurar desde Últimos cambios."
+            if r["con_ot"]:
+                msg += f" {r['con_ot']} línea(s) de OT emitidas en Campo+ no se borraron (anulá la OT si corresponde)."
+            r["message"] = msg
+            return r
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/costos/nombres/{operacion}/restaurar")
+    def api_costos_nombres_restaurar(operacion: str):
+        import agro_nombres
+
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            r = agro_nombres.restaurar(cur, get_empresa_activa_id(), operacion)
+            conn.commit()
+            r["message"] = f"Líneas de costo restauradas: {r['restauradas']}."
+            return r
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     @app.post("/api/agro/costos/nombres/{operacion}/deshacer")
     def api_costos_nombres_deshacer(operacion: str):
         import agro_nombres
