@@ -2306,14 +2306,24 @@ def _asegurar_columnas_configuracion(cursor) -> None:
         ("sisa_estado", "TEXT DEFAULT '1'"),
         ("sisa_caracter", "TEXT DEFAULT 'productor'"),
         ("criterio_costo", "TEXT DEFAULT 'peps'"),
+        ("cit_arba_actualizada", "TEXT"),
+        ("cit_arba_usuario", "TEXT"),
     ]
     for col, tipo in faltantes:
         if col not in cols:
             cursor.execute(f"ALTER TABLE configuracion_empresa ADD COLUMN {col} {tipo};")
 
 
+def _es_admin_empresa(request: Request) -> bool:
+    from saas_auth import es_admin_de_cuenta, sesion_actual
+
+    return es_admin_de_cuenta(sesion_actual(get_db, request))
+
+
 @app.get("/api/configuracion")
-def obtener_configuracion():
+def obtener_configuracion(request: Request):
+    from arba_ws import credenciales_validas
+
     conn = get_db()
     try:
         cursor = conn.cursor()
@@ -2323,9 +2333,60 @@ def obtener_configuracion():
         row = cursor.fetchone()
     finally:
         conn.close()
-    if row:
-        return dict(row)
-    return {}
+    d = dict(row) if row else {}
+    cit = d.pop("cit_arba", None)
+    d["cit_arba_configurada"] = credenciales_validas(d.get("cuit"), cit)
+    d["puede_editar_credenciales"] = _es_admin_empresa(request)
+    return d
+
+
+class CitArbaModel(BaseModel):
+    cit: str
+
+
+@app.put("/api/configuracion/cit-arba")
+def guardar_cit_arba(data: CitArbaModel, request: Request):
+    """Solo el administrador de la empresa. La CIT se guarda y se prueba contra ARBA; nunca se devuelve."""
+    from saas_auth import sesion_actual
+    from arba_ws import ArbaWSError, consultar_alicuotas, limpiar_cuit
+
+    ses = sesion_actual(get_db, request)
+    if not _es_admin_empresa(request):
+        raise HTTPException(403, "Solo el administrador de la empresa puede cambiar la CIT de ARBA")
+    cit = (data.cit or "").strip()
+    if len(cit) < 4:
+        raise HTTPException(400, "Ingresá la CIT completa")
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        _asegurar_columnas_configuracion(cursor)
+        row = cursor.execute("SELECT cuit FROM configuracion_empresa WHERE id = 1;").fetchone()
+        cuit = limpiar_cuit(row["cuit"] if row else "")
+        if len(cuit) != 11:
+            raise HTTPException(400, "Primero cargá y guardá el CUIT de la empresa (11 dígitos)")
+        cursor.execute(
+            "UPDATE configuracion_empresa SET cit_arba = ?, cit_arba_actualizada = ?, cit_arba_usuario = ? WHERE id = 1;",
+            (cit, datetime.now().strftime("%Y-%m-%d %H:%M"), (ses or {}).get("nombre") or (ses or {}).get("email") or ""),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    try:
+        consultar_alicuotas(cuit, cit, cuit)
+        verificada, mensaje = True, "ARBA aceptó la CIT."
+    except ArbaWSError as e:
+        txt = str(e)
+        if "contrase" in txt.lower():
+            return {"status": "success", "verificada": False, "message": f"CIT guardada, pero ARBA la rechazó: {txt}"}
+        # Cualquier otro error de ARBA llega después del login: la CIT es válida.
+        verificada = txt.startswith("ARBA")
+        mensaje = "ARBA aceptó la CIT." if verificada else f"CIT guardada; no se pudo verificar ahora ({txt})."
+    if verificada:
+        job = arba_revisar_padron(_rutas_credenciales_arba(), automatico=False)
+        if job.get("accepted"):
+            mensaje += " Se inició la descarga del padrón del mes."
+    return {"status": "success", "verificada": verificada, "message": mensaje}
 
 @app.post("/api/configuracion")
 def guardar_configuracion(data: ConfiguracionModel):
@@ -2345,21 +2406,21 @@ def _guardar_configuracion(conn, data: ConfiguracionModel):
     _asegurar_columnas_configuracion(cursor)
     cursor.execute("""
         INSERT INTO configuracion_empresa (
-            id, razon_social, cuit, condicion_iva, localidad, contacto_email, cit_arba,
+            id, razon_social, cuit, condicion_iva, localidad, contacto_email,
             agente_retencion_iibb, agente_retencion_ganancias, agente_percepcion_iibb,
             sisa_estado, sisa_caracter, criterio_costo
         )
-        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             razon_social=excluded.razon_social, cuit=excluded.cuit, condicion_iva=excluded.condicion_iva,
-            localidad=excluded.localidad, contacto_email=excluded.contacto_email, cit_arba=excluded.cit_arba,
+            localidad=excluded.localidad, contacto_email=excluded.contacto_email,
             agente_retencion_iibb=excluded.agente_retencion_iibb,
             agente_retencion_ganancias=excluded.agente_retencion_ganancias,
             agente_percepcion_iibb=excluded.agente_percepcion_iibb,
             sisa_estado=excluded.sisa_estado, sisa_caracter=excluded.sisa_caracter,
             criterio_costo=excluded.criterio_costo;
     """, (
-        data.razon_social, data.cuit, data.condicion_iva, data.localidad, data.contacto_email, data.cit_arba,
+        data.razon_social, data.cuit, data.condicion_iva, data.localidad, data.contacto_email,
         1 if data.agente_retencion_iibb else 0,
         1 if data.agente_retencion_ganancias else 0,
         1 if data.agente_percepcion_iibb else 0,

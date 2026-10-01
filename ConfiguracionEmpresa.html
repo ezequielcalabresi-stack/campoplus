@@ -61,20 +61,24 @@
 
             <!-- SECCIÓN 2: CREDENCIALES Y ORGANISMOS (ARBA / AFIP) -->
             <div class="bg-blue-50 border border-blue-200 p-5 rounded-lg space-y-4 text-xs">
-                <h3 class="font-bold text-blue-900 uppercase tracking-wide border-b border-blue-200 pb-2 text-sm">Accesos y Credenciales Fiscales (ARBA / DFE / AFIP)</h3>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block font-medium text-blue-900 mb-1">Clave CIT / DFE (ARBA - IIBB)</label>
-                        <input type="text" id="cfgCitArba" class="w-full rounded border border-blue-300 p-2 bg-white font-mono font-bold text-slate-800">
-                        <span class="text-[10px] text-blue-700 mt-1 block">Utilizada para la descarga automática de padrones y DDJJ de IIBB.</span>
+                <h3 class="font-bold text-blue-900 uppercase tracking-wide border-b border-blue-200 pb-2 text-sm">Credenciales ARBA (solo administrador de la empresa)</h3>
+                <p class="text-blue-900">
+                    Estado de la CIT: <strong id="citEstado">-</strong>
+                    <span id="citDetalle" class="text-blue-700"></span>
+                </p>
+                <div id="citEditor" class="hidden">
+                    <label class="block font-medium text-blue-900 mb-1">Nueva Clave CIT (ARBA - IIBB)</label>
+                    <div class="flex gap-2 max-w-xl">
+                        <div class="relative flex-1">
+                            <input type="password" id="cfgCitArba" autocomplete="new-password" placeholder="Escribí la CIT nueva" class="w-full rounded border border-blue-300 p-2 pr-16 bg-white font-mono font-bold text-slate-800">
+                            <button type="button" id="citVer" class="absolute right-1 top-1 bottom-1 px-2 text-[11px] font-semibold text-blue-700 hover:text-blue-900">Mostrar</button>
+                        </div>
+                        <button type="button" id="citGuardar" class="bg-blue-700 text-white px-4 rounded font-bold hover:bg-blue-800">Guardar CIT</button>
                     </div>
-                    <div>
-                        <label class="block font-medium text-blue-900 mb-1">Clave Fiscal AFIP (WebServices)</label>
-                        <input type="password" id="cfgAfip" value="secret_afip_pass" class="w-full rounded border border-blue-300 p-2 bg-white font-mono font-bold text-slate-800">
-                        <span class="text-[10px] text-blue-700 mt-1 block">Para facturación electrónica y regímenes informativos (SICORE).</span>
-                    </div>
+                    <span class="text-[10px] text-blue-700 mt-1 block">Se guarda aparte del resto y se verifica con ARBA. Por seguridad nunca se vuelve a mostrar. Se usa para bajar el padrón y consultar alícuotas.</span>
+                    <p id="citResultado" class="mt-2 font-semibold hidden"></p>
                 </div>
+                <p id="citSoloAdmin" class="text-blue-700 hidden">Solo el administrador de la empresa puede cambiar la CIT.</p>
             </div>
 
             <!-- SECCIÓN 2b: PERFIL FISCAL / AGENTES -->
@@ -185,7 +189,7 @@
                 if(r.condicion_iva) document.getElementById('cfgIva').value = r.condicion_iva;
                 document.getElementById('cfgLocalidad').value = r.localidad || "";
                 document.getElementById('cfgEmail').value = r.contacto_email || "";
-                if(r.cit_arba) document.getElementById('cfgCitArba').value = r.cit_arba;
+                pintarEstadoCit(r);
                 document.getElementById('cfgAgenteRetIibb').checked = r.agente_retencion_iibb !== 0 && r.agente_retencion_iibb !== false;
                 document.getElementById('cfgAgenteSicore').checked = r.agente_retencion_ganancias !== 0 && r.agente_retencion_ganancias !== false;
                 document.getElementById('cfgAgentePercIibb').checked = r.agente_percepcion_iibb !== 0 && r.agente_percepcion_iibb !== false;
@@ -198,6 +202,58 @@
             }
         }
 
+        function pintarEstadoCit(r) {
+            const ok = !!r.cit_arba_configurada;
+            const estado = document.getElementById('citEstado');
+            estado.textContent = ok ? 'configurada' : 'sin cargar';
+            estado.className = ok ? 'text-emerald-700' : 'text-red-700';
+            const det = [];
+            if (r.cit_arba_actualizada) det.push(`(última actualización ${r.cit_arba_actualizada}${r.cit_arba_usuario ? ' por ' + r.cit_arba_usuario : ''})`);
+            document.getElementById('citDetalle').textContent = det.join(' ');
+            document.getElementById('citEditor').classList.toggle('hidden', !r.puede_editar_credenciales);
+            document.getElementById('citSoloAdmin').classList.toggle('hidden', !!r.puede_editar_credenciales);
+        }
+
+        document.getElementById('citVer').addEventListener('click', () => {
+            const inp = document.getElementById('cfgCitArba');
+            const ver = inp.type === 'password';
+            inp.type = ver ? 'text' : 'password';
+            document.getElementById('citVer').textContent = ver ? 'Ocultar' : 'Mostrar';
+        });
+
+        document.getElementById('citGuardar').addEventListener('click', async () => {
+            const inp = document.getElementById('cfgCitArba');
+            const res = document.getElementById('citResultado');
+            const cit = inp.value.trim();
+            if (!cit) return alert('Escribí la CIT nueva.');
+            const btn = document.getElementById('citGuardar');
+            btn.disabled = true;
+            btn.textContent = 'Verificando con ARBA...';
+            try {
+                const resp = await fetch('/api/configuracion/cit-arba', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cit })
+                });
+                const texto = await resp.text();
+                let d = {};
+                try { d = JSON.parse(texto); } catch (_) { d = { detail: texto }; }
+                if (!resp.ok) throw new Error(d.detail || `Error ${resp.status}`);
+                inp.value = '';
+                inp.type = 'password';
+                document.getElementById('citVer').textContent = 'Mostrar';
+                res.textContent = d.message || 'CIT guardada.';
+                res.className = 'mt-2 font-semibold ' + (d.verificada ? 'text-emerald-700' : 'text-amber-700');
+                cargarConfiguracion();
+            } catch (err) {
+                res.textContent = 'No se guardó la CIT: ' + err.message;
+                res.className = 'mt-2 font-semibold text-red-700';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Guardar CIT';
+            }
+        });
+
         async function guardarConfiguracion(e) {
             e.preventDefault();
 
@@ -207,7 +263,6 @@
                 condicion_iva: document.getElementById('cfgIva').value,
                 localidad: document.getElementById('cfgLocalidad').value.trim(),
                 contacto_email: document.getElementById('cfgEmail').value.trim(),
-                cit_arba: document.getElementById('cfgCitArba').value.trim(),
                 agente_retencion_iibb: document.getElementById('cfgAgenteRetIibb').checked ? 1 : 0,
                 agente_retencion_ganancias: document.getElementById('cfgAgenteSicore').checked ? 1 : 0,
                 agente_percepcion_iibb: document.getElementById('cfgAgentePercIibb').checked ? 1 : 0,
