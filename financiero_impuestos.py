@@ -2,17 +2,28 @@
 """
 Vencimientos de retenciones/percepciones para el Estado Financiero.
 
-Retenciones IIBB y Ganancias (SICORE): liquidación quincenal
+Retenciones Ganancias (SICORE) e IIBB (ARBA): liquidación quincenal
   - Quincena 1 (días 1–15) → vto. día 20 del mismo mes
   - Quincena 2 (días 16–fin) → vto. día 5 del mes siguiente
 
-Percepciones IIBB: liquidación mensual → vto. día 5 del mes siguiente.
+Percepciones IIBB: liquidación mensual → vto. día 5 del mes siguiente (junto con la quincena 2).
+
+En el financiero va una sola línea global por vencimiento (SICORE + ARBA). Las quincenas que todavía
+no terminaron se proyectan con la última quincena cerrada del mismo tipo que tenga datos (o lo ya cargado, si es más).
+Los vencimientos anteriores al rango consultado se consideran pagados y no se muestran.
 """
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+
+_TIPOS_SICORE = {"SICORE", "GANANCIAS", "RET_GANANCIAS"}
+_TIPOS_ARBA = {"IIBB", "RET_IIBB", "ARBA"}
+_TIPOS_PERC = {"PERCEPCION_IIBB", "PERCEPCION IIBB", "PERC_IIBB"}
+_COMPONENTES = (("sicore", "SICORE"), ("arba", "ARBA"), ("perc", "Perc. IIBB"))
+
+Periodo = Tuple[int, int, int]  # (año, mes, quincena)
 
 
 def _parse_iso(s: Any) -> Optional[date]:
@@ -48,29 +59,91 @@ def vencimiento_percepcion_mensual(fecha_op: date) -> date:
     return date(nxt.year, nxt.month, 5)
 
 
-def _clamp_fecha(due: date, desde: date, hasta: date) -> Optional[date]:
-    """Incluye vencidos anteriores al rango colocándolos en `desde`."""
-    if due > hasta:
-        return None
-    if due < desde:
-        return desde
-    return due
+def _vencimiento(p: Periodo) -> date:
+    y, m, q = p
+    return vencimiento_retencion_quincenal(date(y, m, 1 if q == 1 else 16))
 
 
-def _linea(
-    fecha: str,
-    detalle: str,
-    monto: float,
-    fuente: str,
-    forma_pago: str = "Débito fiscal",
-    varios: str = "",
-    vencido: bool = False,
-) -> dict:
+def _fin_periodo(p: Periodo) -> date:
+    y, m, q = p
+    return date(y, m, 15) if q == 1 else date(y, m, monthrange(y, m)[1])
+
+
+def _referencia(q: int, hoy: date, montos: Dict[Periodo, Dict[str, float]]) -> Periodo:
+    """Última quincena `q` terminada antes de hoy que tenga retenciones cargadas (hasta un año atrás)."""
+    mes = date(hoy.year, hoy.month, 1) if q == 1 and hoy.day > 15 else _add_months(date(hoy.year, hoy.month, 1), -1)
+    primero = (mes.year, mes.month, q)
+    for _ in range(12):
+        p = (mes.year, mes.month, q)
+        if sum(montos.get(p, {}).values()) > 0.009:
+            return p
+        mes = _add_months(mes, -1)
+    return primero
+
+
+def _nombre_periodo(p: Periodo) -> str:
+    y, m, q = p
+    if q == 1:
+        return f"1ª quincena {m:02d}/{y} (1–15)"
+    return f"2ª quincena {m:02d}/{y} (16–{monthrange(y, m)[1]})"
+
+
+def _pesos(v: float) -> str:
+    return "$ " + f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _tabla_existe(cur, nombre: str) -> bool:
+    cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (nombre,))
+    return cur.fetchone() is not None
+
+
+def _digitos(s: Any) -> str:
+    return "".join(ch for ch in str(s or "") if ch.isdigit())
+
+
+def _montos_por_periodo(cur) -> Dict[Periodo, Dict[str, float]]:
+    """Retenido por quincena: SICORE, ARBA (historial de Access + emitidas en el sistema) y percepciones."""
+    out: Dict[Periodo, Dict[str, float]] = {}
+
+    def sumar(fecha: Any, clave: str, monto: float) -> None:
+        op = _parse_iso(fecha)
+        if not op or monto <= 0.009:
+            return
+        q = 2 if clave == "perc" or op.day > 15 else 1
+        d = out.setdefault((op.year, op.month, q), {"sicore": 0.0, "arba": 0.0, "perc": 0.0})
+        d[clave] += monto
+
+    arba_sistema = set()
+    if _tabla_existe(cur, "retenciones_sicore"):
+        cur.execute(
+            "SELECT fecha, cuit, UPPER(COALESCE(tipo_retencion, 'SICORE')), COALESCE(importe_retenido, 0) FROM retenciones_sicore;"
+        )
+        for fecha, cuit, tipo, monto in cur.fetchall():
+            monto = float(monto or 0)
+            tipo = (tipo or "").strip()
+            if tipo in _TIPOS_SICORE:
+                sumar(fecha, "sicore", monto)
+            elif tipo in _TIPOS_ARBA:
+                arba_sistema.add((_digitos(cuit), str(fecha or "")[:10], round(monto, 2)))
+                sumar(fecha, "arba", monto)
+            elif tipo in _TIPOS_PERC:
+                sumar(fecha, "perc", monto)
+    if _tabla_existe(cur, "retenciones_iibb"):
+        cur.execute("SELECT fecha, cuit_sujeto, COALESCE(importe_retenido, 0) FROM retenciones_iibb;")
+        for fecha, cuit, monto in cur.fetchall():
+            monto = float(monto or 0)
+            if (_digitos(cuit), str(fecha or "")[:10], round(monto, 2)) in arba_sistema:
+                continue
+            sumar(fecha, "arba", monto)
+    return out
+
+
+def _linea(fecha: str, detalle: str, monto: float, varios: str) -> dict:
     monto = round(float(monto or 0), 2)
     return {
         "fecha": fecha,
         "detalle": detalle,
-        "forma_pago": forma_pago,
+        "forma_pago": "Retenciones SICORE + ARBA",
         "cta_cte": "",
         "nro_cuota": "",
         "tipo_cambio": 0,
@@ -82,146 +155,57 @@ def _linea(
         "subtotal": monto,
         "monto_ars": monto,
         "monto_usd": 0.0,
-        "varios": varios or ("VENCIDO" if vencido else ""),
-        "origen": forma_pago,
-        "fuente": fuente,
+        "varios": varios,
+        "origen": "Retenciones SICORE + ARBA",
+        "fuente": "retenciones",
         "moneda": "ARS",
         "es_disponibilidad": False,
     }
 
 
-def _agrupar_retenciones(
-    cur,
-    tipos: Tuple[str, ...],
-    label: str,
-    fuente: str,
-    desde: date,
-    hasta: date,
-) -> List[dict]:
-    """Suma importe_retenido por fecha de vencimiento quincenal."""
-    ph = ",".join("?" for _ in tipos)
-    tipos_up = tuple(t.upper() for t in tipos)
-    cur.execute(
-        f"""
-        SELECT fecha, SUM(COALESCE(importe_retenido, 0)) AS total
-        FROM retenciones_sicore
-        WHERE UPPER(COALESCE(tipo_retencion, 'SICORE')) IN ({ph})
-          AND COALESCE(importe_retenido, 0) > 0.009
-          AND COALESCE(fecha, '') <> ''
-        GROUP BY fecha
-        """,
-        tipos_up,
-    )
-    buckets: Dict[str, float] = {}
-    for r in cur.fetchall():
-        d = dict(r)
-        op = _parse_iso(d.get("fecha"))
-        if not op:
-            continue
-        due = vencimiento_retencion_quincenal(op)
-        key = due.isoformat()
-        buckets[key] = buckets.get(key, 0.0) + float(d.get("total") or 0)
-
-    out: List[dict] = []
-    for due_s, total in sorted(buckets.items()):
-        due = date.fromisoformat(due_s)
-        clamped = _clamp_fecha(due, desde, hasta)
-        if clamped is None or abs(total) < 0.01:
-            continue
-        q = "1ª quincena" if due.day == 20 else "2ª quincena"
-        # Periodo liquidado aproximado a partir del vto
-        if due.day == 20:
-            periodo = f"{due.month:02d}/{due.year} (1–15)"
-        else:
-            prev = _add_months(date(due.year, due.month, 1), -1)
-            last = monthrange(prev.year, prev.month)[1]
-            periodo = f"{prev.month:02d}/{prev.year} (16–{last})"
-        vencido = due < desde
-        det = f"Pago retenciones {label} — {periodo}"
-        if vencido:
-            det = f"[VENCIDO {due.strftime('%d/%m/%Y')}] {det}"
-        out.append(
-            _linea(
-                clamped.isoformat(),
-                det,
-                total,
-                fuente,
-                forma_pago=f"Retenciones {label}",
-                varios=q,
-                vencido=vencido,
-            )
-        )
-    return out
+def _hoy_argentina() -> date:
+    return (datetime.utcnow() - timedelta(hours=3)).date()
 
 
-def _agrupar_percepciones(cur, desde: date, hasta: date) -> List[dict]:
-    cur.execute(
-        """
-        SELECT fecha, SUM(COALESCE(importe_retenido, 0)) AS total
-        FROM retenciones_sicore
-        WHERE UPPER(COALESCE(tipo_retencion, '')) IN ('PERCEPCION_IIBB', 'PERCEPCION IIBB', 'PERC_IIBB')
-          AND COALESCE(importe_retenido, 0) > 0.009
-          AND COALESCE(fecha, '') <> ''
-        GROUP BY fecha
-        """
-    )
-    buckets: Dict[str, float] = {}
-    for r in cur.fetchall():
-        d = dict(r)
-        op = _parse_iso(d.get("fecha"))
-        if not op:
-            continue
-        due = vencimiento_percepcion_mensual(op)
-        key = due.isoformat()
-        buckets[key] = buckets.get(key, 0.0) + float(d.get("total") or 0)
-
-    out: List[dict] = []
-    for due_s, total in sorted(buckets.items()):
-        due = date.fromisoformat(due_s)
-        clamped = _clamp_fecha(due, desde, hasta)
-        if clamped is None or abs(total) < 0.01:
-            continue
-        prev = _add_months(date(due.year, due.month, 1), -1)
-        periodo = f"{prev.month:02d}/{prev.year}"
-        vencido = due < desde
-        det = f"Pago percepciones IIBB — período {periodo}"
-        if vencido:
-            det = f"[VENCIDO {due.strftime('%d/%m/%Y')}] {det}"
-        out.append(
-            _linea(
-                clamped.isoformat(),
-                det,
-                total,
-                "percepciones_iibb",
-                forma_pago="Percepciones IIBB",
-                varios="Mensual — vto. día 5",
-                vencido=vencido,
-            )
-        )
-    return out
-
-
-def lineas_impuestos_financiero(cur, desde_s: str, hasta_s: str) -> List[dict]:
-    """Genera líneas de egreso por vencimientos de retenciones y percepciones."""
+def lineas_impuestos_financiero(cur, desde_s: str, hasta_s: str, hoy: Optional[date] = None) -> List[dict]:
+    """Una línea por vencimiento (20 y 5) con el total de retenciones SICORE + ARBA (+ percepciones el 5)."""
     desde = _parse_iso(desde_s) or date.today()
     hasta = _parse_iso(hasta_s) or (desde + timedelta(days=365))
-
-    # Verificar tabla
+    hoy = hoy or _hoy_argentina()
     try:
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='retenciones_sicore'")
-        if not cur.fetchone():
-            return []
+        montos = _montos_por_periodo(cur)
     except Exception:
         return []
+    vacio = {"sicore": 0.0, "arba": 0.0, "perc": 0.0}
 
     lineas: List[dict] = []
-    lineas.extend(
-        _agrupar_retenciones(
-            cur, ("SICORE", "GANANCIAS", "RET_GANANCIAS"), "Ganancias (SICORE)", "retenciones_sicore", desde, hasta
-        )
-    )
-    lineas.extend(
-        _agrupar_retenciones(cur, ("IIBB", "RET_IIBB", "ARBA"), "IIBB", "retenciones_iibb", desde, hasta)
-    )
-    lineas.extend(_agrupar_percepciones(cur, desde, hasta))
+    mes = _add_months(date(desde.year, desde.month, 1), -1)
+    while mes <= hasta:
+        for q in (1, 2):
+            p: Periodo = (mes.year, mes.month, q)
+            vto = _vencimiento(p)
+            if not (desde <= vto <= hasta):
+                continue
+            real = montos.get(p, vacio)
+            ref_p = None
+            if hoy <= _fin_periodo(p):
+                ref_p = _referencia(q, hoy, montos)
+                ref = montos.get(ref_p, vacio)
+                valores = {k: max(real[k], ref[k]) for k, _ in _COMPONENTES}
+            else:
+                valores = dict(real)
+            total = sum(valores.values())
+            if total < 0.01:
+                continue
+            detalle = f"Retenciones SICORE + ARBA — {_nombre_periodo(p)}"
+            if q == 2 and valores["perc"] > 0.009:
+                detalle += " + percepciones IIBB del mes"
+            partes = [f"{nombre} {_pesos(valores[k])}" for k, nombre in _COMPONENTES if valores[k] > 0.009]
+            if ref_p:
+                detalle = "[PROYECTADO] " + detalle
+                cargado = sum(real.values())
+                partes.append(f"estimado con la {_nombre_periodo(ref_p)}"
+                              + (f"; cargado hasta hoy {_pesos(cargado)}" if cargado > 0.009 else ""))
+            lineas.append(_linea(vto.isoformat(), detalle, total, " · ".join(partes)))
+        mes = _add_months(mes, 1)
     return lineas
