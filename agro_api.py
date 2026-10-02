@@ -868,6 +868,75 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         conn.close()
         return {"status": "success", "guardados": len(data.items)}
 
+    @app.get("/api/agro/campanias/{campania_id}/insumos")
+    def api_agro_insumos_plan(campania_id: int, campanias: int = 3, modo: str = "empresa", min_area: float = 0):
+        """Insumos necesarios para la campaña planificada según el manejo de las últimas campañas."""
+        import agro_insumos_plan
+
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            out = agro_insumos_plan.calcular(cur, get_empresa_activa_id(), campania_id, campanias, modo, min_area)
+            conn.commit()
+            return out
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        finally:
+            conn.close()
+
+    @app.get("/api/agro/campanias/{campania_id}/insumos.xlsx")
+    def api_agro_insumos_plan_excel(campania_id: int, campanias: int = 3, modo: str = "empresa", min_area: float = 0):
+        import agro_insumos_plan
+        from fastapi.responses import Response
+
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            r = cur.execute("SELECT codigo FROM campanias_agro WHERE id=?;", (campania_id,)).fetchone()
+            contenido = agro_insumos_plan.excel(cur, get_empresa_activa_id(), campania_id, campanias, modo, min_area)
+            conn.commit()
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        finally:
+            conn.close()
+        codigo = (r["codigo"] if r else "") or str(campania_id)
+        return Response(
+            content=contenido,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="insumos_{codigo}.xlsx"'},
+        )
+
+    @app.put("/api/agro/campanias/{campania_id}/insumos/ajuste")
+    def api_agro_insumos_ajuste(campania_id: int, request: Request, data: dict = Body(...)):
+        import agro_insumos_plan
+
+        ses = _sesion(request)
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            if not cur.execute("SELECT 1 FROM campanias_agro WHERE id=? AND empresa_id=?;", (campania_id, get_empresa_activa_id())).fetchone():
+                raise HTTPException(404, "Campaña no encontrada")
+            agro_insumos_plan.guardar_ajuste(cur, get_empresa_activa_id(), campania_id, data or {}, ses.get("nombre") or ses.get("login") or "")
+            conn.commit()
+            return {"status": "ok"}
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        finally:
+            conn.close()
+
+    @app.delete("/api/agro/campanias/{campania_id}/insumos/ajuste")
+    def api_agro_insumos_ajuste_borrar(campania_id: int, cultivo: str, clave: str):
+        import agro_insumos_plan
+
+        conn = get_db()
+        try:
+            n = agro_insumos_plan.borrar_ajuste(conn.cursor(), get_empresa_activa_id(), campania_id, cultivo, clave)
+            conn.commit()
+            return {"status": "ok", "borrados": n}
+        finally:
+            conn.close()
+
     # ---- Almacén (productos neto + laboreos terceros) + OT ----
     from agro_almacen import (
         init_almacen_schema,

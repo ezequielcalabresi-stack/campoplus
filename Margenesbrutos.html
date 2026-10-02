@@ -135,6 +135,42 @@
                 </table>
             </div>
         </div>
+        <div class="main-card mt-3">
+            <h5 class="fw-bold mb-1">Insumos necesarios para la campaña</h5>
+            <p class="hint mb-3">Calcula cuánto se usó de cada insumo por hectárea sembrada de cada cultivo en las últimas campañas y lo aplica a las hectáreas planificadas de cada lote. Compara con el stock del almacén para anticipar compras, valorizado al último precio en U$S. Podés corregir dosis, excluir o agregar insumos por cultivo: queda guardado para esta campaña. Guardá el plan antes de calcular si cambiaste cultivos o hectáreas.</p>
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold small">Historial base</label>
+                    <select id="insCampanias" class="form-select form-select-sm" data-orden-fijo>
+                        <option value="1">Última campaña</option>
+                        <option value="2">Últimas 2</option>
+                        <option value="3" selected>Últimas 3</option>
+                        <option value="4">Últimas 4</option>
+                        <option value="5">Últimas 5</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold small">Dosis por lote</label>
+                    <select id="insModo" class="form-select form-select-sm" data-orden-fijo>
+                        <option value="empresa">Promedio de la empresa por cultivo</option>
+                        <option value="lote">Historial de cada lote (si no tiene, promedio)</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold small">Ignorar insumos usados en menos del</label>
+                    <div class="input-group input-group-sm"><input id="insMinArea" type="number" min="0" max="100" step="1" value="0" class="form-control"><span class="input-group-text">% del área</span></div>
+                </div>
+                <div class="col-md-2"><button class="btn btn-sm fw-bold w-100" style="background:#0f766e;color:#fff;" onclick="calcularInsumos()">Calcular</button></div>
+                <div class="col-md-2"><button class="btn btn-sm btn-outline-success fw-bold w-100" onclick="excelInsumos()">Excel</button></div>
+            </div>
+            <div id="insResumen" class="mb-2"></div>
+            <div id="insVistas" class="btn-group btn-group-sm mb-2" style="display:none;">
+                <button class="btn btn-outline-dark active" data-vista="compras" onclick="verVistaInsumos('compras')">Compras (por insumo)</button>
+                <button class="btn btn-outline-dark" data-vista="cultivos" onclick="verVistaInsumos('cultivos')">Por cultivo (dosis)</button>
+                <button class="btn btn-outline-dark" data-vista="lotes" onclick="verVistaInsumos('lotes')">Por lote</button>
+            </div>
+            <div id="insContenido"><div class="text-muted small">Elegí la campaña y tocá Calcular.</div></div>
+        </div>
     </div>
 
     <!-- TAB COSTOS -->
@@ -2136,6 +2172,12 @@ async function generarPlan() {
 async function cargarPlan() {
     const id = document.getElementById('selectCampania').value;
     const tb = document.getElementById('tablaPlanBody');
+    if (ins.datos) {
+        ins.datos = null;
+        document.getElementById('insResumen').innerHTML = '';
+        document.getElementById('insVistas').style.display = 'none';
+        document.getElementById('insContenido').innerHTML = '<div class="text-muted small">Elegí la campaña y tocá Calcular.</div>';
+    }
     if (!id) {
         tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">Sin campaña.</td></tr>`;
         return;
@@ -2163,6 +2205,195 @@ async function cargarPlan() {
         tr.querySelector('.plan-ant').value = p.cultivo_antecesor || '';
         tr.querySelector('.plan-plan').value = p.cultivo_planificado || p.cultivo_sugerido || '';
     });
+}
+
+const ins = { datos: null, vista: 'compras', filtro: '' };
+const fmtCant = v => v == null ? '' : Number(v).toLocaleString('es-AR', { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
+const fmtDosis = v => v == null ? '' : Number(v).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+
+function paramsInsumos() {
+    return new URLSearchParams({
+        campanias: document.getElementById('insCampanias').value,
+        modo: document.getElementById('insModo').value,
+        min_area: document.getElementById('insMinArea').value || 0,
+    }).toString();
+}
+
+async function calcularInsumos() {
+    const id = document.getElementById('selectCampania').value;
+    if (!id) return alert('Elegí una campaña.');
+    const cont = document.getElementById('insContenido');
+    cont.innerHTML = '<div class="text-muted small">Calculando…</div>';
+    const res = await fetch(`/api/agro/campanias/${id}/insumos?${paramsInsumos()}`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { cont.innerHTML = `<div class="text-danger small">${escHtml(d.detail || 'No se pudo calcular.')}</div>`; return; }
+    ins.datos = d;
+    pintarInsumos();
+    llenarListaInsumos();
+}
+
+function excelInsumos() {
+    const id = document.getElementById('selectCampania').value;
+    if (!id) return alert('Elegí una campaña.');
+    window.location.href = `/api/agro/campanias/${id}/insumos.xlsx?${paramsInsumos()}`;
+}
+
+function verVistaInsumos(v) {
+    ins.vista = v;
+    pintarInsumos();
+}
+
+function pintarInsumos() {
+    const d = ins.datos;
+    if (!d) return;
+    const t = d.totales;
+    const fuentes = d.modo === 'lote'
+        ? ` · ${d.fuentes.lote || 0} lotes con historial propio, ${d.fuentes.empresa || 0} con el promedio${d.fuentes.sin_historial ? `, <span class="text-danger">${d.fuentes.sin_historial} sin historial del cultivo</span>` : ''}`
+        : (d.fuentes.sin_historial ? ` · <span class="text-danger">${d.fuentes.sin_historial} lotes con un cultivo sin historial</span>` : '');
+    document.getElementById('insResumen').innerHTML = `
+        <div class="d-flex flex-wrap gap-3 small align-items-center">
+            <span><strong>Campaña ${escHtml(d.campania)}</strong> · base ${escHtml(d.base.join(', ') || 'sin campañas anteriores')}</span>
+            <span>${fmtCant(t.has)} ha planificadas en ${d.lotes_plan - d.lotes_sin_cultivo} lotes${d.lotes_sin_cultivo ? ` <span class="text-danger">(${d.lotes_sin_cultivo} sin cultivo o sin has)</span>` : ''}${fuentes}</span>
+            <span class="badge bg-dark fs-6">Insumos: U$S ${moneyAr(t.costo_usd)}</span>
+            <span class="badge bg-success fs-6">A comprar: U$S ${moneyAr(t.costo_compra_usd)}</span>
+            ${t.sin_precio ? `<span class="text-muted">${t.sin_precio} insumo(s) sin precio de referencia</span>` : ''}
+            ${d.poco_usados ? `<span class="text-muted">${d.poco_usados} insumo(s)/cultivo ignorados por usarse en menos del ${d.min_area}% del área</span>` : ''}
+        </div>`;
+    document.getElementById('insVistas').style.display = '';
+    document.querySelectorAll('#insVistas button').forEach(b => b.classList.toggle('active', b.dataset.vista === ins.vista));
+    const fn = { compras: vistaComprasInsumos, cultivos: vistaCultivosInsumos, lotes: vistaLotesInsumos }[ins.vista];
+    document.getElementById('insContenido').innerHTML = fn(d);
+}
+
+function vistaComprasInsumos(d) {
+    const cultivos = d.cultivos.map(c => c.cultivo);
+    const q = ins.filtro.toLowerCase();
+    const rows = d.insumos.filter(i => !q || (i.producto + ' ' + i.categoria + ' ' + i.momento).toLowerCase().includes(q));
+    const tot = rows.reduce((a, i) => ({ costo: a.costo + (i.costo_usd || 0), compra: a.compra + (i.costo_compra_usd || 0) }), { costo: 0, compra: 0 });
+    return `<input class="form-control form-control-sm mb-2" style="max-width:320px;" placeholder="Buscar insumo, categoría o momento" value="${escHtml(ins.filtro)}" oninput="ins.filtro=this.value;pintarInsumos();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
+    <div class="table-responsive" style="max-height:60vh;"><table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light" style="position:sticky;top:0;"><tr>
+            <th>Insumo</th><th>Unidad</th><th>Momento</th>${cultivos.map(c => `<th class="text-end">${escHtml(c)}</th>`).join('')}
+            <th class="text-end">Total</th><th class="text-end">Stock</th><th class="text-end">A comprar</th><th class="text-end">Precio U$S</th><th class="text-end">Costo U$S</th></tr></thead>
+        <tbody>${rows.map(i => `<tr>
+            <td><div class="fw-semibold">${escHtml(i.producto)}</div><div class="small text-muted">${escHtml(i.categoria)}</div></td>
+            <td class="small">${escHtml(i.unidad)}</td>
+            <td class="small">${escHtml(i.momento)}${i.meses ? `<div class="text-muted">${escHtml(i.meses)}</div>` : ''}</td>
+            ${cultivos.map(c => `<td class="text-end font-mono small">${fmtCant(i.por_cultivo[c])}</td>`).join('')}
+            <td class="text-end font-mono fw-bold">${fmtCant(i.total)}</td>
+            <td class="text-end font-mono small">${i.stock == null ? '<span class="text-muted" title="No está en el almacén con ese nombre">—</span>' : fmtCant(i.stock)}</td>
+            <td class="text-end font-mono fw-bold ${i.a_comprar > 0 ? 'text-success' : 'text-muted'}">${fmtCant(i.a_comprar)}</td>
+            <td class="text-end font-mono small">${i.precio_usd == null ? '' : moneyAr(i.precio_usd)}</td>
+            <td class="text-end font-mono">${i.costo_usd == null ? '' : moneyAr(i.costo_usd)}</td></tr>`).join('')}</tbody>
+        <tfoot class="table-light"><tr><td colspan="${3 + cultivos.length + 4}" class="fw-bold">Total (${rows.length} insumos) · a comprar U$S ${moneyAr(tot.compra)}</td><td class="text-end fw-bold font-mono">${moneyAr(tot.costo)}</td></tr></tfoot>
+    </table></div>`;
+}
+
+function vistaCultivosInsumos(d) {
+    if (!d.cultivos.length) return '<div class="text-muted small">El plan no tiene cultivos asignados.</div>';
+    return d.cultivos.map((c, ci) => `
+        <div class="border rounded p-2 mb-3">
+            <div class="d-flex flex-wrap justify-content-between gap-2 mb-1">
+                <div><strong>${escHtml(c.cultivo)}</strong> · ${fmtCant(c.has_plan)} ha en ${c.lotes} lotes
+                    <span class="text-muted small">· historial ${fmtCant(c.has_historicas)} ha (${escHtml(c.campanias_hist.join(', ') || 'sin campañas')})</span></div>
+                <div class="small fw-bold">U$S ${moneyAr(c.costo_ha_usd)} / ha</div>
+            </div>
+            ${c.has_historicas ? '' : '<div class="small text-danger mb-1">No hay historial de este cultivo en las campañas base: agregá los insumos a mano.</div>'}
+            <div class="table-responsive" style="max-height:50vh;"><table class="table table-sm align-middle mb-1">
+                <thead class="table-light" style="position:sticky;top:0;"><tr><th>Insumo</th><th>Unidad</th><th>Momento</th><th class="text-end">Dosis histórica /ha</th><th class="text-end" style="width:120px;">Dosis plan /ha</th><th class="text-end">% área</th><th class="text-end">Campañas</th><th class="text-end">Total</th><th></th></tr></thead>
+                <tbody>${c.insumos.map((f, fi) => `<tr class="${f.excluido ? 'text-decoration-line-through text-muted' : ''}">
+                    <td>${escHtml(f.producto)} ${f.manual ? '<span class="badge bg-info text-dark">agregado</span>' : ''}${f.ajustado && !f.manual ? '<span class="badge bg-warning text-dark">ajustado</span>' : ''}</td>
+                    <td class="small">${escHtml(f.unidad)}</td>
+                    <td class="small">${escHtml(f.momento)}</td>
+                    <td class="text-end font-mono small">${fmtDosis(f.dosis_hist)}</td>
+                    <td class="text-end">${f.excluido ? '' : `<input type="number" min="0" step="any" class="form-control form-control-sm text-end font-mono" value="${f.dosis_ha ?? ''}" onchange="ajustarDosisInsumo(${ci}, ${fi}, this.value)">`}</td>
+                    <td class="text-end font-mono small">${f.pct_area == null ? '' : f.pct_area + '%'}</td>
+                    <td class="text-end font-mono small">${f.campanias_uso || ''}</td>
+                    <td class="text-end font-mono">${fmtCant(f.total)}</td>
+                    <td class="text-end text-nowrap">
+                        ${f.excluido || f.ajustado || f.manual
+                            ? `<button class="btn btn-sm btn-outline-secondary py-0" title="Volver al historial" onclick="restaurarInsumo(${ci}, ${fi})">${f.manual ? 'Quitar' : (f.excluido ? 'Incluir' : '↺')}</button>`
+                            : `<button class="btn btn-sm btn-outline-danger py-0" onclick="excluirInsumo(${ci}, ${fi})">Excluir</button>`}
+                    </td></tr>`).join('')}</tbody>
+            </table></div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <input id="insNuevoProd${ci}" class="form-control form-control-sm" style="max-width:280px;" placeholder="Agregar insumo (ej. nuevo herbicida)" list="listaItemsAlmacen">
+                <input id="insNuevaDosis${ci}" type="number" min="0" step="any" class="form-control form-control-sm" style="max-width:110px;" placeholder="Dosis /ha">
+                <input id="insNuevaUnidad${ci}" class="form-control form-control-sm" style="max-width:90px;" placeholder="Unidad">
+                <button class="btn btn-sm btn-outline-dark" onclick="agregarInsumo(${ci})">+ Agregar</button>
+            </div>
+        </div>`).join('');
+}
+
+function vistaLotesInsumos(d) {
+    const precios = Object.fromEntries(d.insumos.map(i => [i.clave, i.precio_usd || 0]));
+    const FUENTE = { lote: 'Historial del lote', empresa: 'Promedio empresa', sin_historial: 'Sin historial' };
+    return `<div class="table-responsive" style="max-height:60vh;"><table class="table table-sm align-middle mb-0">
+        <thead class="table-light" style="position:sticky;top:0;"><tr><th>Campo</th><th>Lote</th><th>Cultivo</th><th class="text-end">Has</th><th>Base</th><th>Insumos</th><th class="text-end">Costo U$S</th><th class="text-end">U$S/ha</th></tr></thead>
+        <tbody>${d.lotes.map(l => {
+            const costo = l.insumos.reduce((s, it) => s + it.cantidad * (precios[it.clave] || 0), 0);
+            return `<tr>
+                <td>${escHtml(l.campo)}</td><td class="fw-bold">${escHtml(l.lote)}</td><td>${escHtml(l.cultivo)}</td>
+                <td class="text-end font-mono">${fmtCant(l.has)}</td>
+                <td class="small ${l.fuente === 'sin_historial' ? 'text-danger' : ''}">${FUENTE[l.fuente] || l.fuente}</td>
+                <td class="small"><details><summary>${l.insumos.length} insumos</summary>${l.insumos.map(it => `<div>${escHtml(it.producto)}: <span class="font-mono">${fmtCant(it.cantidad)}</span> <span class="text-muted">(${fmtDosis(it.dosis_ha)}/ha)</span></div>`).join('')}</details></td>
+                <td class="text-end font-mono">${moneyAr(costo)}</td>
+                <td class="text-end font-mono small">${l.has ? moneyAr(costo / l.has) : ''}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+}
+
+async function enviarAjusteInsumo(body, metodo = 'PUT') {
+    const id = document.getElementById('selectCampania').value;
+    const url = metodo === 'DELETE'
+        ? `/api/agro/campanias/${id}/insumos/ajuste?` + new URLSearchParams({ cultivo: body.cultivo, clave: body.clave })
+        : `/api/agro/campanias/${id}/insumos/ajuste`;
+    const res = await fetch(url, metodo === 'DELETE' ? { method: 'DELETE' } : {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(r.detail || 'No se pudo guardar el ajuste.');
+    const y = window.scrollY;
+    await calcularInsumos();
+    window.scrollTo(0, y);
+}
+
+function insumoDeCultivo(ci, fi) {
+    const c = ins.datos.cultivos[ci];
+    return { c, f: c.insumos[fi] };
+}
+
+function ajustarDosisInsumo(ci, fi, valor) {
+    const { c, f } = insumoDeCultivo(ci, fi);
+    if (valor === '') return restaurarInsumo(ci, fi);
+    return enviarAjusteInsumo({ cultivo: c.cultivo, clave: f.clave, producto: f.producto, dosis_ha: Number(valor), manual: f.manual });
+}
+
+function excluirInsumo(ci, fi) {
+    const { c, f } = insumoDeCultivo(ci, fi);
+    return enviarAjusteInsumo({ cultivo: c.cultivo, clave: f.clave, producto: f.producto, excluido: true });
+}
+
+function restaurarInsumo(ci, fi) {
+    const { c, f } = insumoDeCultivo(ci, fi);
+    return enviarAjusteInsumo({ cultivo: c.cultivo, clave: f.clave }, 'DELETE');
+}
+
+async function llenarListaInsumos() {
+    if (document.getElementById('listaItemsAlmacen')) return;
+    const dl = document.createElement('datalist');
+    dl.id = 'listaItemsAlmacen';
+    document.body.appendChild(dl);
+    const items = await fetch('/api/agro/almacen/items?tipo=producto').then(r => r.ok ? r.json() : []).catch(() => []);
+    const nombres = new Set([...(items || []).map(i => i.nombre), ...((ins.datos || {}).insumos || []).map(i => i.producto)].filter(Boolean));
+    dl.innerHTML = [...nombres].sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${escHtml(n)}">`).join('');
+}
+
+function agregarInsumo(ci) {
+    const c = ins.datos.cultivos[ci];
+    const producto = document.getElementById('insNuevoProd' + ci).value.trim();
+    const dosis = document.getElementById('insNuevaDosis' + ci).value;
+    if (!producto || dosis === '') return alert('Completá el insumo y la dosis por hectárea.');
+    return enviarAjusteInsumo({ cultivo: c.cultivo, producto, dosis_ha: Number(dosis), manual: true, unidad: document.getElementById('insNuevaUnidad' + ci).value.trim() });
 }
 
 async function onAntecesorChange(sel) {
