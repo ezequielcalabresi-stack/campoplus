@@ -49,6 +49,8 @@
             </div>
         </div>
 
+        <div id="huerfanas"></div>
+
         <div class="row g-4 mb-4">
             <div class="col-md-6">
                 <div class="main-card h-100 d-flex flex-column justify-content-between">
@@ -261,7 +263,7 @@
             try {
                 let res = await fetch(`/api/retenciones/${id}`, { method: 'DELETE' });
                 let data = await res.json();
-                if (data.status === 'success') consultarRetenciones();
+                if (data.status === 'success') { consultarRetenciones(); cargarHuerfanas(); }
                 else alert("Error al eliminar la retención.");
             } catch (e) {
                 console.error("Error:", e);
@@ -313,7 +315,41 @@
             document.body.removeChild(enlace);
         }
 
-        window.onload = consultarRetenciones;
+        function escHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        async function cargarHuerfanas() {
+            const caja = document.getElementById('huerfanas');
+            const res = await fetch('/api/retenciones/huerfanas');
+            const lista = res.ok ? await res.json() : [];
+            if (!lista.length) { caja.innerHTML = ''; return; }
+            caja.innerHTML = `<div class="alert alert-warning">
+                <div class="fw-bold mb-1">Retenciones sin renglón en la cuenta corriente (${lista.length})</div>
+                <div class="small mb-2">Se borró el movimiento en la cuenta corriente del proveedor pero el certificado quedó cargado. Si no corresponde informarlas, borralas acá: se elimina solo el certificado.</div>
+                <table class="table table-sm mb-0 bg-white">
+                    <tbody>${lista.map(r => `<tr>
+                        <td class="font-monospace">${escHtml(r.fecha.split('-').reverse().join('/'))}</td>
+                        <td><span class="badge ${String(r.tipo_retencion).toUpperCase() === 'IIBB' ? 'bg-info text-dark' : 'bg-secondary'}">${String(r.tipo_retencion).toUpperCase() === 'IIBB' ? 'IIBB' : 'Ganancias'}</span></td>
+                        <td class="font-monospace">${escHtml(r.nro_comprobante)}</td>
+                        <td>${escHtml(r.razon_social)} <span class="text-muted font-monospace small">${escHtml(r.cuit)}</span></td>
+                        <td class="text-end font-monospace">$ ${Number(r.importe_retenido || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+                        <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" onclick="borrarHuerfana(${r.id}, '${escHtml(r.nro_comprobante)}')">Borrar</button></td>
+                    </tr>`).join('')}</tbody>
+                </table>
+            </div>`;
+        }
+
+        async function borrarHuerfana(id, nro) {
+            if (!confirm(`¿Borrar el certificado ${nro}? No tiene renglón en la cuenta corriente, así que solo se elimina el certificado.`)) return;
+            const res = await fetch(`/api/retenciones/${id}`, { method: 'DELETE' });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(d.detail || 'No se pudo borrar.');
+            cargarHuerfanas();
+            consultarRetenciones();
+        }
+
+        window.onload = () => { consultarRetenciones(); cargarHuerfanas(); };
     </script>
 </body>
 </html>

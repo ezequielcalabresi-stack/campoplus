@@ -6286,6 +6286,46 @@ def _cc_de_retencion(cursor, ret) -> List[Dict[str, object]]:
     return [dict(r) for r in cursor.fetchall()]
 
 
+# Certificados hasta estos números vienen del histórico de Access (sin renglón en la cuenta corriente);
+# los posteriores los emite la orden de pago, que siempre graba el renglón de retención.
+_ULTIMO_CERT_HISTORICO = {"SICORE": 2073, "IIBB": 2961}
+
+
+def _retenciones_huerfanas(cursor) -> List[Dict[str, object]]:
+    cursor.execute(
+        """
+        SELECT r.id, r.fecha, r.cuit, r.razon_social, r.tipo_retencion, r.nro_comprobante,
+               r.base_imponible, r.importe_retenido
+        FROM retenciones_sicore r
+        WHERE UPPER(COALESCE(r.tipo_retencion, 'SICORE')) IN ('SICORE', 'IIBB')
+          AND NOT EXISTS (
+              SELECT 1 FROM cuentas_corrientes cc
+              WHERE cc.numero_comprobante = r.nro_comprobante
+                AND REPLACE(COALESCE(cc.entidad_id, ''), '-', '') = REPLACE(COALESCE(r.cuit, ''), '-', '')
+                AND cc.tipo_comprobante LIKE 'Reten%'
+          )
+        ORDER BY r.fecha, r.id;
+        """
+    )
+    salida = []
+    for r in cursor.fetchall():
+        tipo = _tipo_retencion(r)
+        nro = re.sub(r"\D", "", str(r["nro_comprobante"] or "").split("-")[-1])
+        if nro and int(nro) > _ULTIMO_CERT_HISTORICO[tipo]:
+            salida.append(dict(r))
+    return salida
+
+
+@app.get("/api/retenciones/huerfanas")
+def listar_retenciones_huerfanas():
+    """Certificados emitidos por el sistema cuyo renglón de retención ya no está en la cuenta corriente."""
+    conn = get_db()
+    try:
+        return _retenciones_huerfanas(conn.cursor())
+    finally:
+        conn.close()
+
+
 @app.delete("/api/retenciones/{id_retencion}")
 def eliminar_retencion_directa(id_retencion: int):
     conn = get_db()

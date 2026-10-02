@@ -177,6 +177,7 @@
                 <button type="button" class="btn btn-sm btn-success fw-bold flex-fill" onclick="descargarLote()">Descargar .ZIP</button>
             </div>
         </div>
+        <div id="ltHuerfanas" class="small"></div>
         <div id="ltResultado" class="small text-muted">Elegí el período y tocá "Ver".</div>
     </div>
 </div>
@@ -460,6 +461,7 @@ async function liberarDisco() {
 function onTipoLote() {
     document.getElementById('ltActividadBox').style.display =
         document.getElementById('ltTipo').value === 'retenciones' ? '' : 'none';
+    document.getElementById('ltHuerfanas').innerHTML = '';
     document.getElementById('ltResultado').innerHTML = '<span class="text-muted">Elegí el período y tocá "Ver".</span>';
 }
 
@@ -490,9 +492,11 @@ async function previaLote() {
     if (!res.ok) { caja.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escHtml(d.detail || 'No se pudo armar el lote.')}</div>`; return; }
     const ret = p.get('tipo') === 'retenciones';
     regsLote = d.registros || [];
-    const filas = regsLote.map((r, i) => `<tr class="${r.error ? 'table-danger' : (r.aviso ? 'table-warning' : '')}">
+    const huerfanas = ret ? await cargarHuerfanasLote() : new Set();
+    const filas = regsLote.map((r, i) => `<tr class="${r.error ? 'table-danger' : (r.aviso || huerfanas.has(r.id) ? 'table-warning' : '')}">
         <td class="font-mono">${escHtml(r.fecha.split('-').reverse().join('/'))}</td>
-        <td>${escHtml(r.nombre || '')}<div class="text-muted font-mono" style="font-size:.75rem;">${escHtml(r.cuit || '')}</div></td>
+        <td>${escHtml(r.nombre || '')}<div class="text-muted font-mono" style="font-size:.75rem;">${escHtml(r.cuit || '')}</div>
+            ${huerfanas.has(r.id) ? '<span class="badge bg-warning text-dark">Sin renglón en cta cte</span>' : ''}</td>
         <td class="font-mono small">${escHtml(r.certificado || '')}<div class="text-muted">${escHtml(ret ? ('Transacción ' + r.transaccion) : (r.comprobante || ''))}</div></td>
         <td class="text-end font-mono">${pesos(r.base)}</td>
         <td class="text-end font-mono">${Number(r.alicuota).toFixed(2).replace('.', ',')}%</td>
@@ -519,6 +523,18 @@ async function previaLote() {
 }
 
 let regsLote = [];
+
+async function cargarHuerfanasLote() {
+    const caja = document.getElementById('ltHuerfanas');
+    const res = await fetch('/api/retenciones/huerfanas');
+    const lista = (res.ok ? await res.json() : []).filter(r => String(r.tipo_retencion).toUpperCase() === 'IIBB');
+    caja.innerHTML = lista.length ? `<div class="alert alert-warning py-2">
+        <strong>${lista.length} retención(es) de IIBB sin renglón en la cuenta corriente</strong>
+        (se borró el movimiento del proveedor pero el certificado quedó):
+        ${lista.map(r => `${escHtml(r.nro_comprobante)} ${escHtml(r.razon_social)} del ${escHtml(r.fecha.split('-').reverse().join('/'))}`).join(' · ')}.
+        Si no corresponde informarlas, borralas con el botón Borrar del renglón.</div>` : '';
+    return new Set(lista.map(r => r.id));
+}
 
 function editarRegLote(i) {
     const r = regsLote[i];
