@@ -606,8 +606,9 @@ async function guardarVenta(ev) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Error al guardar');
-        document.querySelectorAll('#formVenta input, #formVenta select, #formVenta button').forEach(el => { el.disabled = true; });
         mostrarResultado(data, payload);
+        limpiarFormulario();
+        btn.disabled = false;
         cargarResumen();
         if (data.cert_percepcion && perc > 0.01) {
             data.fecha = payload.fecha;
@@ -620,6 +621,15 @@ async function guardarVenta(ev) {
         btn.disabled = false;
         alert('Error: ' + e.message);
     }
+}
+
+function limpiarFormulario() {
+    ['selCliente', 'txtCuit', 'txtNro'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('txtAlic').value = '0,00';
+    document.getElementById('txtPerc').value = '0,00';
+    alicDecimal = 0;
+    document.getElementById('tablaRenglones').innerHTML = '';
+    agregarRenglon(false);
 }
 
 let imputCcId = null;
