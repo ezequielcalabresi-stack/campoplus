@@ -2525,6 +2525,14 @@ def asegurar_schema_unificacion(cursor) -> None:
             cursor.execute("ALTER TABLE margenes_access ADD COLUMN campania_original TEXT;")
         if "laboreo_original" not in cols_m:
             cursor.execute("ALTER TABLE margenes_access ADD COLUMN laboreo_original TEXT;")
+    for tabla, col in (
+        ("almacen_movimientos", "item_id"),
+        ("ot_consumos", "item_id"),
+        ("factura_imputaciones", "item_almacen_id"),
+        ("margenes_access", "almacen_item_id"),
+    ):
+        if col in {r[1] for r in cursor.execute(f"PRAGMA table_info({tabla});").fetchall()}:
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{tabla}_{col} ON {tabla}({col});")
 
 
 def _activo(item: Dict[str, Any]) -> bool:
