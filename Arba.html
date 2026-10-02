@@ -138,6 +138,47 @@
             </div>
         </div>
     </div>
+
+    <div class="main-card mt-4">
+        <h5 class="fw-bold mb-1">3. Lotes para declarar en ARBA (agente de recaudación)</h5>
+        <p class="text-muted small mb-3">Genera el .ZIP con el diseño de registro oficial para subir en ARBA.
+            <strong>Percepciones</strong>: AR-Web, actividad 7 método percibido (P7).
+            <strong>Retenciones</strong>: Emisión de Comprobantes de Retención Web A-122R (RN 22/25): ARBA calcula el importe y emite el comprobante oficial.</p>
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-md-2">
+                <label class="form-label small fw-bold">Lote de</label>
+                <select id="ltTipo" class="form-select form-select-sm" onchange="onTipoLote()">
+                    <option value="percepciones">Percepciones</option>
+                    <option value="retenciones">Retenciones</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-bold">Mes</label>
+                <input type="month" id="ltMes" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-bold">Quincena</label>
+                <select id="ltQuincena" class="form-select form-select-sm">
+                    <option value="1">1ª (1 al 15)</option>
+                    <option value="2">2ª (16 a fin)</option>
+                    <option value="0">Mensual</option>
+                </select>
+            </div>
+            <div class="col-md-2" id="ltActividadBox" style="display:none;">
+                <label class="form-label small fw-bold">Actividad</label>
+                <input id="ltActividad" class="form-control form-control-sm font-mono" value="6" title="Código de actividad de retención en ARBA">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small fw-bold">Lote</label>
+                <input id="ltLote" class="form-control form-control-sm font-mono" value="1" title="ARBA no acepta dos lotes con el mismo nombre: si reenviás, cambiá el número">
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-dark fw-bold flex-fill" onclick="previaLote()">Ver</button>
+                <button type="button" class="btn btn-sm btn-success fw-bold flex-fill" onclick="descargarLote()">Descargar .ZIP</button>
+            </div>
+        </div>
+        <div id="ltResultado" class="small text-muted">Elegí el período y tocá "Ver".</div>
+    </div>
 </div>
 <script>
 let pollTimer = null;
@@ -416,6 +457,80 @@ async function liberarDisco() {
     alert(d.message || 'Listo');
 }
 
+function onTipoLote() {
+    document.getElementById('ltActividadBox').style.display =
+        document.getElementById('ltTipo').value === 'retenciones' ? '' : 'none';
+    document.getElementById('ltResultado').innerHTML = '<span class="text-muted">Elegí el período y tocá "Ver".</span>';
+}
+
+function paramsLote() {
+    const mes = document.getElementById('ltMes').value;
+    if (!mes) { alert('Elegí el mes.'); return null; }
+    const [anio, m] = mes.split('-');
+    return new URLSearchParams({
+        tipo: document.getElementById('ltTipo').value,
+        anio, mes: String(Number(m)),
+        quincena: document.getElementById('ltQuincena').value,
+        actividad: document.getElementById('ltActividad').value.trim() || '6',
+        lote: document.getElementById('ltLote').value.trim() || '1',
+    });
+}
+
+function pesos(n) {
+    return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function previaLote() {
+    const p = paramsLote();
+    if (!p) return;
+    const caja = document.getElementById('ltResultado');
+    caja.innerHTML = 'Consultando...';
+    const res = await fetch('/api/arba/lotes/previa?' + p.toString());
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { caja.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escHtml(d.detail || 'No se pudo armar el lote.')}</div>`; return; }
+    const ret = p.get('tipo') === 'retenciones';
+    const filas = (d.registros || []).map(r => `<tr>
+        <td class="font-mono">${escHtml(r.fecha.split('-').reverse().join('/'))}</td>
+        <td>${escHtml(r.nombre || '')}<div class="text-muted font-mono" style="font-size:.75rem;">${escHtml(r.cuit || '')}</div></td>
+        <td class="font-mono small">${escHtml(ret ? ('Transacción ' + r.transaccion) : (r.comprobante || ''))}</td>
+        <td class="text-end font-mono">${pesos(r.base)}</td>
+        <td class="text-end font-mono">${Number(r.alicuota).toFixed(2).replace('.', ',')}%</td>
+        <td class="text-end font-mono">${pesos(r.importe)}</td>
+    </tr>`).join('');
+    const err = (d.errores || []).map(e => `<li>${escHtml(e)}</li>`).join('');
+    const avi = (d.avisos || []).map(e => `<li>${escHtml(e)}</li>`).join('');
+    caja.innerHTML = `
+        ${err ? `<div class="alert alert-danger py-2"><strong>No van en el lote:</strong><ul class="mb-0">${err}</ul></div>` : ''}
+        ${avi ? `<div class="alert alert-warning py-2"><strong>Revisar:</strong><ul class="mb-0">${avi}</ul></div>` : ''}
+        ${filas ? `<div class="table-responsive"><table class="table table-sm align-middle mb-2">
+            <thead class="table-light"><tr><th>Fecha</th><th>${ret ? 'Retenido' : 'Percibido'}</th><th>${ret ? 'Referencia' : 'Comprobante'}</th>
+                <th class="text-end">Base</th><th class="text-end">Alícuota</th><th class="text-end">Importe</th></tr></thead>
+            <tbody>${filas}</tbody>
+            <tfoot><tr class="fw-bold"><td colspan="3">${d.registros.length} operación(es)</td>
+                <td class="text-end font-mono">${pesos(d.total_base)}</td><td></td><td class="text-end font-mono">${pesos(d.total_importe)}</td></tr></tfoot>
+        </table></div>` : '<div class="text-muted">No hay operaciones en ese período.</div>'}
+        ${ret && filas ? '<div class="text-muted">En el lote A-122R no va el importe: ARBA lo calcula con la base y la alícuota, y genera el comprobante que hay que entregar al proveedor.</div>' : ''}`;
+}
+
+async function descargarLote() {
+    const p = paramsLote();
+    if (!p) return;
+    const res = await fetch('/api/arba/lotes/descargar?' + p.toString());
+    if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        return alert(d.detail || 'No se pudo generar el lote.');
+    }
+    const disp = res.headers.get('Content-Disposition') || '';
+    const nombre = (disp.match(/filename="([^"]+)"/) || [])[1] || 'lote_arba.zip';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = nombre;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+document.getElementById('ltMes').value = new Date().toISOString().slice(0, 7);
 document.getElementById('cuitInput').addEventListener('keypress', e => { if (e.key === 'Enter') consultarCuit(); });
 cargarEstado();
 verDisco(false);

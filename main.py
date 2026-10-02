@@ -9367,6 +9367,8 @@ from sueldos_api import register_sueldos_routes
 register_sueldos_routes(app, get_db, get_empresa_activa_id)
 from iva_api import register_iva_routes
 register_iva_routes(app, get_db, get_empresa_activa_id)
+from arba_lotes import register_arba_lotes_routes
+register_arba_lotes_routes(app, get_db)
 
 # Audit schema antes de SaaS (usuarios_sistema)
 try:
