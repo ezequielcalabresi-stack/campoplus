@@ -41,11 +41,11 @@
         <div class="main-card">
             <h5 class="fw-bold mb-1">Unificar productos</h5>
             <p class="hint mb-3">Cuando el mismo producto entró con distintos nombres comerciales (ej. <em>2,4 D Etilhexilico 89% x 20 Lts</em> y <em>2,4 D Sigma x 20 Lts</em>),
-                elegí el nombre correcto como <strong>principal</strong> y tildá los demás. Queda un solo stock (suma de todos, con costo promedio ponderado),
+                elegí el nombre correcto como <strong>principal</strong> y tildá los demás. Queda un solo stock (suma de todos, sin promediar precios: cada compra conserva su precio y se consume Primero Entrado, Primero Salido),
                 y se pasan al principal los movimientos, las órdenes de trabajo y las líneas de costo de <strong>todas las campañas</strong>.
                 Los nombres viejos quedan como alias: las próximas facturas que lleguen con ese nombre entran al principal. Se puede deshacer.</p>
             <div class="row g-2 align-items-end mb-2">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="small fw-bold">Buscar</label>
                     <input id="uniBuscar" class="form-control form-control-sm" placeholder="Ej: 2,4 D / glifosato" oninput="pintarUnificar()">
                 </div>
@@ -56,7 +56,13 @@
                         <option value="laboreo">Laboreos</option>
                     </select>
                 </div>
-                <div class="col-md-6 d-flex gap-2 justify-content-end">
+                <div class="col-md-3">
+                    <label class="small fw-bold">Categoría</label>
+                    <select id="uniCat" class="form-select form-select-sm" onchange="pintarUnificar()">
+                        <option value="">Todas las categorías</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex gap-2 justify-content-end">
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="limpiarSeleccionUnificar()">Limpiar selección</button>
                     <button type="button" class="btn btn-sm btn-dark fw-bold" onclick="previaUnificar()">1) Ver qué cambia</button>
                 </div>
@@ -70,7 +76,9 @@
                             <th class="text-center" title="Nombre que queda">Principal</th>
                             <th class="text-center" title="Se unifican en el principal">Unificar</th>
                             <th>Nombre</th><th>Presentación</th><th>Un.</th>
-                            <th class="text-end">Stock</th><th class="text-end">Costo U$S</th><th class="text-end">Costo $</th>
+                            <th class="text-end">Stock</th>
+                            <th class="text-end" title="Compra más vieja que queda en stock: la próxima en salir (PEPS)">1° entrado U$S</th>
+                            <th class="text-end" title="Última compra con precio">Últ. entrado U$S</th>
                         </tr>
                     </thead>
                     <tbody id="uniTabla"><tr><td colspan="8" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
@@ -295,6 +303,11 @@ async function cargarCategorias() {
             return `<option value="${c.codigo}">${c.nombre}${ot}</option>`;
         }).join('');
     if (fPrev) filtro.value = fPrev;
+    const uni = document.getElementById('uniCat');
+    const uPrev = uni.value;
+    uni.innerHTML = '<option value="">Todas las categorías</option>' +
+        catsCache.map(c => `<option value="${c.codigo}">${esc(c.nombre)}</option>`).join('');
+    if (uPrev) uni.value = uPrev;
 }
 
 async function agregarCategoria() {
@@ -518,10 +531,19 @@ function fmtNum(n, dec) {
 }
 
 async function cargarUnificar() {
-    const res = await fetch('/api/agro/almacen/items?solo_con_stock=false&orden=nombre');
+    const res = await fetch('/api/agro/almacen/items?solo_con_stock=false&orden=nombre&con_peps=true');
     uniItems = await res.json().catch(() => []);
     pintarUnificar();
     await cargarHistorialUnificar();
+}
+
+function fechaCorta(f) {
+    return /^\d{4}-\d{2}-\d{2}/.test(f || '') ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(2, 4) : (f || '');
+}
+
+function precioPeps(usd, fecha) {
+    if (!Number(usd || 0)) return '';
+    return `${fmtNum(usd, 2)}<div class="text-muted" style="font-size:.72rem;">${esc(fechaCorta(fecha))}</div>`;
 }
 
 function sinAcentos(s) {
@@ -530,12 +552,14 @@ function sinAcentos(s) {
 
 function pintarUnificar() {
     const tipo = document.getElementById('uniTipo').value;
+    const cat = document.getElementById('uniCat').value;
     const palabras = sinAcentos(document.getElementById('uniBuscar').value).split(/\s+/).filter(Boolean);
     const filas = uniItems.filter(i => (i.tipo || 'producto') === tipo
-        && (uniPrincipal === i.id || uniOtros.has(i.id) || palabras.every(p => sinAcentos(i.nombre).includes(p))));
+        && (uniPrincipal === i.id || uniOtros.has(i.id)
+            || ((!cat || i.categoria_codigo === cat) && palabras.every(p => sinAcentos(i.nombre).includes(p)))));
     const tb = document.getElementById('uniTabla');
-    if (!palabras.length && !uniPrincipal && !uniOtros.size) {
-        tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Escribí parte del nombre para buscar los productos a unificar.</td></tr>';
+    if (!palabras.length && !cat && !uniPrincipal && !uniOtros.size) {
+        tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Elegí una categoría o escribí parte del nombre para buscar los productos a unificar.</td></tr>';
     } else {
         tb.innerHTML = filas.slice(0, 200).map(i => `<tr class="${uniPrincipal === i.id ? 'table-success' : (uniOtros.has(i.id) ? 'table-warning' : '')}">
             <td class="text-center"><input type="radio" name="uniPrincipal" ${uniPrincipal === i.id ? 'checked' : ''} onchange="elegirPrincipal(${i.id})"></td>
@@ -544,8 +568,8 @@ function pintarUnificar() {
             <td class="small">${esc(i.presentacion)}</td>
             <td>${esc(i.unidad)}</td>
             <td class="text-end font-mono">${Number(i.stock_cantidad || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 })}</td>
-            <td class="text-end font-mono">${Number(i.costo_promedio_usd || 0) ? fmtNum(i.costo_promedio_usd, 2) : ''}</td>
-            <td class="text-end font-mono">${Number(i.costo_promedio_neto || 0) ? fmtNum(i.costo_promedio_neto, 2) : ''}</td>
+            <td class="text-end font-mono">${precioPeps(i.peps_primero_usd, i.peps_primero_fecha)}</td>
+            <td class="text-end font-mono">${precioPeps(i.peps_ultimo_usd, i.peps_ultimo_fecha)}</td>
         </tr>`).join('') || '<tr><td colspan="8" class="text-center text-muted py-3">Sin coincidencias.</td></tr>';
     }
     const p = uniItems.find(i => i.id === uniPrincipal);
@@ -587,9 +611,15 @@ async function previaUnificar() {
     const camp = Object.entries(d.lineas_por_campania || {}).map(([c, n]) => `${esc(c)}: ${n}`).join(' · ');
     const err = (d.errores || []).map(e => `<li>${esc(e)}</li>`).join('');
     const p = d.principal || {};
+    const pr = d.precios_resultantes || {};
+    const precios = [
+        Number(pr.primero_usd || 0) ? `1° entrado U$S ${fmtNum(pr.primero_usd, 2)} (${esc(fechaCorta(pr.primero_fecha))})` : '',
+        Number(pr.ultimo_usd || 0) ? `últ. entrado U$S ${fmtNum(pr.ultimo_usd, 2)} (${esc(fechaCorta(pr.ultimo_fecha))})` : '',
+    ].filter(Boolean).join(' · ') || 'sin compras con precio';
     caja.innerHTML = `<div class="alert ${err ? 'alert-danger' : 'alert-info'} py-2 mb-0">
         <div class="fw-bold mb-1">Queda "${esc(p.nombre)}" con stock ${Number(d.stock_resultante || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 })} ${esc(p.unidad)}
-            · costo U$S ${fmtNum((d.costos_resultantes || {}).costo_promedio_usd, 2)} · $ ${fmtNum((d.costos_resultantes || {}).costo_promedio_neto, 2)}</div>
+            · ${precios}</div>
+        <div class="small">No se promedia: cada compra conserva su precio y las OT se costean Primero Entrado, Primero Salido.</div>
         <div class="small">Se pasan al principal: ${d.movimientos} movimientos de almacén, ${d.consumos_ot} consumos de OT, ${d.renglones_factura} renglones de factura
             y ${d.lineas_campania} líneas de costo${camp ? ' (' + camp + ')' : ''}. Las facturas y la cuenta corriente no cambian.</div>
         ${!d.movimientos && !d.consumos_ot && !d.renglones_factura && !d.lineas_campania && !(d.otros || []).some(o => Number(o.stock_cantidad || 0))

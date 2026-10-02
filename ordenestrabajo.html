@@ -28,16 +28,16 @@
 <body>
 <div class="container my-4" style="max-width:1280px;">
     <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
-        <div>
+            <div>
             <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Órdenes de Trabajo</small></h4>
             <p class="hint mb-0">El ingeniero emite la orden con productos, dosis y labores. El costo se asigna después, en "Costear OT".</p>
-        </div>
+            </div>
         <div class="d-flex gap-2">
             <a href="Almacen.html" class="btn btn-sm btn-outline-dark fw-bold">Almacén</a>
             <a href="Margenesbrutos.html" class="btn btn-sm btn-outline-dark fw-bold">Campaña</a>
             <a href="Index.html" class="btn btn-sm" style="background:#e2e8f0;color:#334155;font-weight:600;">Dashboard</a>
         </div>
-    </div>
+        </div>
 
     <ul class="nav nav-tabs mb-3">
         <li class="nav-item"><button class="nav-link active" id="tabBtnEmitir" onclick="mostrarTab('emitir')">Emitir OT</button></li>
@@ -51,7 +51,7 @@
         <div id="bannerEdicion" class="alert alert-warning d-none d-flex justify-content-between align-items-center py-2">
             <span>Editando la <b id="bannerNro"></b>. Al guardar se rehacen las salidas de almacén y las líneas de costo; el costeo ya cargado se conserva.</span>
             <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="cancelarEdicion()">Cancelar edición</button>
-        </div>
+                </div>
         <div class="main-card">
             <div class="row g-2">
                 <div class="col-md-2">
@@ -94,8 +94,8 @@
                     <label class="small fw-bold">Observaciones</label>
                     <input id="observaciones" class="form-control form-control-sm">
                 </div>
+                </div>
             </div>
-        </div>
 
         <div class="main-card">
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -104,7 +104,7 @@
                     <span class="hint">La misma OT puede aplicarse a varios lotes o campos. Cada producto se reparte según las hectáreas de cada lote. En campos en participación se cargan las hectáreas totales del lote.</span>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="agregarDestino()">+ Campo / lote</button>
-            </div>
+                </div>
             <div class="table-responsive">
                 <table class="table table-sm table-bordered align-middle mb-0">
                     <thead class="table-light">
@@ -126,8 +126,8 @@
                         </tr>
                     </tfoot>
                 </table>
+                </div>
             </div>
-        </div>
 
         <div class="main-card">
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -169,8 +169,8 @@
                             <th class="col-aporte" style="width:230px;">Quién aporta</th>
                             <th class="text-end" style="width:150px;">Stock actual</th>
                             <th style="width:40px;"></th>
-                        </tr>
-                    </thead>
+                            </tr>
+                        </thead>
                     <tbody id="tablaConsumos"></tbody>
                 </table>
             </div>
@@ -196,7 +196,7 @@
                     <label class="small fw-bold">Últimas OT</label>
                     <select id="fUltimas" class="form-select form-select-sm">
                         <option value="20">20</option><option value="40" selected>40</option><option value="100">100</option><option value="300">300</option>
-                    </select>
+                                    </select>
                 </div>
                 <div class="col-md-3">
                     <div class="form-check mb-1">
@@ -224,13 +224,13 @@
                             <th class="text-end">Costo $</th>
                             <th>Origen</th>
                             <th></th>
-                        </tr>
+                            </tr>
                     </thead>
                     <tbody id="tablaLineas"><tr><td colspan="9" class="text-muted text-center py-3">Cargando...</td></tr></tbody>
-                </table>
+                    </table>
             </div>
-        </div>
-    </div>
+                </div>
+            </div>
 
     <!-- ===================== CAMPOS EN SOCIEDAD ===================== -->
     <div id="tabSoc" class="d-none">
@@ -239,7 +239,7 @@
                 <div class="col-md-3">
                     <label class="small fw-bold">Campaña</label>
                     <select id="sCampania" class="form-select form-select-sm" onchange="cargarCamposSociedad()"></select>
-                </div>
+            </div>
                 <div class="col-md-9 text-end">
                     <button class="btn btn-sm btn-success fw-bold" onclick="abrirCampoSoc()">+ Campo en sociedad</button>
                 </div>
@@ -482,7 +482,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
+    <script>
 let camposCache = [];
 const lotesPorCampo = {};
 let otEditId = null;
@@ -647,7 +647,7 @@ function opcionesSocioSelect(p) {
 
 function agregarFilaCampoSoc(s) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
+            tr.innerHTML = `
         <td><select class="form-select form-select-sm cs-socio" onchange="resumenCampoSoc()">${opcionesSocioSelect(s)}</select></td>
         <td><input type="number" step="0.01" min="0" max="99.99" class="form-control form-control-sm text-end font-mono cs-pct" value="${s ? Number(s.porcentaje) : ''}" oninput="resumenCampoSoc()"></td>
         <td class="text-center"><input type="checkbox" class="form-check-input cs-lab" ${!s || Number(s.aporta_labores ?? 1) ? 'checked' : ''} onchange="resumenCampoSoc()"></td>
@@ -1106,8 +1106,8 @@ function agregarLinea(tipoInicial) {
             <select class="form-select form-select-sm cons-tipo" onchange="onTipoLineaChange(this)">
                 <option value="producto"${tipo==='producto'?' selected':''}>Producto</option>
                 <option value="laboreo"${tipo==='laboreo'?' selected':''}>Labor</option>
-            </select>
-        </td>
+                    </select>
+                </td>
         <td><input class="form-control form-control-sm cons-item" placeholder="Escribí para buscar..." oninput="onItemChange(this)"></td>
         <td><input type="number" step="0.001" class="form-control form-control-sm font-mono text-end cons-dosis" value="${tipo==='laboreo'?'1':'0'}" oninput="recalcularLineas()"></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm font-mono text-end cons-cant" value="0"></td>
@@ -1436,6 +1436,7 @@ function renderLineas() {
             const grupo = lineasCache.filter(x => x.nro_orden === actual);
             const usd = grupo.reduce((s, x) => s + Number(x.costo_usd || 0), 0);
             const pend = grupo.filter(x => !Number(x.costo_usd || 0) && !Number(x.costo_ars || 0)).length;
+            const pendProd = grupo.filter(x => (x.producto || '').trim() && !Number(x.costo_usd || 0) && !Number(x.costo_ars || 0)).length;
             const origen = l.ot_id ? '' : ' <span class="badge bg-light text-secondary border">Access</span>';
             const lotesGrupo = {};
             grupo.forEach(x => { lotesGrupo[(x.campo || '') + ' | ' + (x.lote || '')] = Number(x.cantidad_has || 0); });
@@ -1448,7 +1449,7 @@ function renderLineas() {
                 <span class="ms-2">${numAr(hasGrupo)} has</span>
                 <span class="ms-2">${esc(l.cultivo || '')}</span>
                 <span class="ms-2 text-muted">Campaña ${esc(l.campania_codigo || '-')}</span>
-                <span class="float-end small">${pend ? `<span class="text-warning fw-bold">${pend} sin costo</span> | ` : ''}U$S ${moneyAr(usd)}</span>
+                <span class="float-end small">${pendProd ? `<button class="btn btn-sm btn-outline-light py-0 me-2" title="Costea los productos sin costo con el criterio de la empresa (Primero Entrado, Primero Salido). Los laboreos se costean con la factura del contratista." onclick="costearOtCriterio(${Number(l.nro_orden)}, this)">Costear productos (PEPS)</button>` : ''}${pend ? `<span class="text-warning fw-bold">${pend} sin costo</span> | ` : ''}U$S ${moneyAr(usd)}</span>
             </td></tr>`;
         }
         const esLab = !(l.producto || '').trim();
@@ -1477,6 +1478,24 @@ function renderLineas() {
     tb.innerHTML = html;
 }
 
+async function costearOtCriterio(nro, btn) {
+    if (!confirm(`Costear los productos sin costo de la OT ${nro} con el criterio de la empresa (Primero Entrado, Primero Salido)?\nLas líneas ya costeadas no se tocan.`)) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Costeando...';
+    try {
+        const res = await fetch(`/api/agro/ot/orden/${nro}/costear_criterio`, { method: 'POST' });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) { alert(errMsg(d, 'No se pudo costear la OT')); return; }
+        alert(`OT ${nro}: ${d.costeadas} producto(s) costeado(s)${d.criterio ? ' por ' + d.criterio : ''}.`
+            + ((d.omitidas || []).length ? '\n\nQuedaron sin costear:\n• ' + d.omitidas.join('\n• ') : ''));
+        await cargarLineas();
+        actualizarBadgePendientes();
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Costear productos (PEPS)';
+    }
+}
+
 async function abrirCosteo(id) {
     const res = await fetch(`/api/agro/ot/lineas/${id}/opciones`);
     const d = await res.json().catch(() => ({}));
@@ -1498,8 +1517,11 @@ async function abrirCosteo(id) {
     const sug = document.getElementById('mcSugerido');
     if (d.sugerido_criterio && Number(d.sugerido_criterio.costo_unitario || 0) > 0) {
         const s = d.sugerido_criterio;
+        const capas = (s.capas || []).map(c => `${numAr(c.cantidad)} ${esc(l.unidad || '')} de ${/^\d{4}-/.test(c.fecha || '') ? fechaAr(c.fecha) : esc(c.fecha)} a U$S ${moneyAr(c.costo_unitario, 4)}`
+            + (c.pesos ? ` <span class="text-muted">($ ${moneyAr(c.pesos, 2)})</span>` : '')).join(' + ');
         sug.innerHTML = `Criterio de la empresa (${esc(s.criterio_nombre)}): <b>${s.moneda === 'USD' ? 'U$S' : '$'} ${moneyAr(s.costo_unitario, 4)}</b> por unidad.
-            <button class="btn btn-sm btn-outline-primary py-0 ms-2" onclick="usarSugerido()">Usar</button>`;
+            <button class="btn btn-sm btn-outline-primary py-0 ms-2" onclick="usarSugerido()">Usar</button>`
+            + (capas ? `<div class="small mt-1">Sale de: ${capas}</div>` : '');
         sug.classList.remove('d-none');
     } else {
         sug.classList.add('d-none');
@@ -1547,6 +1569,10 @@ async function abrirCosteo(id) {
     document.getElementById('mcProveedor').value = l.proveedor || '';
     document.getElementById('mcComprobante').value = l.nro_remito || '';
     document.getElementById('mcFechaCompra').value = (l.fecha_compra || '').slice(0, 10);
+    const yaCosteada = Number(l.costo_usd || 0) || Number(l.costo_ars || 0);
+    if (!yaCosteada && !d.es_laboreo && d.sugerido_criterio && Number(d.sugerido_criterio.costo_unitario || 0) > 0) {
+        usarSugerido();
+    }
     mcPreview();
     modalCosteo.show();
 }
@@ -1939,6 +1965,6 @@ function envMail() {
 }
 
 init();
-</script>
+    </script>
 </body>
 </html>

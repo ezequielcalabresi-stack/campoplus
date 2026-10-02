@@ -976,6 +976,8 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         listar_lineas_ot,
         opciones_costeo_linea,
         costear_linea_ot,
+        costear_ot_por_criterio,
+        precios_peps_items,
         anular_ot,
         editar_ot,
         confirmar_ot,
@@ -1140,6 +1142,7 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         orden: Optional[str] = "nombre",
         categoria_codigo: Optional[str] = None,
         solo_aplica_ot: bool = False,
+        con_peps: bool = False,
     ):
         empresa_id = get_empresa_activa_id()
         conn = get_db()
@@ -1153,6 +1156,14 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
             categoria_codigo=categoria_codigo,
             solo_aplica_ot=solo_aplica_ot,
         )
+        if con_peps:
+            precios = precios_peps_items(cur, empresa_id, rows)
+            for r in rows:
+                p = precios.get(int(r["id"])) or {}
+                r["peps_primero_usd"] = p.get("primero_usd")
+                r["peps_primero_fecha"] = p.get("primero_fecha")
+                r["peps_ultimo_usd"] = p.get("ultimo_usd")
+                r["peps_ultimo_fecha"] = p.get("ultimo_fecha")
         conn.close()
         return rows
 
@@ -1476,6 +1487,21 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
                 nro_comprobante=data.nro_comprobante or "",
                 fecha_compra=data.fecha_compra or "",
             )
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, str(e))
+        conn.close()
+        return result
+
+    @app.post("/api/agro/ot/orden/{nro_orden}/costear_criterio")
+    def api_ot_costear_criterio(nro_orden: int):
+        empresa_id = get_empresa_activa_id()
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            result = costear_ot_por_criterio(cur, empresa_id, nro_orden)
             conn.commit()
         except ValueError as e:
             conn.rollback()

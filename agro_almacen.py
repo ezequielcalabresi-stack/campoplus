@@ -7,9 +7,10 @@ para imputarlos a lotes vía Órdenes de Trabajo.
 """
 from __future__ import annotations
 
+import bisect
 import sqlite3
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def init_almacen_schema(cursor) -> None:
@@ -263,8 +264,166 @@ def criterio_costo_empresa(cursor) -> str:
     return valor if valor in CRITERIOS_COSTO else "peps"
 
 
-def valuar_salida_insumo(cursor, empresa_id: int, item_id: int, cantidad: float, metodo: Optional[str] = None) -> Dict[str, Any]:
-    """Costo de una salida de insumo según el criterio de la empresa. Insumos en U$S."""
+def _serie_tc(cursor, empresa_id: int) -> Tuple[List[str], List[float]]:
+    """Tipo de cambio por fecha: el de las líneas costeadas y, si no hay, el de compras con precio en $ y U$S."""
+    pares: Dict[str, float] = {}
+    cursor.execute(
+        """
+        SELECT substr(fecha_aplicacion, 1, 10), tc FROM margenes_access
+        WHERE empresa_id=? AND COALESCE(tc,0) > 0 AND COALESCE(fecha_aplicacion,'') <> ''
+        ORDER BY fecha_aplicacion, id;
+        """,
+        (empresa_id,),
+    )
+    for f, tc in cursor.fetchall():
+        pares[f] = float(tc)
+    cursor.execute(
+        """
+        SELECT substr(fecha, 1, 10), precio_unitario_neto, precio_unitario_usd FROM almacen_movimientos
+        WHERE empresa_id=? AND tipo_mov='ingreso'
+          AND COALESCE(precio_unitario_usd,0) > 0 AND COALESCE(precio_unitario_neto,0) > 0;
+        """,
+        (empresa_id,),
+    )
+    for f, ars, usd in cursor.fetchall():
+        pares.setdefault(f, float(ars) / float(usd))
+    fechas = sorted(pares)
+    return fechas, [pares[f] for f in fechas]
+
+
+def _tc_en(serie: Tuple[List[str], List[float]], fecha: str) -> float:
+    fechas, tcs = serie
+    if not fechas:
+        return 0.0
+    i = bisect.bisect_right(fechas, (fecha or "")[:10]) - 1
+    return tcs[max(i, 0)]
+
+
+def _movimientos_peps(cursor, empresa_id: int, item_ids: Optional[List[int]] = None) -> Dict[int, Dict[str, list]]:
+    """Ingresos y salidas de cada ítem en orden de fecha."""
+    filtro, args = "", [empresa_id]
+    if item_ids is not None:
+        if not item_ids:
+            return {}
+        filtro = f" AND item_id IN ({','.join('?' * len(item_ids))})"
+        args += [int(i) for i in item_ids]
+    cursor.execute(
+        f"""
+        SELECT id, item_id, substr(fecha, 1, 10) AS fecha, tipo_mov, ABS(cantidad) AS qty,
+               COALESCE(precio_unitario_neto, 0) AS ars, COALESCE(precio_unitario_usd, 0) AS usd
+        FROM almacen_movimientos
+        WHERE empresa_id=? AND ABS(COALESCE(cantidad, 0)) > 0
+          AND (tipo_mov='ingreso' OR tipo_mov LIKE 'egreso%'){filtro}
+        ORDER BY fecha, id;
+        """,
+        args,
+    )
+    out: Dict[int, Dict[str, list]] = {}
+    for r in cursor.fetchall():
+        d = out.setdefault(int(r["item_id"]), {"ingresos": [], "salidas": []})
+        (d["ingresos"] if r["tipo_mov"] == "ingreso" else d["salidas"]).append(dict(r))
+    return out
+
+
+def _capas_peps(item: Dict[str, Any], movs: Optional[Dict[str, list]], serie) -> Tuple[List[Dict[str, Any]], float]:
+    """Capas de compra en orden de entrada (U$S por unidad) y cantidad a descontar de las más viejas.
+
+    Las compras solo en pesos se pasan a dólares con el tipo de cambio de su fecha. Si el stock real
+    supera lo que explican los movimientos (stock inicial traído de Access), esa diferencia es la capa
+    más vieja, al costo promedio del ítem; si es menor, se descuenta de las capas más viejas.
+    """
+    movs = movs or {}
+    capas: List[Dict[str, Any]] = []
+    for m in movs.get("ingresos", []):
+        usd, ars = float(m["usd"] or 0), float(m["ars"] or 0)
+        if usd <= 0 < ars:
+            tc = _tc_en(serie, m["fecha"])
+            usd = ars / tc if tc > 0 else 0.0
+        capas.append({"id": m["id"], "fecha": m["fecha"], "qty": float(m["qty"]), "usd": usd, "ars": ars})
+    salido = sum(float(s["qty"]) for s in movs.get("salidas", []))
+    dif = float(item.get("stock_cantidad") or 0) - (sum(c["qty"] for c in capas) - salido)
+    if dif > 1e-6:
+        capas.insert(0, {
+            "id": 0, "fecha": "", "qty": dif, "inicial": True,
+            "usd": float(item.get("costo_promedio_usd") or 0), "ars": float(item.get("costo_promedio_neto") or 0),
+        })
+    return capas, (-dif if dif < -1e-6 else 0.0)
+
+
+def _capas_restantes(capas: List[Dict[str, Any]], consumido: float) -> List[Dict[str, Any]]:
+    """Capas que quedan después de sacar `consumido` de las más viejas."""
+    out = []
+    for c in capas:
+        qty = c["qty"]
+        if consumido >= qty - 1e-9:
+            consumido -= qty
+            continue
+        out.append(dict(c, qty=qty - consumido))
+        consumido = 0.0
+    return out
+
+
+def _capas_en_stock(item: Dict[str, Any], movs: Optional[Dict[str, list]], serie):
+    """(capas con precio que siguen en stock, compras con precio), en orden de entrada."""
+    capas, previo = _capas_peps(item, movs, serie)
+    salido = previo + sum(float(s["qty"]) for s in (movs or {}).get("salidas", []))
+    quedan = [c for c in _capas_restantes(capas, salido) if c["usd"] > 0]
+    compras = [c for c in capas if c["usd"] > 0 and not c.get("inicial")]
+    return quedan, compras
+
+
+def precios_peps(item: Dict[str, Any], movs: Optional[Dict[str, list]], serie) -> Dict[str, Any]:
+    """Primero entrado que queda en stock (el próximo en salir por PEPS) y último entrado, en U$S."""
+    return _precios_de_capas(*_capas_en_stock(item, movs, serie))
+
+
+def precios_peps_unificados(cursor, empresa_id: int, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Primero y último entrado del producto que resulta de juntar varios ítems."""
+    serie = _serie_tc(cursor, empresa_id)
+    movs = _movimientos_peps(cursor, empresa_id, [int(i["id"]) for i in items])
+    quedan, compras = [], []
+    for it in items:
+        q, c = _capas_en_stock(it, movs.get(int(it["id"])), serie)
+        quedan += q
+        compras += c
+    orden = lambda c: (c["fecha"], c["id"])
+    return _precios_de_capas(sorted(quedan, key=orden), sorted(compras, key=orden))
+
+
+def _precios_de_capas(quedan: List[Dict[str, Any]], compras: List[Dict[str, Any]]) -> Dict[str, Any]:
+    primero = quedan[0] if quedan else None
+    ultimo = compras[-1] if compras else None
+    return {
+        "primero_usd": round(primero["usd"], 4) if primero else None,
+        "primero_ars": round(primero["ars"], 4) if primero and primero["ars"] else None,
+        "primero_fecha": (primero["fecha"] or "stock inicial") if primero else None,
+        "ultimo_usd": round(ultimo["usd"], 4) if ultimo else None,
+        "ultimo_ars": round(ultimo["ars"], 4) if ultimo and ultimo["ars"] else None,
+        "ultimo_fecha": ultimo["fecha"] if ultimo else None,
+    }
+
+
+def precios_peps_items(cursor, empresa_id: int, items: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+    serie = _serie_tc(cursor, empresa_id)
+    movs = _movimientos_peps(cursor, empresa_id)
+    return {int(i["id"]): precios_peps(i, movs.get(int(i["id"])), serie) for i in items}
+
+
+def valuar_salida_insumo(
+    cursor,
+    empresa_id: int,
+    item_id: int,
+    cantidad: float,
+    metodo: Optional[str] = None,
+    movimiento_id: Optional[int] = None,
+    fecha: str = "",
+) -> Dict[str, Any]:
+    """Costo de una salida de insumo según el criterio de la empresa. Insumos en U$S.
+
+    Por PEPS, la salida `movimiento_id` toma las compras más viejas que quedaban en stock después de
+    las salidas anteriores a ella. Sin movimiento se usan las salidas anteriores a `fecha` y, sin fecha,
+    todas (la próxima salida).
+    """
     cant = float(cantidad or 0)
     metodo = (metodo or criterio_costo_empresa(cursor) or "peps").strip().lower()
     if metodo not in CRITERIOS_COSTO:
@@ -278,96 +437,53 @@ def valuar_salida_insumo(cursor, empresa_id: int, item_id: int, cantidad: float,
         raise ValueError("Ítem no encontrado en el almacén.")
     item = dict(item)
     promedio = float(item.get("costo_promedio_usd") or 0)
-    if (item.get("tipo") or "") == "laboreo" or metodo == "ppp" or promedio <= 0 and metodo == "ppp":
-        unit = promedio if (item.get("tipo") or "") != "laboreo" and promedio > 0 else float(item.get("costo_promedio_neto") or 0)
-        moneda = "USD" if (item.get("tipo") or "") != "laboreo" and promedio > 0 else "ARS"
-        if metodo != "ppp" and (item.get("tipo") or "") != "laboreo":
-            pass
-        else:
-            return {
-                "criterio": metodo,
-                "criterio_nombre": CRITERIOS_COSTO.get(metodo, metodo),
-                "moneda": moneda,
-                "cantidad": cant,
-                "costo_unitario": round(unit, 4),
-                "costo_total": round(cant * unit, 2),
-                "capas": [],
-            }
-    cursor.execute(
-        """
-        SELECT fecha, ABS(cantidad) AS qty, COALESCE(precio_unitario_usd, 0) AS usd
-        FROM almacen_movimientos
-        WHERE empresa_id=? AND item_id=? AND tipo_mov='ingreso' AND ABS(cantidad)>0
-        ORDER BY fecha, id;
-        """,
-        (empresa_id, item_id),
-    )
-    ingresos = [dict(r) for r in cursor.fetchall()]
-    cursor.execute(
-        """
-        SELECT COALESCE(SUM(ABS(cantidad)), 0) AS n
-        FROM almacen_movimientos
-        WHERE empresa_id=? AND item_id=? AND tipo_mov='egreso_ot';
-        """,
-        (empresa_id, item_id),
-    )
-    consumido = float(cursor.fetchone()["n"] or 0)
+    es_lab = (item.get("tipo") or "") == "laboreo"
+    base = {"criterio": metodo, "criterio_nombre": CRITERIOS_COSTO[metodo], "cantidad": cant}
+    if es_lab or metodo == "ppp":
+        en_usd = not es_lab and promedio > 0
+        unit = promedio if en_usd else float(item.get("costo_promedio_neto") or 0)
+        return dict(base, moneda="USD" if en_usd else "ARS", costo_unitario=round(unit, 4),
+                    costo_total=round(cant * unit, 2), capas=[])
+
+    serie = _serie_tc(cursor, empresa_id)
+    movs = _movimientos_peps(cursor, empresa_id, [item_id]).get(int(item_id), {"ingresos": [], "salidas": []})
+    capas, previo = _capas_peps(item, movs, serie)
+    compras = [c for c in capas if c["usd"] > 0 and not c.get("inicial")]
+    respaldo = promedio or (compras[-1]["usd"] if compras else 0.0)
     if metodo == "ultima":
-        con_precio = [c for c in ingresos if float(c["usd"] or 0) > 0]
-        unit = float(con_precio[-1]["usd"]) if con_precio else promedio
-        return {
-            "criterio": metodo,
-            "criterio_nombre": CRITERIOS_COSTO[metodo],
-            "moneda": "USD",
-            "cantidad": cant,
-            "costo_unitario": round(unit, 4),
-            "costo_total": round(cant * unit, 2),
-            "capas": [{"fecha": con_precio[-1]["fecha"], "cantidad": cant, "costo_unitario": round(unit, 4)}] if con_precio else [],
-        }
-    orden = list(ingresos)
+        unit = compras[-1]["usd"] if compras else promedio
+        capas_u = [{"fecha": compras[-1]["fecha"], "cantidad": cant, "costo_unitario": round(unit, 4)}] if compras else []
+        return dict(base, moneda="USD", costo_unitario=round(unit, 4), costo_total=round(cant * unit, 2), capas=capas_u)
+
+    salidas = movs["salidas"]
+    ref = next((s for s in salidas if movimiento_id and int(s["id"]) == int(movimiento_id)), None)
+    if ref:
+        antes = [s for s in salidas if (s["fecha"], s["id"]) < (ref["fecha"], ref["id"])]
+    elif fecha:
+        antes = [s for s in salidas if s["fecha"] < fecha[:10]]
+    else:
+        antes = salidas
+    consumido = previo + sum(float(s["qty"]) for s in antes)
+    disponibles = _capas_restantes(capas, consumido)
     if metodo == "ueps":
-        orden = list(reversed(ingresos))
-    restante_consumido = consumido
-    capas = []
-    for capa in orden:
-        qty = float(capa["qty"] or 0)
-        if restante_consumido >= qty - 1e-9:
-            restante_consumido -= qty
-            continue
-        if restante_consumido > 0:
-            qty -= restante_consumido
-            restante_consumido = 0
-        usd = float(capa["usd"] or 0) or promedio
-        if qty > 0 and usd > 0:
-            capas.append({"fecha": capa["fecha"], "qty": qty, "usd": usd})
-    tomar = cant
-    usadas = []
-    total = 0.0
-    for capa in capas:
+        disponibles.reverse()
+    tomar, total, usadas = cant, 0.0, []
+    for c in disponibles:
         if tomar <= 1e-9:
             break
-        uso = min(tomar, capa["qty"])
-        total += uso * capa["usd"]
+        uso = min(tomar, c["qty"])
+        usd = c["usd"] or respaldo
+        total += uso * usd
         usadas.append({
-            "fecha": (capa["fecha"] or "")[:10],
-            "cantidad": round(uso, 4),
-            "costo_unitario": round(capa["usd"], 4),
+            "fecha": c["fecha"] or "stock inicial", "cantidad": round(uso, 4), "costo_unitario": round(usd, 4),
+            "pesos": round(c["ars"], 4) if c["ars"] and not c.get("inicial") else None,
         })
         tomar -= uso
-    if tomar > 1e-6 and promedio > 0:
-        total += tomar * promedio
-        usadas.append({"fecha": "", "cantidad": round(tomar, 4), "costo_unitario": round(promedio, 4)})
-        tomar = 0
+    if tomar > 1e-6:
+        total += tomar * respaldo
+        usadas.append({"fecha": "sin compra registrada", "cantidad": round(tomar, 4), "costo_unitario": round(respaldo, 4), "pesos": None})
     unit = (total / cant) if cant else 0
-    return {
-        "criterio": metodo,
-        "criterio_nombre": CRITERIOS_COSTO[metodo],
-        "moneda": "USD",
-        "cantidad": cant,
-        "costo_unitario": round(unit, 4),
-        "costo_total": round(total, 2),
-        "capas": usadas,
-    }
+    return dict(base, moneda="USD", costo_unitario=round(unit, 4), costo_total=round(total, 2), capas=usadas)
 
 
 def _aplicar_costos_usd_access(cursor) -> None:
@@ -1974,6 +2090,25 @@ def listar_lineas_ot(
     return [dict(r) for r in cursor.fetchall()]
 
 
+def _sugerido_linea(cursor, empresa_id: int, linea: Dict[str, Any], item: Dict[str, Any],
+                    movimiento_id: Optional[int]) -> Optional[Dict[str, Any]]:
+    """Costo por el criterio de la empresa para la salida de almacén de esa línea."""
+    cant = float(linea.get("cantidad_total") or 0)
+    if movimiento_id:
+        cursor.execute("SELECT ABS(cantidad) FROM almacen_movimientos WHERE id=?;", (movimiento_id,))
+        r = cursor.fetchone()
+        if r and float(r[0] or 0) > 0:
+            cant = float(r[0])
+    if cant <= 0:
+        return None
+    fecha = (linea.get("fecha_aplicacion") or linea.get("fecha_orden") or "")[:10]
+    try:
+        return valuar_salida_insumo(cursor, empresa_id, int(item["id"]), cant,
+                                    movimiento_id=movimiento_id, fecha=fecha)
+    except ValueError:
+        return None
+
+
 def opciones_costeo_linea(cursor, empresa_id: int, linea_id: int) -> Dict[str, Any]:
     """Compras del almacén y facturas del contratista para elegir el costo de una línea."""
     asegurar_schema_participaciones(cursor)
@@ -1985,9 +2120,10 @@ def opciones_costeo_linea(cursor, empresa_id: int, linea_id: int) -> Dict[str, A
     linea["cantidad_fisica"] = None
     linea["participacion_pct"] = 100.0
     linea["aporte_pct"] = 100.0
+    movimiento_id = None
     if linea.get("ot_consumo_id"):
         cursor.execute(
-            "SELECT cantidad, participacion_pct, aporte_pct FROM ot_consumos WHERE id=?;",
+            "SELECT cantidad, participacion_pct, aporte_pct, movimiento_id FROM ot_consumos WHERE id=?;",
             (linea["ot_consumo_id"],),
         )
         oc = cursor.fetchone()
@@ -1995,6 +2131,7 @@ def opciones_costeo_linea(cursor, empresa_id: int, linea_id: int) -> Dict[str, A
             linea["cantidad_fisica"] = oc["cantidad"]
             linea["participacion_pct"] = float(oc["participacion_pct"] if oc["participacion_pct"] is not None else 100)
             linea["aporte_pct"] = float(oc["aporte_pct"] if oc["aporte_pct"] is not None else 100)
+            movimiento_id = oc["movimiento_id"]
     es_lab = _es_linea_laboreo(linea)
     item = _item_de_linea(cursor, empresa_id, linea)
     fecha = (linea.get("fecha_aplicacion") or linea.get("fecha_orden") or "")[:10]
@@ -2058,13 +2195,7 @@ def opciones_costeo_linea(cursor, empresa_id: int, linea_id: int) -> Dict[str, A
             d["comprobante"] = (d.get("numero_comprobante") or d.get("tipo_comprobante") or "").strip()
             facturas.append(d)
 
-    sugerido = None
-    cant = float(linea.get("cantidad_total") or 0)
-    if item and not es_lab and cant > 0:
-        try:
-            sugerido = valuar_salida_insumo(cursor, empresa_id, int(item["id"]), cant)
-        except ValueError:
-            sugerido = None
+    sugerido = _sugerido_linea(cursor, empresa_id, linea, item, movimiento_id) if item and not es_lab else None
 
     return {
         "linea": linea,
@@ -2185,6 +2316,49 @@ def costear_linea_ot(
         "costo_ars": costo_ars,
         "costo_usd": costo_usd,
     }
+
+
+def costear_ot_por_criterio(cursor, empresa_id: int, nro_orden: int) -> Dict[str, Any]:
+    """Costea los productos sin costo de una OT con el criterio de la empresa (PEPS por defecto).
+    Los laboreos se siguen costeando a mano con la factura del contratista."""
+    asegurar_schema_participaciones(cursor)
+    cursor.execute(
+        """
+        SELECT m.* FROM margenes_access m
+        LEFT JOIN ordenes_trabajo o ON o.id = m.ot_id
+        WHERE m.empresa_id=? AND m.nro_orden=? AND TRIM(COALESCE(m.producto,'')) <> ''
+          AND COALESCE(m.costo_ars,0)=0 AND COALESCE(m.costo_usd,0)=0
+          AND (m.ot_id IS NULL OR COALESCE(o.estado,'') != 'Anulada')
+        ORDER BY m.id;
+        """,
+        (empresa_id, int(nro_orden)),
+    )
+    lineas = [dict(r) for r in cursor.fetchall()]
+    costeadas, omitidas, criterio = 0, [], None
+    for linea in lineas:
+        item = _item_de_linea(cursor, empresa_id, linea)
+        if not item:
+            omitidas.append(f"{linea['producto']}: no está en el almacén")
+            continue
+        mov_id = None
+        if linea.get("ot_consumo_id"):
+            cursor.execute("SELECT movimiento_id FROM ot_consumos WHERE id=?;", (linea["ot_consumo_id"],))
+            r = cursor.fetchone()
+            mov_id = r["movimiento_id"] if r else None
+        sug = _sugerido_linea(cursor, empresa_id, linea, item, mov_id)
+        if not sug or float(sug.get("costo_unitario") or 0) <= 0:
+            omitidas.append(f"{linea['producto']}: sin compras con precio ni costo en el almacén")
+            continue
+        criterio = sug["criterio_nombre"]
+        fecha = (linea.get("fecha_aplicacion") or linea.get("fecha_orden") or "")[:10]
+        tc = float(linea.get("tc") or 0) or _tc_sugerido(cursor, empresa_id, fecha)
+        if tc <= 0:
+            omitidas.append(f"{linea['producto']}: falta el tipo de cambio")
+            continue
+        costear_linea_ot(cursor, empresa_id, int(linea["id"]), precio=float(sug["costo_unitario"]),
+                         moneda=sug["moneda"], tc=tc, origen="criterio")
+        costeadas += 1
+    return {"status": "ok", "costeadas": costeadas, "omitidas": omitidas, "criterio": criterio}
 
 
 def anular_ot(cursor, empresa_id: int, ot_id: int) -> Dict[str, Any]:
@@ -2660,6 +2834,7 @@ def vista_previa_unificacion(cursor, empresa_id: int, principal_id: int, otros_i
         k = l["campania_codigo"] or "(sin campaña)"
         por_campania[k] = por_campania.get(k, 0) + 1
     stock_total = float(principal.get("stock_cantidad") or 0) + sum(float(o.get("stock_cantidad") or 0) for o in otros)
+    precios = precios_peps_unificados(cursor, empresa_id, [principal] + otros)
     return {
         "principal": {k: principal.get(k) for k in ("id", "nombre", "unidad", "stock_cantidad", "costo_promedio_usd", "costo_promedio_neto")},
         "otros": [{k: o.get(k) for k in ("id", "nombre", "unidad", "stock_cantidad", "costo_promedio_usd", "costo_promedio_neto")} for o in otros],
@@ -2669,22 +2844,22 @@ def vista_previa_unificacion(cursor, empresa_id: int, principal_id: int, otros_i
         "lineas_campania": len(lineas),
         "lineas_por_campania": dict(sorted(por_campania.items(), reverse=True)),
         "stock_resultante": round(stock_total, 4),
-        "costos_resultantes": _costos_unificados(principal, otros),
+        "precios_resultantes": precios,
+        "costos_resultantes": _costos_unificados(principal, otros, precios),
         "errores": errores,
     }
 
 
-def _costos_unificados(principal: Dict[str, Any], otros: List[Dict[str, Any]]) -> Dict[str, float]:
-    """Promedio ponderado por stock positivo; sin stock, se queda el costo del principal (o el primero con costo)."""
+def _costos_unificados(principal: Dict[str, Any], otros: List[Dict[str, Any]], precios: Dict[str, Any]) -> Dict[str, float]:
+    """Sin promediar: el costo queda en el primero entrado (el próximo en salir por PEPS).
+    Sin compras con precio, se queda el costo del principal (o el primero con costo)."""
     todos = [principal] + otros
     out = {}
-    for campo in ("costo_promedio_neto", "costo_promedio_usd"):
-        con = [(float(i.get("stock_cantidad") or 0), float(i.get(campo) or 0)) for i in todos]
-        con = [(s, c) for s, c in con if s > 0 and c > 0]
-        if con:
-            out[campo] = round(sum(s * c for s, c in con) / sum(s for s, _ in con), 6)
-        else:
-            out[campo] = next((float(i.get(campo) or 0) for i in todos if float(i.get(campo) or 0) > 0), 0.0)
+    for campo, clave in (("costo_promedio_neto", "primero_ars"), ("costo_promedio_usd", "primero_usd")):
+        valor = float(precios.get(clave) or 0)
+        if valor <= 0:
+            valor = next((float(i.get(campo) or 0) for i in todos if float(i.get(campo) or 0) > 0), 0.0)
+        out[campo] = round(valor, 6)
     return out
 
 
