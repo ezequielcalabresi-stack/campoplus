@@ -75,28 +75,37 @@
                 </div>
             </div>
 
+            <div class="border rounded p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-end mb-2">
+                    <div>
+                        <span class="fw-bold">Detalle e imputación a la gestión</span>
+                        <span class="small text-muted d-block">Cada renglón suma como ingreso de la actividad elegida. Hacienda, carne y granos llevan IVA 10,5 % automáticamente.
+                            <a href="Actividades.html" target="_blank" class="fw-semibold">Administrar actividades/cuentas</a></span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-success fw-bold" tabindex="-1" onclick="agregarRenglon(true)">+ Agregar renglón</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light small">
+                            <tr><th style="min-width:200px">Descripción</th><th>Actividad</th><th>Cuenta de ingreso</th>
+                                <th class="text-end" style="width:150px">Neto ($)</th><th style="width:110px">Alíc. IVA</th>
+                                <th class="text-end" style="width:130px">IVA ($)</th><th></th></tr>
+                        </thead>
+                        <tbody id="tablaRenglones"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="row g-3 mb-3">
                 <div class="col-md-3">
-                    <label class="form-label fw-bold">Neto ($)*</label>
-                    <input id="txtNeto" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalcDesdeNeto()">
+                    <label class="form-label fw-bold">Neto total ($)</label>
+                    <input id="txtNeto" class="form-control text-end font-monospace bg-light" value="0,00" readonly tabindex="-1">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label fw-bold">Alícuota IVA</label>
-                    <select id="selAlicIva" class="form-select" onchange="recalcIva()">
-                        <option value="21">21 %</option>
-                        <option value="10.5">10,5 %</option>
-                        <option value="27">27 %</option>
-                        <option value="5">5 %</option>
-                        <option value="2.5">2,5 %</option>
-                        <option value="0">0 % / Exento</option>
-                        <option value="manual">Manual</option>
-                    </select>
+                    <label class="form-label fw-bold">IVA total ($)</label>
+                    <input id="txtIva" class="form-control text-end font-monospace bg-light" value="0,00" readonly tabindex="-1">
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label fw-bold">IVA ($)</label>
-                    <input id="txtIva" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
-                </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label class="form-label fw-bold">Alícuota perc. ARBA</label>
                     <div class="input-group">
                         <input id="txtAlic" class="form-control text-end font-monospace" value="0,00" oninput="recalcDesdeAlic()">
@@ -104,7 +113,7 @@
                         <button type="button" class="btn btn-outline-primary" onclick="consultarArba()">ARBA</button>
                     </div>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-3">
                     <label class="form-label fw-bold">Percepción IIBB ($)</label>
                     <input id="txtPerc" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
                 </div>
@@ -117,10 +126,13 @@
                 </div>
                 <button type="submit" class="btn btn-success fw-bold px-4 py-2">Emitir factura y certificado</button>
             </div>
-            <p class="small text-muted mb-0">Si la empresa es agente de percepción IIBB, se calcula la alícuota del padrón ARBA sobre el neto y se genera el certificado imprimible.
+            <p class="small text-muted mb-0">Enter pasa al campo siguiente; la factura se emite solo con el botón verde y previa confirmación.
+                Si la empresa es agente de percepción IIBB, se calcula la alícuota del padrón ARBA sobre el neto y se genera el certificado imprimible.
                 Para una factura hecha en la web de AFIP (Comprobantes en línea), cargala acá con el mismo número, neto, IVA y percepción: el certificado sale con la numeración correlativa del sistema.</p>
         </form>
     </div>
+
+    <div id="cardResultado" class="main-card mt-4 d-none"></div>
 
     <div class="main-card mt-4">
         <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3 no-print">
@@ -148,10 +160,10 @@
                         <tr>
                             <th>Fecha</th><th>Comprobante</th><th>Cliente</th><th>CUIT</th>
                             <th class="text-end">Neto</th><th class="text-end">IVA</th><th class="text-end">Perc. IIBB</th>
-                            <th class="text-end">Total</th><th>Certificado</th>
+                            <th class="text-end">Total</th><th>Certificado</th><th class="no-print">Gestión</th>
                         </tr>
                     </thead>
-                    <tbody id="resTabla"><tr><td colspan="9" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+                    <tbody id="resTabla"><tr><td colspan="10" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
                     <tfoot id="resPie"></tfoot>
                 </table>
             </div>
@@ -170,6 +182,40 @@
                 </div>
             </div>
             <div class="modal-body p-4 bg-light" id="areaCertPerc"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalImputar" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header py-2">
+                <h5 class="modal-title fs-6 fw-bold">Ingresos de gestión · <span id="imputTitulo"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span id="imputControl" class="small fw-bold"></span>
+                    <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="agregarRenglon(true, {}, 'tablaImput')">+ Agregar renglón</button>
+                </div>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light small">
+                            <tr><th style="min-width:200px">Descripción</th><th>Actividad</th><th>Cuenta de ingreso</th>
+                                <th class="text-end" style="width:150px">Neto ($)</th><th style="width:110px">Alíc. IVA</th>
+                                <th class="text-end" style="width:130px">IVA ($)</th><th></th></tr>
+                        </thead>
+                        <tbody id="tablaImput"></tbody>
+                    </table>
+                </div>
+                <div class="fw-bold small mb-1">Asiento contable actual</div>
+                <div id="imputAsiento"></div>
+                <p class="small text-muted mt-2 mb-0">Al guardar se rehace el asiento de la factura con las cuentas de ingreso de cada actividad. La cuenta corriente, el IVA y la percepción no cambian.</p>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-success btn-sm fw-bold" onclick="guardarImputacion()">Guardar imputación</button>
+            </div>
         </div>
     </div>
 </div>
@@ -280,22 +326,191 @@ function formatearNro(input) {
     localStorage.setItem('fv_ultimo_pv', pv);
 }
 
-function recalcIva() {
-    const sel = document.getElementById('selAlicIva');
-    localStorage.setItem('fv_alic_iva', sel.value);
-    const ivaInp = document.getElementById('txtIva');
-    ivaInp.readOnly = sel.value !== 'manual';
-    ivaInp.classList.toggle('bg-light', sel.value !== 'manual');
-    if (sel.value !== 'manual') {
-        const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
-        ivaInp.value = CampoMoney.format(Math.round(neto * Number(sel.value)) / 100);
+// Art. 28 Ley de IVA: animales vivos, carnes y despojos bovinos; granos y legumbres secas → 10,5 %.
+const RE_GANADO = /\b(vac[ao]s?|vaquillon\w*|novill\w*|terner\w*|toros?|bovin\w*|hacienda|medias?\s+res(es)?|res(es)?|carnes?|cuartos?|desposte|faena|achuras?|menudencias?)\b/i;
+const RE_GRANOS = /\b(soja|ma[ií]z|trigo|girasol|sorgo|cebada|avena|centeno|pisingallo|porotos?|granos?|cereal\w*|oleaginos\w*)\b/i;
+const ALICUOTAS_IVA = [['21', '21 %'], ['10.5', '10,5 %'], ['27', '27 %'], ['5', '5 %'], ['2.5', '2,5 %'], ['0', '0 % / Exento']];
+let actividades = [];
+
+async function cargarActividades() {
+    try {
+        const res = await fetch('/api/actividades?con_cuentas=1');
+        const rows = res.ok ? await res.json() : [];
+        actividades = rows
+            .map(a => ({ ...a, cuentas: (a.cuentas || []).filter(c => String(c.tipo_cta || '').toUpperCase() === 'INGRESO') }))
+            .filter(a => a.cuentas.length)
+            .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+        actividades.forEach(a => a.cuentas.sort((x, y) => String(x.nombre).localeCompare(String(y.nombre), 'es')));
+    } catch (_) {
+        actividades = [];
     }
-    recalc();
 }
 
-function recalcDesdeNeto() {
-    recalcIva();
+function opcionesActividad(sel) {
+    return '<option value="">- Actividad -</option>' + actividades.map(a =>
+        `<option value="${a.id}" ${String(a.id) === String(sel) ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('');
+}
+
+function opcionesCuenta(actId, sel) {
+    const act = actividades.find(a => String(a.id) === String(actId));
+    return '<option value="">- Cuenta de ingreso -</option>' + (act ? act.cuentas : []).map(c =>
+        `<option value="${c.id}" ${String(c.id) === String(sel) ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('');
+}
+
+function agregarRenglon(enfocar, r = {}, tbodyId = 'tablaRenglones') {
+    const tb = document.getElementById(tbodyId);
+    const tr = document.createElement('tr');
+    const alic = r.alicuota_iva != null && r.alicuota_iva !== '' ? String(Number(r.alicuota_iva)) : '21';
+    tr.innerHTML = `
+        <td><input class="form-control form-control-sm r-desc" placeholder="Ej.: media res, vacas, soja..." value="${esc(r.descripcion || '')}"></td>
+        <td><select class="form-select form-select-sm r-act" style="min-width:130px">${opcionesActividad(r.actividad_id)}</select></td>
+        <td><select class="form-select form-select-sm r-cta" style="min-width:170px">${opcionesCuenta(r.actividad_id, r.cuenta_imputacion_id)}</select></td>
+        <td><input class="form-control form-control-sm text-end font-monospace r-neto" data-money inputmode="decimal" value="${CampoMoney.format(Number(r.neto || 0))}"></td>
+        <td><select class="form-select form-select-sm r-alic">${ALICUOTAS_IVA.map(([v, t]) => `<option value="${v}" ${v === alic ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+        <td class="text-end font-monospace small r-iva">0,00</td>
+        <td><button type="button" class="btn btn-sm btn-link text-danger p-0" tabindex="-1" title="Quitar renglón">✕</button></td>`;
+    tb.appendChild(tr);
+    CampoMoney.bind(tr);
+    if (r.alicuota_iva != null && r.alicuota_iva !== '') tr.dataset.alicManual = '1';
+    const alAlterar = () => recalcTabla(tbodyId);
+    tr.querySelector('.r-desc').addEventListener('input', () => { autoAlicuota(tr); alAlterar(); });
+    tr.querySelector('.r-act').addEventListener('change', e => {
+        tr.querySelector('.r-cta').innerHTML = opcionesCuenta(e.target.value, '');
+        autoAlicuota(tr); alAlterar();
+    });
+    tr.querySelector('.r-cta').addEventListener('change', () => { autoAlicuota(tr); alAlterar(); });
+    tr.querySelector('.r-neto').addEventListener('input', alAlterar);
+    tr.querySelector('.r-alic').addEventListener('change', () => { tr.dataset.alicManual = '1'; delete tr.dataset.alicAuto; alAlterar(); });
+    tr.querySelector('button').addEventListener('click', () => {
+        tr.remove();
+        if (!tb.children.length) agregarRenglon(false, {}, tbodyId);
+        alAlterar();
+    });
+    alAlterar();
+    if (enfocar) tr.querySelector('.r-desc').focus();
+    return tr;
+}
+
+function autoAlicuota(tr) {
+    const actSel = tr.querySelector('.r-act');
+    const ctaSel = tr.querySelector('.r-cta');
+    const texto = `${tr.querySelector('.r-desc').value} ${ctaSel.selectedIndex > 0 ? ctaSel.options[ctaSel.selectedIndex].text : ''}`;
+    const ganado = RE_GANADO.test(texto);
+    const granos = RE_GRANOS.test(texto);
+    if (!actSel.value && (ganado || granos)) {
+        const act = actividades.find(a => String(a.nombre).toLowerCase().includes(ganado ? 'ganad' : 'agric'));
+        if (act) {
+            actSel.value = String(act.id);
+            ctaSel.innerHTML = opcionesCuenta(act.id, '');
+        }
+    }
+    if (tr.dataset.alicManual) return;
+    const alic = tr.querySelector('.r-alic');
+    if (ganado || granos) {
+        alic.value = '10.5';
+        tr.dataset.alicAuto = '1';
+    } else if (tr.dataset.alicAuto) {
+        alic.value = '21';
+        delete tr.dataset.alicAuto;
+    }
+}
+
+function renglonesDe(tbodyId) {
+    return [...document.querySelectorAll(`#${tbodyId} tr`)].map(tr => {
+        const act = tr.querySelector('.r-act');
+        const cta = tr.querySelector('.r-cta');
+        return {
+            tr,
+            descripcion: tr.querySelector('.r-desc').value.trim(),
+            actividad_id: act.value ? Number(act.value) : null,
+            cuenta_imputacion_id: cta.value ? Number(cta.value) : null,
+            actividad_nombre: act.value ? act.options[act.selectedIndex].text : '',
+            cuenta_nombre: cta.value ? cta.options[cta.selectedIndex].text : '',
+            neto: CampoMoney.parse(tr.querySelector('.r-neto').value),
+            alicuota_iva: Number(tr.querySelector('.r-alic').value),
+        };
+    });
+}
+
+function totalesRenglones(tbodyId) {
+    const rs = renglonesDe(tbodyId);
+    const porAlic = {};
+    rs.forEach(r => {
+        r.tr.querySelector('.r-iva').textContent = CampoMoney.format(Math.round(r.neto * r.alicuota_iva) / 100);
+        porAlic[r.alicuota_iva] = (porAlic[r.alicuota_iva] || 0) + r.neto;
+    });
+    const neto = Math.round(rs.reduce((s, r) => s + r.neto, 0) * 100) / 100;
+    const iva = Object.entries(porAlic).reduce((s, [a, n]) => s + Math.round(n * Number(a)) / 100, 0);
+    return { rs, neto, iva: Math.round(iva * 100) / 100 };
+}
+
+function recalcTabla(tbodyId) {
+    if (tbodyId === 'tablaImput') return recalcImput();
+    const t = totalesRenglones('tablaRenglones');
+    document.getElementById('txtNeto').value = CampoMoney.format(t.neto);
+    document.getElementById('txtIva').value = CampoMoney.format(t.iva);
     recalcDesdeAlic();
+}
+
+function validarRenglones(rs) {
+    const conImporte = rs.filter(r => r.neto);
+    if (!conImporte.length) return 'Cargá al menos un renglón con importe neto.';
+    const malo = conImporte.find(r => !r.actividad_id || !r.cuenta_imputacion_id);
+    if (malo) {
+        (malo.actividad_id ? malo.tr.querySelector('.r-cta') : malo.tr.querySelector('.r-act')).focus();
+        return 'Cada renglón con importe debe tener actividad y cuenta de ingreso.';
+    }
+    return '';
+}
+
+function htmlAsiento(lineas) {
+    if (!lineas || !lineas.length) {
+        return '<div class="alert alert-warning py-2 small mb-0">No se generó asiento contable para esta factura (cliente S/P o error al contabilizar).</div>';
+    }
+    const td = lineas.reduce((s, l) => s + Number(l.debe || 0), 0);
+    const th = lineas.reduce((s, l) => s + Number(l.haber || 0), 0);
+    return `<table class="table table-sm table-bordered mb-0 small">
+        <thead class="table-light"><tr><th>Cuenta</th><th class="text-end">Debe</th><th class="text-end">Haber</th></tr></thead>
+        <tbody>${lineas.map(l => `<tr>
+            <td><span class="font-monospace">${esc(l.codigo_cuenta)}</span> ${esc(l.nombre_cuenta)}</td>
+            <td class="text-end font-monospace">${Number(l.debe) ? money(l.debe) : ''}</td>
+            <td class="text-end font-monospace">${Number(l.haber) ? money(l.haber) : ''}</td></tr>`).join('')}</tbody>
+        <tfoot class="fw-bold"><tr><td>Totales</td><td class="text-end font-monospace">${money(td)}</td><td class="text-end font-monospace">${money(th)}</td></tr></tfoot>
+    </table>`;
+}
+
+function htmlImputaciones(rs) {
+    const filas = rs.filter(r => Number(r.neto));
+    if (!filas.length) return '<div class="alert alert-warning py-2 small mb-0">Sin imputación a la gestión.</div>';
+    return `<table class="table table-sm table-bordered mb-0 small">
+        <thead class="table-light"><tr><th>Descripción</th><th>Actividad</th><th>Cuenta</th><th class="text-end">Neto</th><th class="text-end">IVA</th></tr></thead>
+        <tbody>${filas.map(r => `<tr><td>${esc(r.descripcion)}</td><td>${esc(r.actividad_nombre)}</td><td>${esc(r.cuenta_nombre)}</td>
+            <td class="text-end font-monospace">${money(r.neto)}</td><td class="text-end font-monospace">${String(Number(r.alicuota_iva)).replace('.', ',')} %</td></tr>`).join('')}</tbody>
+    </table>`;
+}
+
+let ultimoCert = null;
+
+function mostrarResultado(data, payload) {
+    const card = document.getElementById('cardResultado');
+    card.innerHTML = `
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+                <h5 class="fw-bold text-success mb-0">✔ ${esc(payload.tipo_comprobante)} ${esc(payload.numero_comprobante)} registrada</h5>
+                <span class="small text-muted">${esc((data.cliente || {}).razon_social || '')} · Total ${money(data.total)}${data.cert_percepcion ? ` · Certificado de percepción ${esc(data.cert_percepcion)}` : ''}</span>
+            </div>
+            <div class="d-flex gap-2 no-print">
+                ${data.cert_percepcion ? '<button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="mostrarCertificado(ultimoCert)">Ver certificado</button>' : ''}
+                <a class="btn btn-sm btn-outline-dark fw-bold" href="detallegestioncc.html?cuit=${encodeURIComponent(payload.cuit)}">Ir a la cuenta corriente</a>
+                <a class="btn btn-sm btn-success fw-bold" href="facturas_venta.html">Cargar otra factura</a>
+            </div>
+        </div>
+        <div class="row g-3">
+            <div class="col-lg-6"><div class="fw-bold small mb-1">Ingresos imputados a la gestión</div>${htmlImputaciones(payload.renglones)}</div>
+            <div class="col-lg-6"><div class="fw-bold small mb-1">Asiento contable${data.asiento_id ? ` Nº ${data.asiento_id}` : ''}</div>${htmlAsiento(data.asiento)}</div>
+        </div>`;
+    card.classList.remove('d-none');
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function recalc() {
@@ -356,12 +571,22 @@ async function guardarVenta(ev) {
     ev.preventDefault();
     formatearNro(document.getElementById('txtNro'));
     const cuit = document.getElementById('selCliente').value;
-    const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
-    const iva = CampoMoney.parse(document.getElementById('txtIva').value);
+    const t = totalesRenglones('tablaRenglones');
+    const errRen = validarRenglones(t.rs);
+    if (errRen) return alert(errRen);
+    const neto = t.neto;
+    const iva = t.iva;
     const perc = esAgentePerc ? CampoMoney.parse(document.getElementById('txtPerc').value) : 0;
-    const total = neto + iva + perc;
+    const total = Math.round((neto + iva + perc) * 100) / 100;
     if (!cuit || neto <= 0) return alert('Completá cliente y neto.');
+    const selCli = document.getElementById('selCliente');
+    const tipo = document.getElementById('selTipo').value;
+    const nroTxt = document.getElementById('txtNro').value.trim();
+    if (!confirm(`¿Emitir ${tipo} ${nroTxt}?\n\nCliente: ${selCli.options[selCli.selectedIndex].text}\nNeto: ${money(neto)}\nIVA: ${money(iva)}\nPercepción IIBB: ${money(perc)}\nTOTAL: ${money(total)}`)) return;
+    const btn = ev.submitter || document.querySelector('#formVenta button[type=submit]');
+    btn.disabled = true;
     const payload = {
+        renglones: t.rs.filter(r => r.neto).map(({ tr, ...r }) => r),
         cuit,
         tipo_comprobante: document.getElementById('selTipo').value,
         numero_comprobante: document.getElementById('txtNro').value.trim(),
@@ -380,20 +605,72 @@ async function guardarVenta(ev) {
             body: JSON.stringify(payload)
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || 'Error al guardar');
+        if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Error al guardar');
+        document.querySelectorAll('#formVenta input, #formVenta select, #formVenta button').forEach(el => { el.disabled = true; });
+        mostrarResultado(data, payload);
+        cargarResumen();
         if (data.cert_percepcion && perc > 0.01) {
             data.fecha = payload.fecha;
             data.base = neto;
             data.comprobante = `${payload.tipo_comprobante} ${payload.numero_comprobante}`;
+            ultimoCert = data;
             mostrarCertificado(data);
-            cargarResumen();
-        } else {
-            alert(data.message || 'Factura registrada.');
-            location.href = 'detallegestioncc.html?cuit=' + encodeURIComponent(cuit);
         }
     } catch (e) {
+        btn.disabled = false;
         alert('Error: ' + e.message);
     }
+}
+
+let imputCcId = null;
+let imputNeto = 0;
+
+async function abrirImputacion(i) {
+    const r = resFilas[i];
+    const res = await fetch('/api/facturas_venta/' + r.id);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo cargar la factura.');
+    imputCcId = r.id;
+    imputNeto = Number(d.neto || 0);
+    document.getElementById('imputTitulo').textContent = `${d.tipo_comprobante} ${d.numero_comprobante} · ${r.cliente}`;
+    document.getElementById('tablaImput').innerHTML = '';
+    if (d.renglones.length) d.renglones.forEach(x => agregarRenglon(false, x, 'tablaImput'));
+    else agregarRenglon(false, { neto: imputNeto, alicuota_iva: alicuotaDeFactura(d) }, 'tablaImput');
+    document.getElementById('imputAsiento').innerHTML = htmlAsiento(d.asiento);
+    recalcImput();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalImputar')).show();
+}
+
+function alicuotaDeFactura(d) {
+    const neto = Number(d.neto || 0), iva = Number(d.iva || 0);
+    if (!neto) return 21;
+    const pct = iva / neto * 100;
+    return ALICUOTAS_IVA.map(([v]) => Number(v)).reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a, 21);
+}
+
+function recalcImput() {
+    const t = totalesRenglones('tablaImput');
+    const dif = Math.round((imputNeto - t.neto) * 100) / 100;
+    const el = document.getElementById('imputControl');
+    el.className = 'small fw-bold ' + (Math.abs(dif) <= 0.05 ? 'text-success' : 'text-danger');
+    el.textContent = `Detalle ${money(t.neto)} de ${money(imputNeto)}` + (Math.abs(dif) <= 0.05 ? ' ✔' : ` · diferencia ${money(dif)}`);
+}
+
+async function guardarImputacion() {
+    const t = totalesRenglones('tablaImput');
+    const err = validarRenglones(t.rs);
+    if (err) return alert(err);
+    if (Math.abs(t.neto - imputNeto) > 0.05) return alert('El detalle tiene que sumar el neto de la factura.');
+    const res = await fetch(`/api/facturas_venta/${imputCcId}/imputaciones`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ renglones: t.rs.filter(r => r.neto).map(({ tr, ...r }) => r) }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(typeof d.detail === 'string' ? d.detail : 'No se pudo guardar.');
+    document.getElementById('imputAsiento').innerHTML = htmlAsiento(d.asiento);
+    cargarResumen();
+    alert(d.message || 'Imputación guardada.');
 }
 
 function fechaAR(f) {
@@ -418,7 +695,7 @@ async function cargarResumen() {
     const res = await fetch(`/api/facturas_venta?desde=${mes}-01&hasta=${hasta}`);
     resFilas = res.ok ? await res.json() : [];
     if (!res.ok) {
-        tb.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-3">No se pudo cargar el resumen.</td></tr>';
+        tb.innerHTML = '<tr><td colspan="10" class="text-center text-danger py-3">No se pudo cargar el resumen.</td></tr>';
         return;
     }
     tb.innerHTML = resFilas.map((r, i) => `<tr>
@@ -431,14 +708,17 @@ async function cargarResumen() {
         <td class="text-end font-monospace">${Number(r.percepcion_iibb || 0) ? money(r.percepcion_iibb) : ''}</td>
         <td class="text-end font-monospace fw-bold">${money(r.total)}</td>
         <td>${r.cert_percepcion ? `<button type="button" class="btn btn-sm btn-outline-primary py-0 no-print" onclick="reimprimirCertificado(${i})">${esc(r.cert_percepcion)}</button><span class="d-none d-print-inline">${esc(r.cert_percepcion)}</span>` : ''}</td>
-    </tr>`).join('') || '<tr><td colspan="9" class="text-center text-muted py-3">No hay facturas de venta cargadas en este mes.</td></tr>';
+        <td class="no-print">${Number(r.imputaciones)
+            ? `<button type="button" class="btn btn-sm btn-outline-success py-0" onclick="abrirImputacion(${i})">Ver</button>`
+            : `<button type="button" class="btn btn-sm btn-warning py-0 fw-bold" onclick="abrirImputacion(${i})">Imputar</button>`}</td>
+    </tr>`).join('') || '<tr><td colspan="10" class="text-center text-muted py-3">No hay facturas de venta cargadas en este mes.</td></tr>';
     const tot = k => resFilas.reduce((s, r) => s + Number(r[k] || 0), 0);
     document.getElementById('resPie').innerHTML = resFilas.length ? `<tr class="table-light fw-bold">
         <td colspan="4">Total ${resFilas.length} comprobante(s)</td>
         <td class="text-end font-monospace">${money(tot('neto'))}</td>
         <td class="text-end font-monospace">${money(tot('iva'))}</td>
         <td class="text-end font-monospace">${money(tot('percepcion_iibb'))}</td>
-        <td class="text-end font-monospace">${money(tot('total'))}</td><td></td></tr>` : '';
+        <td class="text-end font-monospace">${money(tot('total'))}</td><td></td><td class="no-print"></td></tr>` : '';
     document.getElementById('resTituloPrint').textContent = `Ventas y percepciones IIBB · ${String(m).padStart(2, '0')}/${y}`;
     document.getElementById('resEmpresaPrint').textContent = `${empresa.razon_social || ''} · CUIT ${empresa.cuit || ''}`;
 }
@@ -486,11 +766,18 @@ function descargarResumen() {
 
 window.onload = async () => {
     document.getElementById('resMes').value = new Date().toISOString().slice(0, 7);
-    const alicGuardada = localStorage.getItem('fv_alic_iva');
-    const selAlic = document.getElementById('selAlicIva');
-    if (alicGuardada && [...selAlic.options].some(o => o.value === alicGuardada)) selAlic.value = alicGuardada;
-    recalcIva();
-    await init();
+    document.getElementById('formVenta').addEventListener('keydown', ev => {
+        if (ev.key !== 'Enter' || ev.target.tagName === 'TEXTAREA') return;
+        ev.preventDefault();
+        if (ev.target.id === 'txtNro') formatearNro(ev.target);
+        const campos = [...document.querySelectorAll('#formVenta input, #formVenta select')]
+            .filter(el => !el.disabled && !el.readOnly && el.tabIndex !== -1 && el.offsetParent !== null);
+        const i = campos.indexOf(ev.target);
+        if (i > -1 && campos[i + 1]) campos[i + 1].focus();
+        else document.querySelector('#formVenta button[type=submit]').focus();
+    });
+    await Promise.all([init(), cargarActividades()]);
+    agregarRenglon(false);
     cargarResumen();
 };
 </script>

@@ -341,6 +341,20 @@ def asiento_para_comprobante_compra(
     )
 
 
+def _cuenta_ingreso_actividad(actividad: str) -> Tuple[str, str]:
+    a = (actividad or "").lower()
+    for clave, cuenta in (
+        ("ganad", ("4.1.11", "Ingresos Ganadería")),
+        ("tambo", ("4.1.12", "Ingresos Tambo")),
+        ("agric", ("4.1.13", "Ingresos Agricultura")),
+        ("porc", ("4.1.14", "Ingresos Porcinos")),
+        ("avi", ("4.1.15", "Ingresos Aviar")),
+    ):
+        if clave in a:
+            return cuenta
+    return ("4.1.01", "Producción Agricultura y Ganadería")
+
+
 def asiento_para_factura_venta(
     cursor,
     fecha: str,
@@ -353,13 +367,15 @@ def asiento_para_factura_venta(
     total: float = 0.0,
     empresa_id: int = 1,
     origen_id: Optional[int] = None,
+    ingresos: Optional[List[Tuple[str, float]]] = None,
 ) -> Optional[int]:
     """
     Factura de venta (Silo Chico agente de percepción IIBB):
       Debe  Clientes (total = neto + IVA + perc)
-      Haber Ventas (neto)
+      Haber Ingresos de cada actividad (neto; sin detalle → 4.1.01)
       Haber IVA Débito Fiscal (iva)
       Haber Percepciones IIBB a Pagar (perc)
+    `ingresos`: [(nombre de actividad, neto)] del detalle imputado a la gestión.
     """
     init_contabilidad(cursor)
     neto = round(float(neto or 0), 2)
@@ -372,8 +388,7 @@ def asiento_para_factura_venta(
         return None
 
     cta_cli = _asegurar_cuenta(cursor, "1.1.02", "Clientes", "Activo")
-    cta_vta = _asegurar_cuenta(cursor, "4.1.01", "Ventas", "Ingreso")
-    cta_iva = _asegurar_cuenta(cursor, "2.1.02", "IVA Débito Fiscal", "Pasivo")
+    cta_iva = _asegurar_cuenta(cursor, "2.1.04", "IVA Débito Fiscal", "Pasivo")
     cta_perc = _asegurar_cuenta(cursor, "2.1.05", "Percepciones IIBB a Pagar", "Pasivo")
 
     concepto = f"Venta {tipo_comprobante} {numero_comprobante}".strip()
@@ -381,8 +396,21 @@ def asiento_para_factura_venta(
     lineas: List[Dict[str, Any]] = [
         {"cuenta_id": cta_cli, "debe": total, "haber": 0, "concepto_linea": concepto},
     ]
-    if neto > 0:
-        lineas.append({"cuenta_id": cta_vta, "debe": 0, "haber": neto, "concepto_linea": "Ventas"})
+    por_cuenta: Dict[Tuple[str, str], float] = {}
+    for act, importe in ingresos or []:
+        if importe:
+            clave = _cuenta_ingreso_actividad(act)
+            por_cuenta[clave] = round(por_cuenta.get(clave, 0) + float(importe), 2)
+    resto = round(neto - sum(por_cuenta.values()), 2)
+    if abs(resto) > 0.001:
+        clave = ("4.1.01", "Producción Agricultura y Ganadería")
+        por_cuenta[clave] = round(por_cuenta.get(clave, 0) + resto, 2)
+    for (codigo, nombre), importe in por_cuenta.items():
+        if importe > 0:
+            lineas.append({
+                "cuenta_id": _asegurar_cuenta(cursor, codigo, nombre, "Resultado"),
+                "debe": 0, "haber": importe, "concepto_linea": nombre,
+            })
     if iva > 0:
         lineas.append({"cuenta_id": cta_iva, "debe": 0, "haber": iva, "concepto_linea": "IVA DF"})
     if perc > 0:

@@ -6780,6 +6780,13 @@ def eliminar_movimiento_cuenta_corriente(id_mov: int):
             cursor.execute("DELETE FROM factura_imputaciones WHERE cc_id = ?;", (id_mov,))
         except Exception:
             pass
+        try:
+            cursor.execute(
+                "DELETE FROM liquidacion_imputaciones WHERE origen_tipo = 'VENTA' AND origen_id = ?;",
+                (id_mov,),
+            )
+        except Exception:
+            pass
 
         cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (id_mov,))
 
@@ -7242,6 +7249,16 @@ def registrar_cobro_cliente(data: CobroClienteModel):
     }
 
 
+class VentaRenglonModel(BaseModel):
+    descripcion: Optional[str] = ""
+    actividad_id: Optional[int] = None
+    cuenta_imputacion_id: Optional[int] = None
+    actividad_nombre: Optional[str] = ""
+    cuenta_nombre: Optional[str] = ""
+    neto: float = 0.0
+    alicuota_iva: float = 0.0  # en %: 10.5 = 10,5 %
+
+
 class FacturaVentaModel(BaseModel):
     cuit: str
     tipo_comprobante: str = "Factura A"
@@ -7255,6 +7272,86 @@ class FacturaVentaModel(BaseModel):
     total: float = 0.0
     usuario_registro: str = "Administrador"
     observaciones: Optional[str] = ""
+    renglones: List[VentaRenglonModel] = []
+
+
+class ImputacionVentaModel(BaseModel):
+    renglones: List[VentaRenglonModel] = []
+
+
+def _asegurar_imputaciones_venta(cursor) -> None:
+    """Ingresos de gestión de las ventas: misma tabla que las liquidaciones (origen_tipo 'VENTA')."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS liquidacion_imputaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            origen_tipo TEXT NOT NULL,
+            origen_id INTEGER NOT NULL,
+            fecha TEXT,
+            actividad_id INTEGER,
+            cuenta_imputacion_id INTEGER,
+            actividad_nombre TEXT,
+            cuenta_nombre TEXT,
+            neto REAL DEFAULT 0,
+            sentido TEXT DEFAULT 'INGRESO'
+        );
+        """
+    )
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(liquidacion_imputaciones)")}
+    for col, typ in (("descripcion", "TEXT"), ("alicuota_iva", "REAL DEFAULT 0")):
+        if col not in cols:
+            cursor.execute(f"ALTER TABLE liquidacion_imputaciones ADD COLUMN {col} {typ};")
+
+
+def _guardar_imputaciones_venta(cursor, empresa_id: int, cc_id: int, fecha: str, renglones) -> None:
+    _asegurar_imputaciones_venta(cursor)
+    cursor.execute(
+        "DELETE FROM liquidacion_imputaciones WHERE origen_tipo = 'VENTA' AND origen_id = ?;",
+        (cc_id,),
+    )
+    for r in renglones or []:
+        neto = round(float(r.neto or 0), 2)
+        if not neto:
+            continue
+        cursor.execute(
+            """
+            INSERT INTO liquidacion_imputaciones (
+                empresa_id, origen_tipo, origen_id, fecha, actividad_id, cuenta_imputacion_id,
+                actividad_nombre, cuenta_nombre, neto, sentido, descripcion, alicuota_iva
+            ) VALUES (?, 'VENTA', ?, ?, ?, ?, ?, ?, ?, 'INGRESO', ?, ?);
+            """,
+            (
+                empresa_id, cc_id, (fecha or "")[:10], r.actividad_id, r.cuenta_imputacion_id,
+                (r.actividad_nombre or "").strip(), (r.cuenta_nombre or "").strip(), neto,
+                (r.descripcion or "").strip(), float(r.alicuota_iva or 0),
+            ),
+        )
+
+
+def _validar_renglones_venta(renglones, neto: float) -> None:
+    if not renglones:
+        return
+    for r in renglones:
+        if float(r.neto or 0) and not (r.actividad_id and r.cuenta_imputacion_id):
+            raise HTTPException(400, "Cada renglón del detalle debe tener actividad y cuenta de ingreso.")
+    suma = round(sum(float(r.neto or 0) for r in renglones), 2)
+    if abs(suma - neto) > 0.05:
+        raise HTTPException(400, f"El detalle suma {suma:,.2f} y el neto de la factura es {neto:,.2f}.")
+
+
+def _lineas_asiento(cursor, asiento_id) -> list:
+    if not asiento_id:
+        return []
+    cursor.execute(
+        """
+        SELECT p.codigo_cuenta, p.nombre_cuenta, d.debe, d.haber, d.concepto_linea
+        FROM detalles_asiento d JOIN plan_de_cuentas p ON p.id = d.cuenta_id
+        WHERE d.asiento_id = ? ORDER BY d.id;
+        """,
+        (asiento_id,),
+    )
+    return [dict(r) for r in cursor.fetchall()]
 
 
 @app.post("/api/facturas_venta")
@@ -7276,6 +7373,7 @@ def emitir_factura_venta(data: FacturaVentaModel):
     nro = (data.numero_comprobante or "").strip()
     if not nro:
         raise HTTPException(400, "Indicá el número de comprobante.")
+    _validar_renglones_venta(data.renglones, neto)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -7342,6 +7440,7 @@ def emitir_factura_venta(data: FacturaVentaModel):
         ),
     )
     cc_id = cursor.lastrowid
+    _guardar_imputaciones_venta(cursor, empresa_id, cc_id, fecha, data.renglones)
 
     asiento_id = None
     try:
@@ -7357,6 +7456,7 @@ def emitir_factura_venta(data: FacturaVentaModel):
             total=total,
             empresa_id=empresa_id,
             origen_id=cc_id,
+            ingresos=[(r.actividad_nombre or "", float(r.neto or 0)) for r in data.renglones],
         )
         if asiento_id:
             try:
@@ -7386,12 +7486,15 @@ def emitir_factura_venta(data: FacturaVentaModel):
         # No duplicamos haber/debe: solo el certificado.
 
     conn.commit()
+    asiento = _lineas_asiento(cursor, asiento_id)
     conn.close()
     return {
         "status": "success",
         "message": "Factura de venta registrada.",
         "cc_id": cc_id,
         "asiento_id": asiento_id,
+        "asiento": asiento,
+        "imputaciones": len([r for r in data.renglones if float(r.neto or 0)]),
         "total": total,
         "percepcion_iibb": perc,
         "alicuota_percepcion": alic,
@@ -7413,6 +7516,7 @@ def listar_facturas_venta(desde: str, hasta: str):
     cursor = conn.cursor()
     _asegurar_col_libro_iva(cursor)
     _asegurar_col_comprobante_origen(cursor)
+    _asegurar_imputaciones_venta(cursor)
     conn.commit()
     cursor.execute(
         """
@@ -7420,7 +7524,9 @@ def listar_facturas_venta(desde: str, hasta: str):
                COALESCE(NULLIF(e.razon_social, ''), e.nombre_fantasia, '') AS cliente,
                COALESCE(c.neto, 0) AS neto, COALESCE(c.iva, 0) AS iva, COALESCE(c.total, 0) AS total,
                r.nro_comprobante AS cert_percepcion, COALESCE(r.importe_retenido, 0) AS percepcion_iibb,
-               r.regimen AS regimen_percepcion
+               r.regimen AS regimen_percepcion, c.asiento_id,
+               (SELECT COUNT(*) FROM liquidacion_imputaciones li
+                 WHERE li.origen_tipo = 'VENTA' AND li.origen_id = c.id) AS imputaciones
         FROM cuentas_corrientes c
         LEFT JOIN entidades e ON REPLACE(e.cuit, '-', '') = REPLACE(c.entidad_id, '-', '')
         LEFT JOIN retenciones_sicore r
@@ -7436,6 +7542,114 @@ def listar_facturas_venta(desde: str, hasta: str):
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+
+def _venta_cc(cursor, cc_id: int, empresa_id: int):
+    cursor.execute(
+        """
+        SELECT * FROM cuentas_corrientes
+        WHERE id = ? AND libro_iva = 'V' AND COALESCE(empresa_id, 1) = ?;
+        """,
+        (cc_id, empresa_id),
+    )
+    cc = cursor.fetchone()
+    if not cc:
+        raise HTTPException(404, "Factura de venta no encontrada.")
+    return cc
+
+
+@app.get("/api/facturas_venta/{cc_id}")
+def detalle_factura_venta(cc_id: int):
+    """Imputaciones de gestión y asiento contable de una factura de venta."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _asegurar_col_libro_iva(cursor)
+    _asegurar_imputaciones_venta(cursor)
+    conn.commit()
+    try:
+        cc = _venta_cc(cursor, cc_id, empresa_id)
+        cursor.execute(
+            """
+            SELECT descripcion, actividad_id, cuenta_imputacion_id, actividad_nombre, cuenta_nombre,
+                   neto, alicuota_iva
+            FROM liquidacion_imputaciones
+            WHERE origen_tipo = 'VENTA' AND origen_id = ? ORDER BY id;
+            """,
+            (cc_id,),
+        )
+        renglones = [dict(r) for r in cursor.fetchall()]
+        return {
+            "id": cc["id"],
+            "tipo_comprobante": cc["tipo_comprobante"],
+            "numero_comprobante": cc["numero_comprobante"],
+            "fecha": cc["fecha"],
+            "neto": cc["neto"],
+            "iva": cc["iva"],
+            "total": cc["total"],
+            "asiento_id": cc["asiento_id"],
+            "renglones": renglones,
+            "asiento": _lineas_asiento(cursor, cc["asiento_id"]),
+        }
+    finally:
+        conn.close()
+
+
+@app.put("/api/facturas_venta/{cc_id}/imputaciones")
+def imputar_factura_venta(cc_id: int, data: ImputacionVentaModel):
+    """Asigna (o corrige) los ingresos de gestión de una venta ya emitida y rehace su asiento."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _asegurar_col_libro_iva(cursor)
+    try:
+        cc = _venta_cc(cursor, cc_id, empresa_id)
+        neto = round(float(cc["neto"] or 0), 2)
+        if not data.renglones:
+            raise HTTPException(400, "Cargá al menos un renglón con actividad y cuenta.")
+        _validar_renglones_venta(data.renglones, neto)
+        fecha = (cc["fecha"] or "")[:10]
+        _guardar_imputaciones_venta(cursor, empresa_id, cc_id, fecha, data.renglones)
+
+        tipo = cc["tipo_comprobante"] or ""
+        nro = cc["numero_comprobante"] or ""
+        _asegurar_col_comprobante_origen(cursor)
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(importe_retenido), 0) FROM retenciones_sicore
+            WHERE UPPER(COALESCE(tipo_retencion, '')) = 'PERCEPCION_IIBB'
+              AND comprobante_origen = ? AND REPLACE(cuit, '-', '') = REPLACE(?, '-', '');
+            """,
+            (f"{tipo} {nro}", cc["entidad_id"] or ""),
+        )
+        perc = round(float(cursor.fetchone()[0] or 0), 2)
+        if cc["asiento_id"]:
+            from motor_contable import eliminar_asiento
+            eliminar_asiento(cursor, int(cc["asiento_id"]))
+        asiento_id = asiento_para_factura_venta(
+            cursor,
+            fecha=fecha,
+            tipo_comprobante=tipo,
+            numero_comprobante=nro,
+            cuit_cliente=cc["entidad_id"],
+            neto=neto,
+            iva=float(cc["iva"] or 0),
+            percepcion_iibb=perc,
+            total=float(cc["total"] or 0),
+            empresa_id=empresa_id,
+            origen_id=cc_id,
+            ingresos=[(r.actividad_nombre or "", float(r.neto or 0)) for r in data.renglones],
+        )
+        cursor.execute("UPDATE cuentas_corrientes SET asiento_id = ? WHERE id = ?;", (asiento_id, cc_id))
+        conn.commit()
+        return {
+            "status": "success",
+            "message": "Ingresos de gestión asignados y asiento actualizado.",
+            "asiento_id": asiento_id,
+            "asiento": _lineas_asiento(cursor, asiento_id),
+        }
+    finally:
+        conn.close()
 
 
 @app.get("/api/proveedores/consulta")
