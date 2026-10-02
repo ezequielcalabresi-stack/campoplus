@@ -11,6 +11,7 @@ from sueldos import (
     CONCEPTOS,
     CONVENIOS,
     aplicar_depositos,
+    asientos_sueldos_mes,
     borrar_movimiento,
     importar_recibos,
     listar_recibos,
@@ -62,6 +63,10 @@ class VincularReciboModel(BaseModel):
 class AplicarRecibosModel(BaseModel):
     mes: str
     recibo_ids: Optional[List[int]] = None
+
+
+class AsientosRecibosModel(BaseModel):
+    mes: str
 
 
 class MovimientoModel(BaseModel):
@@ -165,3 +170,7 @@ def register_sueldos_routes(app, get_db, get_empresa_activa_id):
     @app.post("/api/sueldos/recibos/aplicar")
     def api_recibos_aplicar(data: AplicarRecibosModel):
         return _run(aplicar_depositos, data.mes, data.recibo_ids)
+
+    @app.post("/api/sueldos/recibos/asientos")
+    def api_recibos_asientos(data: AsientosRecibosModel):
+        return _run(asientos_sueldos_mes, data.mes)

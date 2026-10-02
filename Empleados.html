@@ -229,6 +229,7 @@
             <button onclick="importarRecibos()" class="bg-slate-800 text-white px-3 py-2 rounded font-bold">Importar recibos</button>
         </div>
         <div id="r_resumen" class="mb-3"></div>
+        <div id="r_asientos" class="mb-3"></div>
         <div class="flex flex-wrap justify-between items-center gap-2 mb-2 text-sm">
             <p class="text-xs text-slate-500">
                 El neto de cada recibo se carga como Depósito Bancario en la cuenta fuera de convenio del empleado (resta del sueldo a cobrar en efectivo).
@@ -741,6 +742,7 @@ async function importarRecibos() {
     try { r = await api('/api/sueldos/recibos/importar', { method: 'POST', body: fd }); }
     catch (e) { alert(e.message); return; }
     let msg = `Recibos leídos: ${r.leidos}`;
+    if (r.asientos && r.asientos.length) msg += `\nAsientos contables de sueldos generados: ${r.asientos.length}`;
     if (r.errores && r.errores.length) msg += '\n\n' + r.errores.join('\n');
     alert(msg);
     input.value = '';
@@ -785,6 +787,17 @@ function renderRecibos() {
             </table>
         </div>` : '<p class="text-sm text-slate-400">No hay recibos importados para este mes.</p>';
 
+    const asientos = R.asientos || [];
+    document.getElementById('r_asientos').innerHTML = R.recibos.length ? `
+        <div class="flex flex-wrap items-center justify-between gap-2 border rounded-lg p-2 text-xs ${asientos.length ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}">
+            <div>${asientos.length
+                ? `<span class="font-bold text-emerald-800">Asientos contables de sueldos:</span> ${asientos.map(a => `Nº ${a.id} ${esc(a.concepto.split(' — ').slice(1).join(' — '))} ${money(a.total_debe)}`).join(' · ')}`
+                : '<span class="font-bold text-amber-800">Este mes todavía no tiene asiento contable de sueldos.</span>'}
+                <div class="text-slate-500 mt-1">Debe: Sueldos y Jornales + Cargas Sociales · Haber: Sueldos a Pagar (neto) + Cargas Fiscales y Sociales (aportes y contribuciones F.931). Se rehace al reimportar, sin duplicar.</div>
+            </div>
+            <button onclick="generarAsientosSueldos()" class="bg-emerald-700 text-white px-3 py-1.5 rounded font-bold hover:bg-emerald-800">${asientos.length ? 'Actualizar asientos' : 'Generar asientos'}</button>
+        </div>` : '';
+
     const opts = TODOS_EMPLEADOS.map(e => `<option value="${e.id}">${esc(e.nombre)}${Number(e.activo) ? '' : ' (inactivo)'}</option>`).join('');
     document.getElementById('r_tbody').innerHTML = R.recibos.map((r, i) => {
         let estado;
@@ -823,6 +836,15 @@ function renderRecibos() {
             </tbody></table></td></tr>` : ''}`;
     }).join('') || '<tr><td colspan="11" class="p-4 text-center text-slate-400">Importá los PDF de recibos del mes.</td></tr>';
     document.querySelectorAll('#r_tbody select').forEach((sel, i) => { sel.value = R.recibos[i].empleado_id || ''; });
+}
+
+async function generarAsientosSueldos() {
+    let r;
+    try { r = await api('/api/sueldos/recibos/asientos', jsonBody('POST', { mes: RECIBOS.mes })); }
+    catch (e) { alert(e.message); return; }
+    alert(`Asientos de sueldos ${RECIBOS.mes}: ${r.asientos.length}\n\n` + r.asientos.map(a =>
+        `${a.convenio}: bruto ${money(a.bruto)} + contrib. ${money(a.contribuciones)} = neto ${money(a.neto)} + F.931 ${money(a.aportes + a.contribuciones)}`).join('\n'));
+    await cargarRecibos();
 }
 
 function marcarTodosRecibos(v) {

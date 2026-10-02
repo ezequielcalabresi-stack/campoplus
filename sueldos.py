@@ -644,10 +644,104 @@ def importar_recibos(conn, emp_id: int, archivos: list[tuple[str, bytes]]) -> di
                     """,
                     (emp_id, rec["periodo"], rec["tipo_liquidacion"], rec["cuil"], *valores),
                 )
+    asientos = []
     for periodo in periodos:
         _vincular_automatico(conn, emp_id, periodo)
+        try:
+            asientos += asientos_sueldos_mes(conn, emp_id, periodo, commit=False)["asientos"]
+        except ValueError as exc:
+            errores.append(f"Asiento de sueldos {periodo}: {exc}")
     conn.commit()
-    return {"leidos": leidos, "periodos": sorted(periodos), "errores": errores}
+    return {"leidos": leidos, "periodos": sorted(periodos), "errores": errores, "asientos": asientos}
+
+
+def _ref_asiento_sueldos(mes: str) -> str:
+    return f"SUELDOS {mes}"
+
+
+def asientos_de_sueldos(conn, emp_id: int, mes: str) -> list[dict]:
+    try:
+        return [dict(r) for r in conn.execute(
+            """
+            SELECT id, concepto, total_debe FROM asientos_contables
+            WHERE empresa_id = ? AND origen_modulo = 'sueldos' AND referencia LIKE ? AND COALESCE(anulado, 0) = 0
+            ORDER BY id;
+            """,
+            (emp_id, _ref_asiento_sueldos(mes) + " %"),
+        ).fetchall()]
+    except Exception:
+        return []
+
+
+def asientos_sueldos_mes(conn, emp_id: int, mes: str, commit: bool = True) -> dict:
+    """Devengamiento de los recibos de convenio del mes: un asiento por convenio y tipo de liquidación.
+
+      Debe  Sueldos y Jornales (remunerativo + no remunerativo)
+      Debe  Cargas Sociales (contribuciones patronales)
+      Haber Sueldos a Pagar (neto de los recibos)
+      Haber Cargas Fiscales y Sociales (aportes retenidos + contribuciones, F.931)
+
+    Se rehacen completos cada vez: reimportar o regenerar no duplica.
+    """
+    from motor_contable import _asegurar_cuenta, crear_asiento, eliminar_asiento, init_contabilidad
+
+    mes = mes_valido(mes)
+    cur = conn.cursor()
+    init_contabilidad(cur)
+    for row in asientos_de_sueldos(conn, emp_id, mes):
+        eliminar_asiento(cur, int(row["id"]))
+
+    grupos = [dict(r) for r in conn.execute(
+        """
+        SELECT COALESCE(NULLIF(TRIM(convenio), ''), 'Sin convenio') AS convenio,
+               COALESCE(NULLIF(TRIM(tipo_liquidacion), ''), 'Mensual') AS tipo,
+               COUNT(*) AS recibos, SUM(remunerativo) AS rem, SUM(no_remunerativo) AS no_rem,
+               SUM(neto) AS neto, SUM(contribuciones) AS contribuciones
+        FROM recibos_sueldo WHERE empresa_id = ? AND periodo = ?
+        GROUP BY 1, 2 ORDER BY 1, 2;
+        """,
+        (emp_id, mes),
+    ).fetchall()]
+
+    cta_sueldos = _asegurar_cuenta(cur, "4.2.05", "Sueldos y Jornales", "Resultado")
+    cta_cargas = _asegurar_cuenta(cur, "4.2.06", "Cargas Sociales", "Resultado")
+    cta_pagar = _asegurar_cuenta(cur, "2.1.06", "Sueldos a Pagar", "Pasivo")
+    cta_f931 = _asegurar_cuenta(cur, "2.1.03", "Cargas Fiscales y Sociales", "Pasivo")
+    fecha = fin_de_mes(mes)
+    titulo = f"{nombre_mes(mes).capitalize()} {mes[:4]}"
+    asientos = []
+    for g in grupos:
+        bruto = _r2((g["rem"] or 0) + (g["no_rem"] or 0))
+        neto = _r2(g["neto"])
+        contrib = _r2(g["contribuciones"])
+        aportes = _r2(bruto - neto)
+        if bruto <= 0 and contrib <= 0:
+            continue
+        etiqueta = g["convenio"] if g["tipo"].lower() == "mensual" else f"{g['convenio']} · {g['tipo']}"
+        lineas = []
+        for cuenta, importe, lado, texto in (
+            (cta_sueldos, bruto, "debe", "Sueldos y jornales"),
+            (cta_cargas, contrib, "debe", "Contribuciones patronales"),
+            (cta_pagar, neto, "haber", "Neto a pagar"),
+            (cta_f931, _r2(aportes + contrib), "haber", "Aportes y contribuciones F.931"),
+        ):
+            if importe < 0:
+                importe, lado = -importe, ("haber" if lado == "debe" else "debe")
+            lineas.append({"cuenta_id": cuenta, lado: importe, "concepto_linea": f"{texto} — {etiqueta}"})
+        aid = crear_asiento(
+            cur,
+            fecha=fecha,
+            concepto=f"Sueldos {titulo} — {etiqueta} ({g['recibos']} recibos)",
+            lineas=lineas,
+            empresa_id=emp_id,
+            origen_modulo="sueldos",
+            referencia=f"{_ref_asiento_sueldos(mes)} {etiqueta}",
+        )
+        asientos.append({"id": aid, "convenio": etiqueta, "recibos": g["recibos"], "bruto": bruto,
+                         "contribuciones": contrib, "neto": neto, "aportes": aportes})
+    if commit:
+        conn.commit()
+    return {"mes": mes, "asientos": asientos}
 
 
 def _vincular_automatico(conn, emp_id: int, periodo: str) -> None:
@@ -735,7 +829,8 @@ def listar_recibos(conn, emp_id: int, mes: str) -> dict:
     total = {k: _r2(sum(t[k] for t in por_convenio)) for k in
              ("remunerativo", "no_remunerativo", "descuentos", "neto", "contribuciones", "costo_total")}
     total["cantidad"] = len(filas)
-    return {"mes": mes, "recibos": filas, "por_convenio": por_convenio, "total": total}
+    return {"mes": mes, "recibos": filas, "por_convenio": por_convenio, "total": total,
+            "asientos": asientos_de_sueldos(conn, emp_id, mes)}
 
 
 def vincular_recibo(conn, emp_id: int, recibo_id: int, empleado_id: Optional[int]) -> dict:
