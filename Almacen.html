@@ -592,6 +592,8 @@ async function previaUnificar() {
             · costo U$S ${fmtNum((d.costos_resultantes || {}).costo_promedio_usd, 2)} · $ ${fmtNum((d.costos_resultantes || {}).costo_promedio_neto, 2)}</div>
         <div class="small">Se pasan al principal: ${d.movimientos} movimientos de almacén, ${d.consumos_ot} consumos de OT, ${d.renglones_factura} renglones de factura
             y ${d.lineas_campania} líneas de costo${camp ? ' (' + camp + ')' : ''}. Las facturas y la cuenta corriente no cambian.</div>
+        ${!d.movimientos && !d.consumos_ot && !d.renglones_factura && !d.lineas_campania && !(d.otros || []).some(o => Number(o.stock_cantidad || 0))
+            ? '<div class="small fw-bold mt-1">Los productos a unificar no tienen stock, movimientos, órdenes ni líneas de costo: al unificar solo desaparecen sus nombres de la lista y quedan como alias del principal (las próximas facturas con esos nombres entran al principal).</div>' : ''}
         ${err ? '<ul class="mb-0 mt-2 small">' + err + '</ul>' : `<div class="text-end mt-2"><button type="button" class="btn btn-success fw-bold" onclick="confirmarUnificar(this)">2) Confirmar unificación</button></div>`}
     </div>`;
     caja.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -624,7 +626,8 @@ async function confirmarUnificar(btn) {
         caja.innerHTML = `<div class="alert alert-success py-2 mb-0">
             <strong>Listo:</strong> ${esc(d.unificados.join(', '))} quedaron unificados en <strong>${esc(d.principal)}</strong>,
             con stock ${Number(d.stock_resultante || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 })}.
-            <span class="small">Movimientos: ${d.movimientos} · Consumos OT: ${d.consumos_ot} · Líneas de costo: ${d.lineas_campania}.</span></div>`;
+            <span class="small">Movimientos: ${d.movimientos} · Consumos OT: ${d.consumos_ot} · Líneas de costo: ${d.lineas_campania}.
+            Los nombres unificados ya no aparecen en la lista; figuran abajo en "Unificaciones hechas".</span></div>`;
         caja.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         await cargarUnificar();
         cargarStock();
