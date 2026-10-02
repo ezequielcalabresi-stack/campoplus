@@ -6293,25 +6293,27 @@ _ULTIMO_CERT_HISTORICO = {"SICORE": 2073, "IIBB": 2961}
 
 def _retenciones_huerfanas(cursor) -> List[Dict[str, object]]:
     cursor.execute(
+        "SELECT numero_comprobante, entidad_id FROM cuentas_corrientes WHERE tipo_comprobante LIKE 'Reten%';"
+    )
+    en_cc = {
+        ((r["numero_comprobante"] or "").strip(), re.sub(r"\D", "", str(r["entidad_id"] or "")))
+        for r in cursor.fetchall()
+    }
+    cursor.execute(
         """
-        SELECT r.id, r.fecha, r.cuit, r.razon_social, r.tipo_retencion, r.nro_comprobante,
-               r.base_imponible, r.importe_retenido
-        FROM retenciones_sicore r
-        WHERE UPPER(COALESCE(r.tipo_retencion, 'SICORE')) IN ('SICORE', 'IIBB')
-          AND NOT EXISTS (
-              SELECT 1 FROM cuentas_corrientes cc
-              WHERE cc.numero_comprobante = r.nro_comprobante
-                AND REPLACE(COALESCE(cc.entidad_id, ''), '-', '') = REPLACE(COALESCE(r.cuit, ''), '-', '')
-                AND cc.tipo_comprobante LIKE 'Reten%'
-          )
-        ORDER BY r.fecha, r.id;
+        SELECT id, fecha, cuit, razon_social, tipo_retencion, nro_comprobante, base_imponible, importe_retenido
+        FROM retenciones_sicore
+        WHERE UPPER(COALESCE(tipo_retencion, 'SICORE')) IN ('SICORE', 'IIBB')
+        ORDER BY fecha, id;
         """
     )
     salida = []
     for r in cursor.fetchall():
-        tipo = _tipo_retencion(r)
-        nro = re.sub(r"\D", "", str(r["nro_comprobante"] or "").split("-")[-1])
-        if nro and int(nro) > _ULTIMO_CERT_HISTORICO[tipo]:
+        nro_cert = (r["nro_comprobante"] or "").strip()
+        nro = re.sub(r"\D", "", nro_cert.split("-")[-1])
+        if not nro or int(nro) <= _ULTIMO_CERT_HISTORICO[_tipo_retencion(r)]:
+            continue
+        if (nro_cert, re.sub(r"\D", "", str(r["cuit"] or ""))) not in en_cc:
             salida.append(dict(r))
     return salida
 
@@ -9498,7 +9500,7 @@ register_sueldos_routes(app, get_db, get_empresa_activa_id)
 from iva_api import register_iva_routes
 register_iva_routes(app, get_db, get_empresa_activa_id)
 from arba_lotes import register_arba_lotes_routes
-register_arba_lotes_routes(app, get_db)
+register_arba_lotes_routes(app, get_db, _retenciones_huerfanas)
 
 # Audit schema antes de SaaS (usuarios_sistema)
 try:

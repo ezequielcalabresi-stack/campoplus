@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Lotes de importación de ARBA para agentes de recaudación de Ingresos Brutos.
+Retenciones y percepciones de Ingresos Brutos (ARBA): detalle por período y lotes de importación.
 
 Percepciones (AR-Web, actividad 7 — diseño 1.2 "método Percibido", 81 caracteres):
   ZIP  AR-CUIT-AAAAMMQ-P7-LOTE_MD5.zip  (MD5 del .zip) con el TXT AR-CUIT-AAAAMMQ-P7-LOTE.txt
@@ -16,7 +16,7 @@ import re
 import zipfile
 from calendar import monthrange
 from datetime import date
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 from fastapi.responses import Response
@@ -26,6 +26,9 @@ _TIPO_CBTE = (
     ("NOTA DE DÉBITO", "D"), ("NOTA DE DEBITO", "D"),
     ("RECIBO", "R"), ("FACTURA", "F"),
 )
+
+_TIPOS_PERCEPCION = ("PERCEPCION_IIBB", "PERCEPCION IIBB", "PERC_IIBB")
+_TIPOS_RETENCION = ("IIBB", "RET_IIBB", "ARBA")
 
 
 def _digitos(s: Any) -> str:
@@ -85,93 +88,87 @@ def _cuit_agente(cursor) -> str:
     return cuit
 
 
-def registros_percepciones(cursor, anio: int, mes: int, quincena: int) -> Tuple[List[Dict[str, Any]], List[str]]:
-    desde, hasta = _rango(anio, mes, quincena)
+def _filas(cursor, tipos: Tuple[str, ...], desde: str, hasta: str) -> list:
     cursor.execute("PRAGMA table_info(retenciones_sicore);")
     con_origen = "comprobante_origen" in {c[1] for c in cursor.fetchall()}
+    ph = ",".join("?" for _ in tipos)
     cursor.execute(
         f"""
-        SELECT id, fecha, cuit, razon_social, base_imponible, importe_retenido, regimen, nro_comprobante,
-               {"comprobante_origen" if con_origen else "''"} AS comprobante_origen
-        FROM retenciones_sicore
-        WHERE UPPER(COALESCE(tipo_retencion, '')) IN ('PERCEPCION_IIBB', 'PERCEPCION IIBB', 'PERC_IIBB')
-          AND substr(fecha, 1, 10) BETWEEN ? AND ?
-        ORDER BY fecha, id;
+        SELECT r.id, r.fecha, r.cuit, r.razon_social, r.base_imponible, r.importe_retenido, r.regimen,
+               r.nro_comprobante, {"r.comprobante_origen" if con_origen else "''"} AS comprobante_origen,
+               (SELECT e.domicilio FROM entidades e
+                 WHERE REPLACE(e.cuit, '-', '') = REPLACE(r.cuit, '-', '') AND COALESCE(e.domicilio, '') <> '' LIMIT 1) AS domicilio,
+               (SELECT e.localidad FROM entidades e
+                 WHERE REPLACE(e.cuit, '-', '') = REPLACE(r.cuit, '-', '') AND COALESCE(e.localidad, '') <> '' LIMIT 1) AS localidad
+        FROM retenciones_sicore r
+        WHERE UPPER(COALESCE(r.tipo_retencion, '')) IN ({ph})
+          AND substr(r.fecha, 1, 10) BETWEEN ? AND ?
+        ORDER BY r.fecha, r.id;
         """,
-        (desde, hasta),
+        (*tipos, desde, hasta),
     )
-    regs, errores = [], []
-    for r in cursor.fetchall():
+    return cursor.fetchall()
+
+
+def _base_registro(r, base: float, alic: float, imp: float) -> Dict[str, Any]:
+    return {
+        "id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"],
+        "domicilio": r["domicilio"] or "", "localidad": r["localidad"] or "",
+        "certificado": r["nro_comprobante"] or "", "base": base, "alicuota": alic, "importe": imp,
+        "linea": "", "error": "", "aviso": "",
+    }
+
+
+def registros_percepciones(cursor, desde: str, hasta: str) -> List[Dict[str, Any]]:
+    regs = []
+    for r in _filas(cursor, _TIPOS_PERCEPCION, desde, hasta):
         base = float(r["base_imponible"] or 0)
         imp = float(r["importe_retenido"] or 0)
         alic = _alicuota(r["regimen"], base, imp)
+        reg = _base_registro(r, base, alic, imp)
+        reg["comprobante"] = r["comprobante_origen"] or ""
         tipo, letra, suc, nro = _comprobante(r["comprobante_origen"])
-        cert = r["nro_comprobante"] or ""
         if not tipo:
-            msg = f"Certificado {cert} ({r['razon_social']}): no tiene la factura asociada; cargala de nuevo desde Facturas de venta o informala a mano."
-            errores.append(msg)
-            regs.append({"id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"],
-                         "comprobante": "", "certificado": cert, "base": base, "alicuota": alic, "importe": imp,
-                         "linea": "", "error": msg})
-            continue
-        if tipo == "C":
-            base, imp = -abs(base), -abs(imp)
-        fecha = _fecha_ar(r["fecha"])
-        linea = (
-            f"{_cuit_guiones(r['cuit'])}{fecha}{tipo}{letra}{suc}{nro}"
-            f"{base:014.2f}{alic:05.2f}{imp:013.2f}{fecha}A"
-        )
-        regs.append({
-            "id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"], "comprobante": r["comprobante_origen"],
-            "certificado": cert, "base": base, "alicuota": alic, "importe": imp, "linea": linea,
-        })
-    return regs, errores
+            reg["error"] = (f"Certificado {reg['certificado']} ({r['razon_social']}): no tiene la factura asociada; "
+                            "cargala de nuevo desde Facturas de venta.")
+        else:
+            if tipo == "C":
+                base, imp = -abs(base), -abs(imp)
+            fecha = _fecha_ar(r["fecha"])
+            reg["linea"] = (
+                f"{_cuit_guiones(r['cuit'])}{fecha}{tipo}{letra}{suc}{nro}"
+                f"{base:014.2f}{alic:05.2f}{imp:013.2f}{fecha}A"
+            )
+        regs.append(reg)
+    return regs
 
 
-def registros_retenciones(cursor, anio: int, mes: int, quincena: int, sucursal: int = 1) -> Tuple[List[Dict[str, Any]], List[str]]:
-    desde, hasta = _rango(anio, mes, quincena)
-    cursor.execute(
-        """
-        SELECT id, fecha, cuit, razon_social, base_imponible, importe_retenido, regimen, nro_comprobante
-        FROM retenciones_sicore
-        WHERE UPPER(COALESCE(tipo_retencion, '')) IN ('IIBB', 'RET_IIBB', 'ARBA')
-          AND substr(fecha, 1, 10) BETWEEN ? AND ?
-        ORDER BY fecha, id;
-        """,
-        (desde, hasta),
-    )
-    regs, errores, usados = [], [], set()
-    for r in cursor.fetchall():
+def registros_retenciones(cursor, desde: str, hasta: str, sucursal: int = 1) -> List[Dict[str, Any]]:
+    regs, usados = [], set()
+    for r in _filas(cursor, _TIPOS_RETENCION, desde, hasta):
         base = float(r["base_imponible"] or 0)
         imp = float(r["importe_retenido"] or 0)
         alic = _alicuota(r["regimen"], base, imp)
-        cert = str(r["nro_comprobante"] or "")
+        reg = _base_registro(r, base, alic, imp)
+        cert = reg["certificado"]
         transaccion = _digitos(cert.split("-")[-1]) or str(r["id"])
         if transaccion in usados:
             transaccion = str(r["id"])
         usados.add(transaccion)
+        reg["transaccion"] = transaccion
         if base <= 0.009 or alic <= 0:
-            msg = f"Retención {cert} ({r['razon_social']}): falta la base imponible o la alícuota."
-            errores.append(msg)
-            regs.append({"id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"],
-                         "certificado": cert, "transaccion": transaccion, "base": base, "alicuota": alic,
-                         "importe": imp, "linea": "", "error": msg})
-            continue
-        linea = (
-            f"{transaccion.zfill(20)[-20:]}{_digitos(r['cuit']).zfill(11)[-11:]}{int(sucursal):05d}"
-            f"{_fecha_ar(r['fecha'])}{alic:05.2f}{base:016.2f}"
-        )
-        calculado = round(base * alic / 100, 2)
-        aviso = ""
-        if abs(calculado - imp) > 1:
-            aviso = (f"Retención {cert} ({r['razon_social']}): se retuvo $ {_pesos(imp)} pero ARBA va a calcular "
-                     f"$ {_pesos(calculado)} ({_pesos(alic)}% sobre $ {_pesos(base)}). Revisá la alícuota antes de subir el lote.")
-        regs.append({
-            "id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"], "certificado": cert,
-            "transaccion": transaccion, "base": base, "alicuota": alic, "importe": imp, "linea": linea,
-            "aviso": aviso,
-        })
-    return regs, errores
+            reg["error"] = f"Retención {cert} ({r['razon_social']}): falta la base imponible o la alícuota."
+        else:
+            calculado = round(base * alic / 100, 2)
+            if abs(calculado - imp) > 1:
+                reg["aviso"] = (f"Retención {cert} ({r['razon_social']}): se retuvo $ {_pesos(imp)} pero ARBA va a calcular "
+                                f"$ {_pesos(calculado)} ({_pesos(alic)}% sobre $ {_pesos(base)}). Revisá la alícuota antes de subir el lote.")
+            reg["linea"] = (
+                f"{transaccion.zfill(20)[-20:]}{_digitos(r['cuit']).zfill(11)[-11:]}{int(sucursal):05d}"
+                f"{_fecha_ar(r['fecha'])}{alic:05.2f}{base:016.2f}"
+            )
+        regs.append(reg)
+    return regs
 
 
 def _zip(nombre_txt: str, contenido: str) -> bytes:
@@ -188,40 +185,69 @@ def _validar_periodo(anio: int, mes: int, quincena: int) -> None:
         raise HTTPException(400, "Período inválido.")
 
 
-def register_arba_lotes_routes(app, get_db):
-    def _datos(tipo: str, anio: int, mes: int, quincena: int, sucursal: int):
-        _validar_periodo(anio, mes, quincena)
+def _validar_fecha(s: str) -> str:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", s or ""):
+        raise HTTPException(400, "Fecha inválida.")
+    return s
+
+
+def _resumen(regs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    validos = [r for r in regs if r["linea"]]
+    return {
+        "registros": regs,
+        "errores": [r["error"] for r in regs if r["error"]],
+        "avisos": [r["aviso"] for r in regs if r["aviso"]],
+        "en_lote": len(validos),
+        "total_base": round(sum(r["base"] for r in regs), 2),
+        "total_importe": round(sum(r["importe"] for r in regs), 2),
+    }
+
+
+def register_arba_lotes_routes(app, get_db, huerfanas: Optional[Callable[[Any], list]] = None):
+    def _datos(tipo: str, desde: str, hasta: str, sucursal: int):
         conn = get_db()
         try:
             cursor = conn.cursor()
             cuit = _cuit_agente(cursor)
             if tipo == "percepciones":
-                regs, errores = registros_percepciones(cursor, anio, mes, quincena)
+                regs = registros_percepciones(cursor, desde, hasta)
             elif tipo == "retenciones":
-                regs, errores = registros_retenciones(cursor, anio, mes, quincena, sucursal)
+                regs = registros_retenciones(cursor, desde, hasta, sucursal)
             else:
                 raise HTTPException(400, "Tipo de lote inválido.")
         finally:
             conn.close()
-        return cuit, regs, errores
+        return cuit, regs
+
+    @app.get("/api/arba/iibb")
+    def api_arba_iibb(desde: str, hasta: str, sucursal: int = 1):
+        """Retenciones y percepciones de IIBB entre dos fechas, con la línea de lote de cada una."""
+        desde, hasta = _validar_fecha(desde), _validar_fecha(hasta)
+        conn = get_db()
+        try:
+            cursor = conn.cursor()
+            ret = registros_retenciones(cursor, desde, hasta, sucursal)
+            perc = registros_percepciones(cursor, desde, hasta)
+            sueltas = [h for h in (huerfanas(cursor) if huerfanas else [])
+                       if str(h.get("tipo_retencion") or "").upper() == "IIBB"]
+        finally:
+            conn.close()
+        ids_sueltas = {h["id"] for h in sueltas}
+        for r in ret:
+            r["sin_cta_cte"] = r["id"] in ids_sueltas
+        return {"retenciones": _resumen(ret), "percepciones": _resumen(perc), "sin_cta_cte": sueltas}
 
     @app.get("/api/arba/lotes/previa")
     def api_arba_lote_previa(tipo: str, anio: int, mes: int, quincena: int = 0, sucursal: int = 1):
-        _, regs, errores = _datos(tipo, anio, mes, quincena, sucursal)
-        validos = [r for r in regs if r["linea"]]
-        return {
-            "registros": regs,
-            "errores": errores,
-            "avisos": [r["aviso"] for r in regs if r.get("aviso")],
-            "en_lote": len(validos),
-            "total_base": round(sum(r["base"] for r in validos), 2),
-            "total_importe": round(sum(r["importe"] for r in validos), 2),
-        }
+        _validar_periodo(anio, mes, quincena)
+        _, regs = _datos(tipo, *_rango(anio, mes, quincena), sucursal)
+        return _resumen(regs)
 
     @app.get("/api/arba/lotes/descargar")
     def api_arba_lote_descargar(tipo: str, anio: int, mes: int, quincena: int = 0, actividad: str = "6",
                                 lote: str = "1", sucursal: int = 1):
-        cuit, regs, _ = _datos(tipo, anio, mes, quincena, sucursal)
+        _validar_periodo(anio, mes, quincena)
+        cuit, regs = _datos(tipo, *_rango(anio, mes, quincena), sucursal)
         regs = [r for r in regs if r["linea"]]
         if not regs:
             raise HTTPException(404, "No hay operaciones para informar en ese período.")

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <script src="/campoplus-auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAmpo+ | Retenciones y Percepciones IIBB (ARBA)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #1e293b; }
+        .main-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 20px; }
+        .table thead th { background-color: #1e293b !important; color: #ffffff !important; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; padding: 12px; }
+        .table tbody td { padding: 10px 12px; vertical-align: middle; }
+        .table tfoot td { padding: 10px 12px; }
+        tr.fila-error td { background-color: #fee2e2 !important; }
+        tr.fila-aviso td { background-color: #fef9c3 !important; }
+    </style>
+<script src="/campoplus-firma.js?v=2"></script>
+    <script src="/campoplus-fechas.js"></script>
+</head>
+<body>
+    <div class="container my-4" style="max-width: 1280px;">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h4 class="fw-bold mb-0">CAmpo+ <small class="text-muted fs-6 fw-normal">| Retenciones y Percepciones IIBB (ARBA)</small></h4>
+                <p class="text-muted small mb-0">Retenciones: lote A-122R (RN 22/25), ARBA calcula el importe y emite el comprobante. Percepciones: AR-Web actividad 7, método percibido.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="Arba.html" class="btn btn-sm" style="background-color: #ede9fe; color: #5b21b6; border: none; font-weight: 600; padding: 8px 16px;">Padrón ARBA</a>
+                <a href="index.html" class="btn btn-secondary btn-sm" style="background-color: #e2e8f0; color: #334155; border: none; font-weight: 600; padding: 8px 16px;">Volver al Dashboard</a>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <h5 class="mb-3 text-secondary">1. Período</h5>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold small">Fecha Desde</label>
+                    <input type="date" id="fecha-desde" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold small">Fecha Hasta</label>
+                    <input type="date" id="fecha-hasta" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold small">Atajos del mes de "Desde"</label>
+                    <div class="btn-group w-100">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="atajo(1)">1ª quincena</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="atajo(2)">2ª quincena</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="atajo(0)">Mes</button>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button onclick="consultar()" class="btn btn-primary w-100 fw-bold" style="background-color: #0284c7; border: none;">Consultar</button>
+                </div>
+                <div class="col-md-3 text-end">
+                    <div><span class="badge bg-success fs-6 p-2" id="badge-ret">Retenciones: $ 0,00</span></div>
+                    <div class="mt-1"><span class="badge bg-primary fs-6 p-2" id="badge-perc">Percepciones: $ 0,00</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="avisos"></div>
+
+        <div class="row g-4 mb-4">
+            <div class="col-md-6">
+                <div class="main-card h-100 d-flex flex-column justify-content-between">
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="fw-bold text-dark mb-0">Archivo 1: Retenciones (A-122R)</h5>
+                            <span class="badge bg-secondary font-monospace">67 caracteres</span>
+                        </div>
+                        <p class="text-muted small mb-3">Transacción, CUIT, sucursal, fecha, alícuota y base. Se sube en "Emisión de Comprobantes de Retención Web".</p>
+                        <textarea readonly id="txt-ret" class="form-control bg-light font-monospace small" rows="5" style="font-size: 11px; white-space: pre;">Seleccione un período y consulte...</textarea>
+                    </div>
+                    <div class="d-flex gap-2 mt-3 align-items-end">
+                        <div style="width: 90px;">
+                            <label class="form-label small fw-bold mb-0">Actividad</label>
+                            <input id="ret-actividad" class="form-control form-control-sm font-monospace" value="6" title="Código de actividad de retención en ARBA">
+                        </div>
+                        <div style="width: 70px;">
+                            <label class="form-label small fw-bold mb-0">Lote</label>
+                            <input id="ret-lote" class="form-control form-control-sm font-monospace" value="1" title="ARBA no acepta dos lotes con el mismo nombre: si reenviás, cambiá el número">
+                        </div>
+                        <button onclick="copiarTxt('txt-ret')" class="flex-grow-1 btn btn-dark fw-bold btn-sm">Copiar Líneas</button>
+                        <button onclick="descargarLote('retenciones')" class="flex-grow-1 btn btn-outline-dark fw-bold btn-sm">Descargar .ZIP</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="main-card h-100 d-flex flex-column justify-content-between">
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="fw-bold text-dark mb-0">Archivo 2: Percepciones (AR-Web P7)</h5>
+                            <span class="badge bg-secondary font-monospace">81 caracteres</span>
+                        </div>
+                        <p class="text-muted small mb-3">CUIT, fecha, comprobante, monto imponible, alícuota e importe. Se sube en AR-Web, actividad 7.</p>
+                        <textarea readonly id="txt-perc" class="form-control bg-light font-monospace small" rows="5" style="font-size: 11px; white-space: pre;">Seleccione un período y consulte...</textarea>
+                    </div>
+                    <div class="d-flex gap-2 mt-3 align-items-end">
+                        <div style="width: 70px;">
+                            <label class="form-label small fw-bold mb-0">Lote</label>
+                            <input id="perc-lote" class="form-control form-control-sm font-monospace" value="1" title="ARBA no acepta dos lotes con el mismo nombre: si reenviás, cambiá el número">
+                        </div>
+                        <button onclick="copiarTxt('txt-perc')" class="flex-grow-1 btn btn-dark fw-bold btn-sm">Copiar Líneas</button>
+                        <button onclick="descargarLote('percepciones')" class="flex-grow-1 btn btn-outline-dark fw-bold btn-sm">Descargar .ZIP</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 mt-0">
+                <div class="small text-muted mt-2" id="nota-periodo"></div>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <h5 class="mb-3 text-secondary fw-bold">Detalle de Retenciones de IIBB en el Período</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Nº Certificado</th>
+                            <th>Sujeto Retenido (Proveedor)</th>
+                            <th>CUIT</th>
+                            <th>Domicilio / Localidad</th>
+                            <th class="text-end">Alícuota</th>
+                            <th class="text-end">Base de Cálculo</th>
+                            <th class="text-end">Importe Retenido</th>
+                            <th class="text-center">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-ret">
+                        <tr><td colspan="9" class="text-center py-4 text-muted">Realice una consulta para ver los registros.</td></tr>
+                    </tbody>
+                    <tfoot id="pie-ret"></tfoot>
+                </table>
+            </div>
+        </div>
+
+        <div class="main-card">
+            <h5 class="mb-3 text-secondary fw-bold">Detalle de Percepciones de IIBB en el Período</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Nº Certificado</th>
+                            <th>Cliente Percibido</th>
+                            <th>CUIT</th>
+                            <th>Comprobante</th>
+                            <th class="text-end">Alícuota</th>
+                            <th class="text-end">Monto Imponible</th>
+                            <th class="text-end">Importe Percibido</th>
+                            <th class="text-center">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-perc">
+                        <tr><td colspan="9" class="text-center py-4 text-muted">Realice una consulta para ver los registros.</td></tr>
+                    </tbody>
+                    <tfoot id="pie-perc"></tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalEditar" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold" id="edTitulo">Editar</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-6"><label class="form-label small fw-bold">Fecha</label>
+                            <input type="date" id="edFecha" class="form-control form-control-sm"></div>
+                        <div class="col-6"><label class="form-label small fw-bold">Base imponible</label>
+                            <input type="number" step="0.01" id="edBase" class="form-control form-control-sm font-monospace" oninput="recalcular()"></div>
+                        <div class="col-6"><label class="form-label small fw-bold">Alícuota %</label>
+                            <input type="number" step="0.01" id="edAlic" class="form-control form-control-sm font-monospace" oninput="recalcular()"></div>
+                        <div class="col-6"><label class="form-label small fw-bold">Importe</label>
+                            <input type="number" step="0.01" id="edImporte" class="form-control form-control-sm font-monospace"></div>
+                    </div>
+                    <div class="small text-muted mt-2" id="edNota"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="guardar()">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let datos = { retenciones: [], percepciones: [] };
+        let editando = null;
+
+        function escHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function pesos(n) {
+            return '$ ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function fechaAR(iso) { return String(iso || '').slice(0, 10).split('-').reverse().join('/'); }
+        function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+        function atajo(q) {
+            const base = document.getElementById('fecha-desde').value || iso(new Date());
+            const [y, m] = base.split('-').map(Number);
+            const fin = new Date(y, m, 0).getDate();
+            const mm = String(m).padStart(2, '0');
+            document.getElementById('fecha-desde').value = `${y}-${mm}-${q === 2 ? '16' : '01'}`;
+            document.getElementById('fecha-hasta').value = `${y}-${mm}-${q === 1 ? '15' : String(fin).padStart(2, '0')}`;
+            consultar();
+        }
+
+        function periodoLote() {
+            const d = document.getElementById('fecha-desde').value, h = document.getElementById('fecha-hasta').value;
+            if (!d || !h || d.slice(0, 7) !== h.slice(0, 7)) return null;
+            const [y, m] = d.split('-').map(Number);
+            const fin = new Date(y, m, 0).getDate();
+            const di = Number(d.slice(8)), hi = Number(h.slice(8));
+            let q = null;
+            if (di === 1 && hi === 15) q = 1;
+            else if (di === 16 && hi === fin) q = 2;
+            else if (di === 1 && hi === fin) q = 0;
+            return q === null ? null : { anio: y, mes: m, quincena: q };
+        }
+
+        function filaClase(r) { return r.error ? 'fila-error' : ((r.aviso || r.sin_cta_cte) ? 'fila-aviso' : ''); }
+
+        function celdaNotas(r) {
+            const n = [];
+            if (r.error) n.push(`<div class="small text-danger">${escHtml(r.error)}</div>`);
+            if (r.aviso) n.push(`<div class="small text-warning-emphasis">${escHtml(r.aviso)}</div>`);
+            if (r.sin_cta_cte) n.push('<span class="badge bg-warning text-dark">Sin renglón en cta cte</span>');
+            return n.join('');
+        }
+
+        function botones(tipo, i) {
+            return `<div class="d-flex gap-1 justify-content-center">
+                <button onclick="editar('${tipo}', ${i})" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold">Editar</button>
+                <button onclick="eliminar('${tipo}', ${i})" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold">Eliminar</button></div>`;
+        }
+
+        function pintarRet(res) {
+            const tb = document.getElementById('tabla-ret');
+            datos.retenciones = res.registros;
+            if (!res.registros.length) {
+                tb.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No hay retenciones de IIBB en el período.</td></tr>';
+                document.getElementById('pie-ret').innerHTML = '';
+                return;
+            }
+            tb.innerHTML = res.registros.map((r, i) => `<tr class="${filaClase(r)}">
+                <td class="font-monospace">${fechaAR(r.fecha)}</td>
+                <td><span class="badge bg-secondary font-monospace">${escHtml(r.certificado)}</span></td>
+                <td class="fw-bold text-dark">${escHtml(r.nombre)}${celdaNotas(r)}</td>
+                <td><code class="text-dark font-monospace">${escHtml(r.cuit)}</code></td>
+                <td class="small text-muted">${escHtml(r.domicilio || 'S/D')}${r.localidad ? ', ' + escHtml(r.localidad) : ''}</td>
+                <td class="text-end font-monospace">${Number(r.alicuota).toFixed(2).replace('.', ',')}%</td>
+                <td class="text-end font-monospace">${pesos(r.base)}</td>
+                <td class="text-end fw-bold text-success font-monospace">${pesos(r.importe)}</td>
+                <td class="text-center">${botones('retenciones', i)}</td>
+            </tr>`).join('');
+            document.getElementById('pie-ret').innerHTML = `<tr class="fw-bold">
+                <td colspan="6">${res.registros.length} retención(es) · ${res.en_lote} van en el lote</td>
+                <td class="text-end font-monospace">${pesos(res.total_base)}</td>
+                <td class="text-end font-monospace text-success">${pesos(res.total_importe)}</td><td></td></tr>`;
+        }
+
+        function pintarPerc(res) {
+            const tb = document.getElementById('tabla-perc');
+            datos.percepciones = res.registros;
+            if (!res.registros.length) {
+                tb.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No hay percepciones de IIBB en el período.</td></tr>';
+                document.getElementById('pie-perc').innerHTML = '';
+                return;
+            }
+            tb.innerHTML = res.registros.map((r, i) => `<tr class="${filaClase(r)}">
+                <td class="font-monospace">${fechaAR(r.fecha)}</td>
+                <td><span class="badge bg-secondary font-monospace">${escHtml(r.certificado)}</span></td>
+                <td class="fw-bold text-dark">${escHtml(r.nombre)}${celdaNotas(r)}</td>
+                <td><code class="text-dark font-monospace">${escHtml(r.cuit)}</code></td>
+                <td class="small">${escHtml(r.comprobante || '-')}</td>
+                <td class="text-end font-monospace">${Number(r.alicuota).toFixed(2).replace('.', ',')}%</td>
+                <td class="text-end font-monospace">${pesos(r.base)}</td>
+                <td class="text-end fw-bold text-primary font-monospace">${pesos(r.importe)}</td>
+                <td class="text-center">${botones('percepciones', i)}</td>
+            </tr>`).join('');
+            document.getElementById('pie-perc').innerHTML = `<tr class="fw-bold">
+                <td colspan="6">${res.registros.length} percepción(es) · ${res.en_lote} van en el lote</td>
+                <td class="text-end font-monospace">${pesos(res.total_base)}</td>
+                <td class="text-end font-monospace text-primary">${pesos(res.total_importe)}</td><td></td></tr>`;
+        }
+
+        function pintarAvisos(d) {
+            const partes = [];
+            if (d.sin_cta_cte.length) {
+                partes.push(`<div class="alert alert-warning">
+                    <div class="fw-bold mb-1">Retenciones de IIBB sin renglón en la cuenta corriente (${d.sin_cta_cte.length})</div>
+                    <div class="small mb-2">Se borró el movimiento en la cuenta corriente del proveedor pero el certificado quedó. Si no corresponde informarlas, eliminalas: se borra solo el certificado.</div>
+                    <table class="table table-sm mb-0 bg-white"><tbody>${d.sin_cta_cte.map(r => `<tr>
+                        <td class="font-monospace">${fechaAR(r.fecha)}</td>
+                        <td class="font-monospace">${escHtml(r.nro_comprobante)}</td>
+                        <td>${escHtml(r.razon_social)} <span class="text-muted font-monospace small">${escHtml(r.cuit)}</span></td>
+                        <td class="text-end font-monospace">${pesos(r.importe_retenido)}</td>
+                        <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" onclick="eliminarId(${r.id}, '${escHtml(r.nro_comprobante)}', '${escHtml(r.razon_social)}', ${Number(r.importe_retenido || 0)}, false)">Eliminar</button></td>
+                    </tr>`).join('')}</tbody></table></div>`);
+            }
+            const malos = [...d.retenciones.errores, ...d.percepciones.errores];
+            if (malos.length) {
+                partes.push(`<div class="alert alert-danger py-2"><strong>No van en el lote hasta corregirlas:</strong><ul class="mb-0 small">${malos.map(e => `<li>${escHtml(e)}</li>`).join('')}</ul></div>`);
+            }
+            document.getElementById('avisos').innerHTML = partes.join('');
+        }
+
+        function pintarArchivos(d) {
+            const lineas = regs => regs.filter(r => r.linea).map(r => r.linea).join('\n');
+            document.getElementById('txt-ret').value = lineas(d.retenciones.registros) || 'Sin retenciones para informar en el período.';
+            document.getElementById('txt-perc').value = lineas(d.percepciones.registros) || 'Sin percepciones para informar en el período.';
+            const p = periodoLote();
+            document.getElementById('nota-periodo').innerHTML = p
+                ? `Los .ZIP se generan para el período <strong>${String(p.mes).padStart(2, '0')}/${p.anio} ${p.quincena === 0 ? 'mensual' : (p.quincena + 'ª quincena')}</strong>.`
+                : '<span class="text-danger">Para descargar el .ZIP elegí una quincena (1 al 15 o 16 a fin de mes) o el mes completo. Podés usar los atajos.</span>';
+        }
+
+        async function consultar() {
+            const desde = document.getElementById('fecha-desde').value;
+            const hasta = document.getElementById('fecha-hasta').value;
+            if (!desde || !hasta) return alert('Elegí las fechas.');
+            const tbR = document.getElementById('tabla-ret'), tbP = document.getElementById('tabla-perc');
+            tbR.innerHTML = tbP.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">Consultando...</td></tr>';
+            let d;
+            try {
+                const res = await fetch(`/api/arba/iibb?desde=${desde}&hasta=${hasta}`);
+                d = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(d.detail || `Error ${res.status}`);
+            } catch (e) {
+                const msg = `<tr><td colspan="9" class="text-center py-4 text-danger">No se pudo consultar: ${escHtml(e.message)}. Si se está importando el padrón, esperá a que termine y volvé a consultar.</td></tr>`;
+                tbR.innerHTML = tbP.innerHTML = msg;
+                return;
+            }
+            pintarRet(d.retenciones);
+            pintarPerc(d.percepciones);
+            pintarAvisos(d);
+            pintarArchivos(d);
+            document.getElementById('badge-ret').innerText = 'Retenciones: ' + pesos(d.retenciones.total_importe);
+            document.getElementById('badge-perc').innerText = 'Percepciones: ' + pesos(d.percepciones.total_importe);
+        }
+
+        function editar(tipo, i) {
+            const r = datos[tipo][i];
+            editando = r;
+            const ret = tipo === 'retenciones';
+            document.getElementById('edTitulo').innerText = `Editar ${ret ? 'retención' : 'percepción'} ${r.certificado} — ${r.nombre}`;
+            document.getElementById('edFecha').value = r.fecha;
+            document.getElementById('edBase').value = Number(r.base).toFixed(2);
+            document.getElementById('edAlic').value = Number(r.alicuota).toFixed(2);
+            document.getElementById('edImporte').value = Number(r.importe).toFixed(2);
+            document.getElementById('edNota').innerText = ret
+                ? 'Al cambiar base o alícuota el importe se recalcula. También se actualiza el renglón de retención en la cuenta corriente del proveedor.'
+                : 'Solo cambia el certificado de percepción: la factura de la cuenta corriente no se toca.';
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditar')).show();
+        }
+
+        function recalcular() {
+            const base = Number(document.getElementById('edBase').value || 0);
+            const alic = Number(document.getElementById('edAlic').value || 0);
+            document.getElementById('edImporte').value = (Math.round(base * alic) / 100).toFixed(2);
+        }
+
+        async function guardar() {
+            if (!editando) return;
+            const body = {
+                fecha: document.getElementById('edFecha').value,
+                base_imponible: Number(document.getElementById('edBase').value || 0),
+                alicuota: Number(document.getElementById('edAlic').value || 0),
+                importe_retenido: Number(document.getElementById('edImporte').value || 0),
+            };
+            const res = await fetch('/api/retenciones/' + editando.id, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(d.detail || 'No se pudo guardar.');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditar')).hide();
+            consultar();
+        }
+
+        function eliminar(tipo, i) {
+            const r = datos[tipo][i];
+            eliminarId(r.id, r.certificado, r.nombre, r.importe, tipo === 'retenciones' && !r.sin_cta_cte, tipo === 'percepciones');
+        }
+
+        async function eliminarId(id, cert, nombre, importe, conCtaCte, esPercepcion) {
+            let detalle;
+            if (esPercepcion) detalle = `Se elimina el certificado de percepción ${cert} de ${nombre} (${pesos(importe)}).\nLa factura de la cuenta corriente NO se toca.`;
+            else if (conCtaCte) detalle = `Se elimina el certificado ${cert} de ${nombre} (${pesos(importe)}) y su renglón de retención en la cuenta corriente del proveedor (el saldo del proveedor cambia en ese importe).\nLa orden de pago y las facturas NO se tocan.`;
+            else detalle = `Se elimina el certificado ${cert} de ${nombre} (${pesos(importe)}). No tiene renglón en la cuenta corriente.`;
+            if (!confirm(detalle + '\n\n¿Eliminar?')) return;
+            const res = await fetch('/api/retenciones/' + id, { method: 'DELETE' });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(d.detail || 'No se pudo eliminar.');
+            consultar();
+        }
+
+        function copiarTxt(id) {
+            const v = document.getElementById(id).value;
+            if (!v || /^(Seleccione|Sin )/.test(v)) return alert('No hay líneas para copiar.');
+            navigator.clipboard.writeText(v).then(() => alert('Líneas copiadas al portapapeles.'));
+        }
+
+        async function descargarLote(tipo) {
+            const p = periodoLote();
+            if (!p) return alert('Para el .ZIP elegí una quincena (1 al 15 o 16 a fin de mes) o el mes completo.');
+            const q = new URLSearchParams({
+                tipo, anio: p.anio, mes: p.mes, quincena: p.quincena,
+                actividad: document.getElementById('ret-actividad').value.trim() || '6',
+                lote: document.getElementById(tipo === 'retenciones' ? 'ret-lote' : 'perc-lote').value.trim() || '1',
+            });
+            const res = await fetch('/api/arba/lotes/descargar?' + q.toString());
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                return alert(d.detail || 'No se pudo generar el lote.');
+            }
+            const disp = res.headers.get('Content-Disposition') || '';
+            const nombre = (disp.match(/filename="([^"]+)"/) || [])[1] || 'lote_arba.zip';
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(await res.blob());
+            a.download = nombre;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        window.onload = () => {
+            const hoy = new Date();
+            document.getElementById('fecha-desde').value = iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+            atajo(0);
+        };
+    </script>
+</body>
+</html>
