@@ -549,6 +549,28 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         conn.close()
         return {"status": "success"}
 
+    @app.delete("/api/agro/campanias/{campania_id}")
+    def api_agro_campania_borrar(campania_id: int, request: Request, solo_plan: bool = False):
+        from agro_campania import borrar_campania
+
+        _exigir_admin(request)
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            r = borrar_campania(cur, get_empresa_activa_id(), campania_id, solo_plan=solo_plan)
+            if not r["ok"]:
+                if r.get("usos"):
+                    detalle = ", ".join(f"{u['cantidad']} {u['dato']}" for u in r["usos"])
+                    raise HTTPException(
+                        409,
+                        f"La campaña {r['codigo']} tiene datos cargados ({detalle}), así que no se borra.",
+                    )
+                raise HTTPException(404, r.get("error") or "La campaña no existe.")
+            conn.commit()
+            return r
+        finally:
+            conn.close()
+
     @app.get("/api/agro/campos")
     def api_agro_campos(tipo: Optional[str] = None):
         empresa_id = get_empresa_activa_id()

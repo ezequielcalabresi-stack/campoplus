@@ -727,3 +727,105 @@ def listar_planificacion(cursor, campania_id: int) -> List[Dict[str, Any]]:
         (campania_id,),
     )
     return [dict(r) for r in cursor.fetchall()]
+
+
+# Datos reales que impiden borrar una campaña: (tabla, columna, descripción).
+_USOS_POR_ID = (
+    ("ordenes_trabajo", "campania_id", "órdenes de trabajo"),
+    ("almacen_movimientos", "campania_id", "movimientos de almacén"),
+    ("contratos_arrendamiento", "campania_id", "contratos de arrendamiento"),
+    ("campo_participaciones", "campania_id", "participaciones con otras sociedades"),
+)
+_USOS_POR_CODIGO = (
+    ("margenes_access", "campania_codigo", "líneas de costo"),
+    ("alquileres_cta_cte", "campania_codigo", "movimientos de cuenta corriente de alquileres"),
+    ("contratos_alquileres", "campania_codigo", "contratos de alquiler"),
+    ("arca_ip1", "campania_codigo", "información productiva ARCA"),
+    ("arca_ip2", "campania_codigo", "información productiva ARCA"),
+    ("factura_imputaciones", "campania_codigo", "imputaciones de facturas"),
+    ("cosecha_silobolsas", "campania", "silobolsas"),
+    ("cosecha_camiones", "campania", "camiones de cosecha"),
+    ("acopio_romaneos", "campania", "romaneos de acopio"),
+    ("acopio_stock_informado", "campania", "stock informado por acopios"),
+    ("liquidaciones_granos", "campania", "liquidaciones de granos"),
+)
+
+
+def _columnas(cursor, tabla: str) -> set:
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (tabla,))
+    if not cursor.fetchone():
+        return set()
+    cursor.execute(f"PRAGMA table_info({tabla});")
+    return {r[1] for r in cursor.fetchall()}
+
+
+def uso_campania(cursor, empresa_id: int, campania_id: int, codigo: str) -> List[Dict[str, Any]]:
+    """Cuenta los datos reales cargados en la campaña (los que no se pueden borrar con ella)."""
+    usos: Dict[str, int] = {}
+    for tabla, col, desc in _USOS_POR_ID:
+        cols = _columnas(cursor, tabla)
+        if col not in cols:
+            continue
+        filtro = " AND empresa_id = ?" if "empresa_id" in cols else ""
+        params = (campania_id, empresa_id) if filtro else (campania_id,)
+        cursor.execute(f"SELECT COUNT(*) FROM {tabla} WHERE {col} = ?{filtro};", params)
+        n = int(cursor.fetchone()[0] or 0)
+        if n:
+            usos[desc] = usos.get(desc, 0) + n
+    for tabla, col, desc in _USOS_POR_CODIGO:
+        cols = _columnas(cursor, tabla)
+        if col not in cols:
+            continue
+        filtro = " AND empresa_id = ?" if "empresa_id" in cols else ""
+        cursor.execute(
+            f"SELECT {col}, COUNT(*) FROM {tabla} WHERE COALESCE({col}, '') <> ''{filtro} GROUP BY {col};",
+            (empresa_id,) if filtro else (),
+        )
+        n = sum(int(c or 0) for v, c in cursor.fetchall() if normalizar_codigo_campania(str(v)) == codigo)
+        if n:
+            usos[desc] = usos.get(desc, 0) + n
+    return [{"dato": d, "cantidad": n} for d, n in usos.items()]
+
+
+def borrar_campania(cursor, empresa_id: int, campania_id: int, solo_plan: bool = False) -> Dict[str, Any]:
+    """Borra una campaña sin datos reales, con su plan de rotación y sus ajustes de insumos.
+
+    Si tiene órdenes, costos, cuenta corriente, cosecha, etc. no borra nada y devuelve los usos.
+    Con solo_plan borra únicamente el plan y los ajustes de insumos; la campaña y sus datos quedan.
+    """
+    cursor.execute(
+        "SELECT id, codigo, activa FROM campanias_agro WHERE id = ? AND empresa_id = ?;",
+        (campania_id, empresa_id),
+    )
+    camp = cursor.fetchone()
+    if not camp:
+        return {"ok": False, "error": "La campaña no existe."}
+    codigo = normalizar_codigo_campania(camp["codigo"])
+    if not solo_plan:
+        usos = uso_campania(cursor, empresa_id, campania_id, codigo)
+        if usos:
+            return {"ok": False, "codigo": codigo, "usos": usos}
+
+    previa = campania_previa_id(cursor, empresa_id, campania_id) if int(camp["activa"] or 0) else None
+    tablas = [("planificacion_lote", "lotes del plan"), ("plan_insumos_ajustes", "ajustes de insumos")]
+    if not solo_plan:
+        tablas.insert(1, ("lote_superficie_campania", "superficies de lote de la campaña"))
+    borrados: Dict[str, int] = {}
+    for tabla, desc in tablas:
+        if "campania_id" not in _columnas(cursor, tabla):
+            continue
+        cursor.execute(f"DELETE FROM {tabla} WHERE campania_id = ?;", (campania_id,))
+        if cursor.rowcount:
+            borrados[desc] = cursor.rowcount
+    if solo_plan:
+        if previa:
+            cursor.execute("UPDATE campanias_agro SET activa = 0 WHERE id = ?;", (campania_id,))
+    else:
+        cursor.execute("DELETE FROM campanias_agro WHERE id = ? AND empresa_id = ?;", (campania_id, empresa_id))
+
+    if previa:
+        cursor.execute("UPDATE campanias_agro SET activa = 1 WHERE id = ?;", (previa[0],))
+    return {
+        "ok": True, "codigo": codigo, "solo_plan": solo_plan,
+        "borrados": borrados, "nueva_activa": previa[1] if previa else None,
+    }
