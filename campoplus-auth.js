@@ -416,6 +416,87 @@
     var capa = document.getElementById("campoplusFondo");
     if (st) st.remove();
     if (capa) capa.remove();
+    detenerVeloTextos();
+  }
+
+  /*
+   * Bloques de texto que quedan directo sobre la foto (títulos, pestañas, filtros sin tarjeta):
+   * se les da un velo claro. Las tarjetas con fondo propio no se tocan.
+   */
+  var VELO = "cp-sobre-foto";
+  var veloObs = null;
+  var veloTimer = null;
+
+  function fondoOpaco(st) {
+    if (st.backgroundImage && st.backgroundImage !== "none") return true;
+    var m = /rgba?\(([^)]+)\)/.exec(st.backgroundColor || "");
+    if (!m) return false;
+    var p = m[1].split(",");
+    return p.length < 4 || parseFloat(p[3]) >= 0.6;
+  }
+
+  function tieneTextoPropio(el) {
+    for (var n = el.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === 3 && n.nodeValue.trim()) return true;
+    }
+    return false;
+  }
+
+  /* Devuelve {texto, tarjeta}: si el subárbol tiene texto sobre la foto y si contiene una tarjeta opaca grande. */
+  function escanearVelo(el, marcar) {
+    var res = { texto: tieneTextoPropio(el), tarjeta: false };
+    var hijos = [];
+    for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
+      var tag = c.tagName;
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "TEMPLATE" || tag === "NOSCRIPT" || c.id === "campoplusFondo") continue;
+      if (!c.getClientRects().length) continue;
+      var st = getComputedStyle(c);
+      if (st.visibility === "hidden") continue;
+      if (fondoOpaco(st)) {
+        if (c.offsetWidth >= 250 && c.offsetHeight >= 60) res.tarjeta = true;
+        continue;
+      }
+      var r = escanearVelo(c, marcar);
+      hijos.push({ el: c, r: r });
+      if (r.texto) res.texto = true;
+      if (r.tarjeta) res.tarjeta = true;
+    }
+    if (res.tarjeta || el === document.body) {
+      hijos.forEach(function (h) {
+        if (h.r.texto && !h.r.tarjeta) marcar.push(h.el);
+      });
+    }
+    return res;
+  }
+
+  function aplicarVeloTextos() {
+    if (!document.body || !document.getElementById("campoplusFondo")) return;
+    var previos = document.querySelectorAll("." + VELO);
+    for (var i = 0; i < previos.length; i++) previos[i].classList.remove(VELO);
+    var marcar = [];
+    escanearVelo(document.body, marcar);
+    marcar.forEach(function (el) { el.classList.add(VELO); });
+  }
+
+  function programarVelo() {
+    clearTimeout(veloTimer);
+    veloTimer = setTimeout(aplicarVeloTextos, 250);
+  }
+
+  function iniciarVeloTextos() {
+    aplicarVeloTextos();
+    if (!veloObs && window.MutationObserver) {
+      veloObs = new MutationObserver(programarVelo);
+      veloObs.observe(document.body, { childList: true, subtree: true });
+      window.addEventListener("load", programarVelo);
+    }
+  }
+
+  function detenerVeloTextos() {
+    if (veloObs) { veloObs.disconnect(); veloObs = null; }
+    clearTimeout(veloTimer);
+    var previos = document.querySelectorAll("." + VELO);
+    for (var i = 0; i < previos.length; i++) previos[i].classList.remove(VELO);
   }
 
   /**
@@ -449,12 +530,14 @@
         "background:url('" + url.replace(/'/g, "%27") + "') center/cover no-repeat;filter:blur(" + blur + "px)}" +
         "#campoplusFondo::after{content:'';position:absolute;inset:0;background:rgba(241,245,249," + velo + ")}" +
         "body>header,body>h1,body>h2,body>div>h1,body>div>h2{text-shadow:0 1px 3px rgba(255,255,255,.9)}" +
-        "@media print{#campoplusFondo{display:none}}";
+        "." + VELO + "{background-color:rgba(248,250,252,.88)!important;box-shadow:0 0 0 6px rgba(248,250,252,.88);border-radius:6px}" +
+        "@media print{#campoplusFondo{display:none}." + VELO + "{background-color:transparent!important;box-shadow:none!important}}";
       if (!document.getElementById("campoplusFondo")) {
         var capa = document.createElement("div");
         capa.id = "campoplusFondo";
         document.body.insertBefore(capa, document.body.firstChild);
       }
+      iniciarVeloTextos();
     };
     img.onerror = quitarFondo;
     img.src = url;
