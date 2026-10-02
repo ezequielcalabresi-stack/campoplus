@@ -15,8 +15,11 @@
         @media print {
             @page { size: A4; margin: 12mm; }
             body * { visibility: hidden !important; }
-            #areaCertPerc, #areaCertPerc * { visibility: visible !important; }
-            #areaCertPerc { position: absolute; left: 0; top: 0; width: 100%; }
+            body:not(.print-resumen) #areaCertPerc, body:not(.print-resumen) #areaCertPerc * { visibility: visible !important; }
+            body:not(.print-resumen) #areaCertPerc { position: absolute; left: 0; top: 0; width: 100%; }
+            body.print-resumen #areaResumen, body.print-resumen #areaResumen * { visibility: visible !important; }
+            body.print-resumen #areaResumen { position: absolute; left: 0; top: 0; width: 100%; }
+            body.print-resumen .table-responsive { max-height: none !important; overflow: visible !important; }
             .modal, .modal-dialog, .modal-content, .modal-body { position: static !important; transform: none !important; box-shadow: none !important; border: none !important; width: 100% !important; max-width: none !important; }
             .modal-backdrop, .modal-header, .btn, .no-print { display: none !important; }
         }
@@ -102,8 +105,45 @@
                 </div>
                 <button type="submit" class="btn btn-success fw-bold px-4 py-2">Emitir factura y certificado</button>
             </div>
-            <p class="small text-muted mb-0">Si la empresa es agente de percepción IIBB, se calcula la alícuota del padrón ARBA sobre el neto y se genera el certificado imprimible.</p>
+            <p class="small text-muted mb-0">Si la empresa es agente de percepción IIBB, se calcula la alícuota del padrón ARBA sobre el neto y se genera el certificado imprimible.
+                Para una factura hecha en la web de AFIP (Comprobantes en línea), cargala acá con el mismo número, neto, IVA y percepción: el certificado sale con la numeración correlativa del sistema.</p>
         </form>
+    </div>
+
+    <div class="main-card mt-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3 no-print">
+            <div>
+                <h5 class="fw-bold mb-0">Ventas y percepciones del período</h5>
+                <span class="small text-muted">Resumen para el estudio contable y reimpresión de certificados.</span>
+            </div>
+            <div class="d-flex gap-2 align-items-end">
+                <div>
+                    <label class="form-label small fw-bold mb-0">Mes</label>
+                    <input type="month" id="resMes" class="form-control form-control-sm" onchange="cargarResumen()">
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="imprimirResumen()">Imprimir / PDF</button>
+                <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="descargarResumen()">Descargar Excel</button>
+            </div>
+        </div>
+        <div id="areaResumen">
+            <div class="d-none d-print-block mb-2">
+                <h5 class="fw-bold mb-0" id="resTituloPrint"></h5>
+                <div class="small" id="resEmpresaPrint"></div>
+            </div>
+            <div class="table-responsive" style="max-height:420px;">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Fecha</th><th>Comprobante</th><th>Cliente</th><th>CUIT</th>
+                            <th class="text-end">Neto</th><th class="text-end">IVA</th><th class="text-end">Perc. IIBB</th>
+                            <th class="text-end">Total</th><th>Certificado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resTabla"><tr><td colspan="9" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+                    <tfoot id="resPie"></tfoot>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -224,8 +264,7 @@ function recalc() {
 
 function htmlCertPerc(data) {
     const cli = data.cliente || {};
-    const fecha = (data.fecha || document.getElementById('txtFecha').value || '').split('-');
-    const fAR = fecha.length === 3 ? `${fecha[2]}/${fecha[1]}/${fecha[0]}` : document.getElementById('txtFecha').value;
+    const fAR = fechaAR(data.fecha);
     const alic = (Number(data.alicuota_percepcion || 0) * 100).toFixed(2);
     return `
     <div class="certificado-container bg-white">
@@ -238,7 +277,7 @@ function htmlCertPerc(data) {
             <div class="text-end">
                 <span class="d-block fw-bold">Certificado Nº: ${esc(data.cert_percepcion || '--')}</span>
                 <span class="text-muted small">Fecha: ${esc(fAR)}</span>
-                <span class="text-muted small d-block">Comprobante: ${esc(document.getElementById('selTipo').value)} ${esc(document.getElementById('txtNro').value)}</span>
+                <span class="text-muted small d-block">Comprobante: ${esc(data.comprobante || '')}</span>
             </div>
         </div>
         <div class="cert-section-title">A. - Agente de percepción</div>
@@ -259,7 +298,7 @@ function htmlCertPerc(data) {
         <table class="table table-bordered text-center font-monospace mb-0" style="font-size:12px;">
             <thead class="table-light"><tr><th>Base imponible (neto)</th><th>Alícuota</th><th>Importe percibido</th></tr></thead>
             <tbody><tr>
-                <td class="fw-bold">${money(CampoMoney.parse(document.getElementById('txtNeto').value))}</td>
+                <td class="fw-bold">${money(data.base)}</td>
                 <td class="fw-bold">${alic}%</td>
                 <td class="fw-bold text-danger fs-6">${money(data.percepcion_iibb)}</td>
             </tr></tbody>
@@ -300,8 +339,10 @@ async function guardarVenta(ev) {
         if (!res.ok) throw new Error(data.detail || 'Error al guardar');
         if (data.cert_percepcion && perc > 0.01) {
             data.fecha = payload.fecha;
-            document.getElementById('areaCertPerc').innerHTML = htmlCertPerc(data);
-            new bootstrap.Modal(document.getElementById('modalCertPerc')).show();
+            data.base = neto;
+            data.comprobante = `${payload.tipo_comprobante} ${payload.numero_comprobante}`;
+            mostrarCertificado(data);
+            cargarResumen();
         } else {
             alert(data.message || 'Factura registrada.');
             location.href = 'detallegestioncc.html?cuit=' + encodeURIComponent(cuit);
@@ -311,7 +352,99 @@ async function guardarVenta(ev) {
     }
 }
 
-window.onload = init;
+function fechaAR(f) {
+    const p = String(f || '').slice(0, 10).split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : String(f || '');
+}
+
+function mostrarCertificado(data) {
+    document.body.classList.remove('print-resumen');
+    document.getElementById('areaCertPerc').innerHTML = htmlCertPerc(data);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCertPerc')).show();
+}
+
+let resFilas = [];
+
+async function cargarResumen() {
+    const mes = document.getElementById('resMes').value;
+    if (!mes) return;
+    const [y, m] = mes.split('-').map(Number);
+    const hasta = `${mes}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    const tb = document.getElementById('resTabla');
+    const res = await fetch(`/api/facturas_venta?desde=${mes}-01&hasta=${hasta}`);
+    resFilas = res.ok ? await res.json() : [];
+    if (!res.ok) {
+        tb.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-3">No se pudo cargar el resumen.</td></tr>';
+        return;
+    }
+    tb.innerHTML = resFilas.map((r, i) => `<tr>
+        <td class="font-monospace">${fechaAR(r.fecha)}</td>
+        <td>${esc(r.tipo_comprobante)} <span class="font-monospace">${esc(r.numero_comprobante)}</span></td>
+        <td>${esc(r.cliente)}</td>
+        <td class="font-monospace small">${esc(r.cuit)}</td>
+        <td class="text-end font-monospace">${money(r.neto)}</td>
+        <td class="text-end font-monospace">${money(r.iva)}</td>
+        <td class="text-end font-monospace">${Number(r.percepcion_iibb || 0) ? money(r.percepcion_iibb) : ''}</td>
+        <td class="text-end font-monospace fw-bold">${money(r.total)}</td>
+        <td>${r.cert_percepcion ? `<button type="button" class="btn btn-sm btn-outline-primary py-0 no-print" onclick="reimprimirCertificado(${i})">${esc(r.cert_percepcion)}</button><span class="d-none d-print-inline">${esc(r.cert_percepcion)}</span>` : ''}</td>
+    </tr>`).join('') || '<tr><td colspan="9" class="text-center text-muted py-3">No hay facturas de venta cargadas en este mes.</td></tr>';
+    const tot = k => resFilas.reduce((s, r) => s + Number(r[k] || 0), 0);
+    document.getElementById('resPie').innerHTML = resFilas.length ? `<tr class="table-light fw-bold">
+        <td colspan="4">Total ${resFilas.length} comprobante(s)</td>
+        <td class="text-end font-monospace">${money(tot('neto'))}</td>
+        <td class="text-end font-monospace">${money(tot('iva'))}</td>
+        <td class="text-end font-monospace">${money(tot('percepcion_iibb'))}</td>
+        <td class="text-end font-monospace">${money(tot('total'))}</td><td></td></tr>` : '';
+    document.getElementById('resTituloPrint').textContent = `Ventas y percepciones IIBB · ${String(m).padStart(2, '0')}/${y}`;
+    document.getElementById('resEmpresaPrint').textContent = `${empresa.razon_social || ''} · CUIT ${empresa.cuit || ''}`;
+}
+
+async function reimprimirCertificado(i) {
+    const r = resFilas[i];
+    const res = await fetch('/api/retenciones/certificado?nro=' + encodeURIComponent(r.cert_percepcion));
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo cargar el certificado.');
+    mostrarCertificado({
+        cert_percepcion: r.cert_percepcion,
+        fecha: r.fecha,
+        comprobante: `${r.tipo_comprobante} ${r.numero_comprobante}`,
+        base: d.base_imponible,
+        alicuota_percepcion: Number(d.alicuota_pct || 0) / 100,
+        percepcion_iibb: d.importe_retenido,
+        cliente: d.sujeto || {},
+    });
+}
+
+function imprimirResumen() {
+    if (!resFilas.length) return alert('No hay comprobantes en el mes elegido.');
+    document.body.classList.add('print-resumen');
+    window.print();
+    setTimeout(() => document.body.classList.remove('print-resumen'), 500);
+}
+
+function descargarResumen() {
+    if (!resFilas.length) return alert('No hay comprobantes en el mes elegido.');
+    const num = v => Number(v || 0).toFixed(2).replace('.', ',');
+    const txt = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const filas = [['Fecha', 'Comprobante', 'Número', 'Cliente', 'CUIT', 'Neto', 'IVA', 'Percepción IIBB', 'Total', 'Certificado percepción', 'Régimen']];
+    resFilas.forEach(r => filas.push([
+        fechaAR(r.fecha), txt(r.tipo_comprobante), txt(r.numero_comprobante), txt(r.cliente), txt(r.cuit),
+        num(r.neto), num(r.iva), num(r.percepcion_iibb), num(r.total), txt(r.cert_percepcion || ''), txt(r.regimen_percepcion || ''),
+    ]));
+    const csv = '\ufeff' + filas.map(f => f.join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `ventas_percepciones_${document.getElementById('resMes').value}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+window.onload = async () => {
+    document.getElementById('resMes').value = new Date().toISOString().slice(0, 7);
+    await init();
+    cargarResumen();
+};
 </script>
 </body>
 </html>

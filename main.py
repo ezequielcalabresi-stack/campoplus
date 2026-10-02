@@ -2280,12 +2280,9 @@ def obtener_siguiente_certificado_db(tipo: str, base_defecto: int) -> int:
         if nro and '-' in str(nro):
             partes = str(nro).split('-')
             if len(partes) >= 2:
-                try:
-                    num = int(partes[-1])
-                    if num > max_secuencia:
-                        max_secuencia = num
-                except ValueError:
-                    pass
+                digitos = "".join(ch for ch in partes[-1] if ch.isdigit())
+                if digitos and int(digitos) > max_secuencia:
+                    max_secuencia = int(digitos)
     return max_secuencia
 
 # --- ENDPOINTS API ---
@@ -6732,6 +6729,13 @@ def _asegurar_col_libro_iva(cursor) -> None:
             cursor.execute(f"ALTER TABLE cuentas_corrientes ADD COLUMN {col} {ddl};")
 
 
+def _asegurar_col_comprobante_origen(cursor) -> None:
+    """Factura de venta a la que pertenece un certificado de percepción."""
+    cursor.execute("PRAGMA table_info(retenciones_sicore);")
+    if "comprobante_origen" not in {c[1] for c in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE retenciones_sicore ADD COLUMN comprobante_origen TEXT;")
+
+
 @app.post("/api/facturas")
 def guardar_factura(data: FacturaModel):
     empresa_id = get_empresa_activa_id()
@@ -7179,6 +7183,17 @@ def emitir_factura_venta(data: FacturaVentaModel):
     venc = (data.vencimiento or fecha)[:10]
     tipo = (data.tipo_comprobante or "Factura A").strip()
     _asegurar_col_libro_iva(cursor)
+    cursor.execute(
+        """
+        SELECT 1 FROM cuentas_corrientes
+        WHERE REPLACE(entidad_id, '-', '') = ? AND tipo_comprobante = ? AND numero_comprobante = ?
+          AND libro_iva = 'V' AND COALESCE(empresa_id, 1) = ?;
+        """,
+        (cuit_clean, tipo, nro, empresa_id),
+    )
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(409, f"La {tipo} {nro} de este cliente ya está cargada.")
 
     cursor.execute(
         """
@@ -7222,16 +7237,18 @@ def emitir_factura_venta(data: FacturaVentaModel):
     cert_perc = None
     if perc > 0.01:
         anio = fecha[:4] if len(fecha) >= 4 else "2026"
-        sec = obtener_siguiente_certificado_db("PERC_IIBB", 1000) + 1
+        sec = obtener_siguiente_certificado_db("PERCEPCION_IIBB", 1000) + 1
         cert_perc = f"{anio}-P{sec}"
         razon = ent["razon_social"] or ent["nombre_fantasia"] or "Cliente"
+        _asegurar_col_comprobante_origen(cursor)
         cursor.execute(
             """
             INSERT INTO retenciones_sicore
-                (fecha, razon_social, cuit, base_imponible, regimen, importe_retenido, nro_comprobante, tipo_retencion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'PERCEPCION_IIBB');
+                (fecha, razon_social, cuit, base_imponible, regimen, importe_retenido, nro_comprobante,
+                 tipo_retencion, comprobante_origen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'PERCEPCION_IIBB', ?);
             """,
-            (fecha, razon, ent["cuit"], neto, f"ARBA-PERC {(alic * 100):.2f}%", perc, cert_perc),
+            (fecha, razon, ent["cuit"], neto, f"ARBA-PERC {(alic * 100):.2f}%", perc, cert_perc, f"{tipo} {nro}"),
         )
         # Renglón informativo en CC (opcional — la perc ya está en el total de la factura).
         # No duplicamos haber/debe: solo el certificado.
@@ -7254,6 +7271,39 @@ def emitir_factura_venta(data: FacturaVentaModel):
             "localidad": ent["localidad"] or "",
         },
     }
+
+
+@app.get("/api/facturas_venta")
+def listar_facturas_venta(desde: str, hasta: str):
+    """Facturas de venta del período con su percepción IIBB (resumen para el estudio contable)."""
+    empresa_id = get_empresa_activa_id()
+    conn = get_db()
+    cursor = conn.cursor()
+    _asegurar_col_libro_iva(cursor)
+    _asegurar_col_comprobante_origen(cursor)
+    conn.commit()
+    cursor.execute(
+        """
+        SELECT c.id, c.fecha, c.tipo_comprobante, c.numero_comprobante, c.entidad_id AS cuit,
+               COALESCE(NULLIF(e.razon_social, ''), e.nombre_fantasia, '') AS cliente,
+               COALESCE(c.neto, 0) AS neto, COALESCE(c.iva, 0) AS iva, COALESCE(c.total, 0) AS total,
+               r.nro_comprobante AS cert_percepcion, COALESCE(r.importe_retenido, 0) AS percepcion_iibb,
+               r.regimen AS regimen_percepcion
+        FROM cuentas_corrientes c
+        LEFT JOIN entidades e ON REPLACE(e.cuit, '-', '') = REPLACE(c.entidad_id, '-', '')
+        LEFT JOIN retenciones_sicore r
+               ON UPPER(COALESCE(r.tipo_retencion, '')) = 'PERCEPCION_IIBB'
+              AND r.comprobante_origen = c.tipo_comprobante || ' ' || c.numero_comprobante
+              AND REPLACE(r.cuit, '-', '') = REPLACE(c.entidad_id, '-', '')
+        WHERE c.libro_iva = 'V' AND COALESCE(c.empresa_id, 1) = ?
+          AND substr(c.fecha, 1, 10) BETWEEN ? AND ?
+        ORDER BY c.fecha, c.id;
+        """,
+        (empresa_id, desde[:10], hasta[:10]),
+    )
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
 
 
 @app.get("/api/proveedores/consulta")
