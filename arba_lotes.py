@@ -108,7 +108,11 @@ def registros_percepciones(cursor, anio: int, mes: int, quincena: int) -> Tuple[
         tipo, letra, suc, nro = _comprobante(r["comprobante_origen"])
         cert = r["nro_comprobante"] or ""
         if not tipo:
-            errores.append(f"Certificado {cert} ({r['razon_social']}): no tiene la factura asociada; cargala de nuevo desde Facturas de venta o informala a mano.")
+            msg = f"Certificado {cert} ({r['razon_social']}): no tiene la factura asociada; cargala de nuevo desde Facturas de venta o informala a mano."
+            errores.append(msg)
+            regs.append({"id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"],
+                         "comprobante": "", "certificado": cert, "base": base, "alicuota": alic, "importe": imp,
+                         "linea": "", "error": msg})
             continue
         if tipo == "C":
             base, imp = -abs(base), -abs(imp)
@@ -118,7 +122,7 @@ def registros_percepciones(cursor, anio: int, mes: int, quincena: int) -> Tuple[
             f"{base:014.2f}{alic:05.2f}{imp:013.2f}{fecha}A"
         )
         regs.append({
-            "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"], "comprobante": r["comprobante_origen"],
+            "id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"], "comprobante": r["comprobante_origen"],
             "certificado": cert, "base": base, "alicuota": alic, "importe": imp, "linea": linea,
         })
     return regs, errores
@@ -147,7 +151,11 @@ def registros_retenciones(cursor, anio: int, mes: int, quincena: int, sucursal: 
             transaccion = str(r["id"])
         usados.add(transaccion)
         if base <= 0.009 or alic <= 0:
-            errores.append(f"Retención {cert} ({r['razon_social']}): falta la base imponible o la alícuota.")
+            msg = f"Retención {cert} ({r['razon_social']}): falta la base imponible o la alícuota."
+            errores.append(msg)
+            regs.append({"id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"],
+                         "certificado": cert, "transaccion": transaccion, "base": base, "alicuota": alic,
+                         "importe": imp, "linea": "", "error": msg})
             continue
         linea = (
             f"{transaccion.zfill(20)[-20:]}{_digitos(r['cuit']).zfill(11)[-11:]}{int(sucursal):05d}"
@@ -159,7 +167,7 @@ def registros_retenciones(cursor, anio: int, mes: int, quincena: int, sucursal: 
             aviso = (f"Retención {cert} ({r['razon_social']}): se retuvo $ {_pesos(imp)} pero ARBA va a calcular "
                      f"$ {_pesos(calculado)} ({_pesos(alic)}% sobre $ {_pesos(base)}). Revisá la alícuota antes de subir el lote.")
         regs.append({
-            "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"], "certificado": cert,
+            "id": r["id"], "fecha": r["fecha"][:10], "cuit": r["cuit"], "nombre": r["razon_social"], "certificado": cert,
             "transaccion": transaccion, "base": base, "alicuota": alic, "importe": imp, "linea": linea,
             "aviso": aviso,
         })
@@ -200,18 +208,21 @@ def register_arba_lotes_routes(app, get_db):
     @app.get("/api/arba/lotes/previa")
     def api_arba_lote_previa(tipo: str, anio: int, mes: int, quincena: int = 0, sucursal: int = 1):
         _, regs, errores = _datos(tipo, anio, mes, quincena, sucursal)
+        validos = [r for r in regs if r["linea"]]
         return {
             "registros": regs,
             "errores": errores,
             "avisos": [r["aviso"] for r in regs if r.get("aviso")],
-            "total_base": round(sum(r["base"] for r in regs), 2),
-            "total_importe": round(sum(r["importe"] for r in regs), 2),
+            "en_lote": len(validos),
+            "total_base": round(sum(r["base"] for r in validos), 2),
+            "total_importe": round(sum(r["importe"] for r in validos), 2),
         }
 
     @app.get("/api/arba/lotes/descargar")
     def api_arba_lote_descargar(tipo: str, anio: int, mes: int, quincena: int = 0, actividad: str = "6",
                                 lote: str = "1", sucursal: int = 1):
         cuit, regs, _ = _datos(tipo, anio, mes, quincena, sucursal)
+        regs = [r for r in regs if r["linea"]]
         if not regs:
             raise HTTPException(404, "No hay operaciones para informar en ese período.")
         periodo = f"{anio:04d}{mes:02d}{quincena}"

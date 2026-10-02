@@ -6258,26 +6258,108 @@ def filtrar_retenciones(
     conn.close()
     return rows
 
+_TIPOS_CC_RETENCION = {
+    "SICORE": ("Retención SICORE", "Retencion SICORE", "Retencion Ganancias", "Retención Ganancias"),
+    "IIBB": ("Retención IIBB", "Retencion IIBB"),
+}
+
+
+def _tipo_retencion(row) -> str:
+    return str(row["tipo_retencion"] or "SICORE").strip().upper()
+
+
+def _cc_de_retencion(cursor, ret) -> List[Dict[str, object]]:
+    """Renglón de retención de la cuenta corriente del mismo CUIT, tipo y certificado (nunca facturas ni la OP)."""
+    tipos = _TIPOS_CC_RETENCION.get(_tipo_retencion(ret))
+    nro = (ret["nro_comprobante"] or "").strip()
+    if not tipos or not nro:
+        return []
+    ph = ",".join("?" for _ in tipos)
+    cursor.execute(
+        f"""
+        SELECT id, asiento_id, haber FROM cuentas_corrientes
+        WHERE numero_comprobante = ? AND REPLACE(COALESCE(entidad_id, ''), '-', '') = ?
+          AND tipo_comprobante IN ({ph});
+        """,
+        (nro, re.sub(r"\D", "", str(ret["cuit"] or "")), *tipos),
+    )
+    return [dict(r) for r in cursor.fetchall()]
+
+
 @app.delete("/api/retenciones/{id_retencion}")
 def eliminar_retencion_directa(id_retencion: int):
     conn = get_db()
     cursor = conn.cursor()
-    
-    cursor.execute("SELECT nro_comprobante FROM retenciones_sicore WHERE id = ?;", (id_retencion,))
-    row = cursor.fetchone()
-    
-    if row:
-        nro_comp = row['nro_comprobante']
-        cursor.execute("DELETE FROM retenciones_sicore WHERE id = ?;", (id_retencion,))
-        if nro_comp:
-            cursor.execute("DELETE FROM cuentas_corrientes WHERE numero_comprobante = ?;", (nro_comp,))
-            
-        conn.commit()
+    cursor.execute("SELECT * FROM retenciones_sicore WHERE id = ?;", (id_retencion,))
+    ret = cursor.fetchone()
+    if not ret:
         conn.close()
-        return {"status": "success", "message": "Retención eliminada correctamente."}
-    
+        raise HTTPException(status_code=404, detail="Retención no encontrada")
+
+    renglones = _cc_de_retencion(cursor, ret)
+    for cc in renglones:
+        cursor.execute("DELETE FROM cuentas_corrientes WHERE id = ?;", (cc["id"],))
+        if cc.get("asiento_id"):
+            try:
+                from motor_contable import eliminar_asiento
+                eliminar_asiento(cursor, int(cc["asiento_id"]))
+            except Exception as exc:
+                print(f"AVISO al borrar asiento de retención: {exc}")
+    cursor.execute("DELETE FROM retenciones_sicore WHERE id = ?;", (id_retencion,))
+    conn.commit()
     conn.close()
-    raise HTTPException(status_code=404, detail="Retención no encontrada")
+    msg = f"Certificado {ret['nro_comprobante'] or ''} eliminado."
+    if renglones:
+        msg += " También se quitó su renglón de retención de la cuenta corriente del proveedor."
+    return {"status": "success", "message": msg, "renglones_cc": len(renglones)}
+
+
+class EdicionRetencion(BaseModel):
+    fecha: str
+    base_imponible: float
+    alicuota: float
+    importe_retenido: float
+
+
+@app.put("/api/retenciones/{id_retencion}")
+def editar_retencion(id_retencion: int, data: EdicionRetencion):
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data.fecha or ""):
+        raise HTTPException(400, "Fecha inválida.")
+    if data.base_imponible <= 0 or data.importe_retenido <= 0 or not (0 < data.alicuota < 100):
+        raise HTTPException(400, "La base, la alícuota y el importe tienen que ser mayores a cero.")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM retenciones_sicore WHERE id = ?;", (id_retencion,))
+    ret = cursor.fetchone()
+    if not ret:
+        conn.close()
+        raise HTTPException(404, "Retención no encontrada")
+
+    tipo = _tipo_retencion(ret)
+    base = round(data.base_imponible, 2)
+    importe = round(data.importe_retenido, 2)
+    if tipo == "IIBB":
+        regimen = f"ARBA {data.alicuota:.2f}%"
+    elif tipo.startswith("PERC"):
+        regimen = f"ARBA-PERC {data.alicuota:.2f}%"
+    else:
+        regimen = ret["regimen"]
+    cursor.execute(
+        "UPDATE retenciones_sicore SET fecha = ?, base_imponible = ?, regimen = ?, importe_retenido = ? WHERE id = ?;",
+        (data.fecha, base, regimen, importe, id_retencion),
+    )
+    renglones = _cc_de_retencion(cursor, ret)
+    for cc in renglones:
+        cursor.execute(
+            "UPDATE cuentas_corrientes SET fecha = ?, vencimiento = ?, haber = ?, total = ? WHERE id = ?;",
+            (data.fecha, data.fecha, importe, importe, cc["id"]),
+        )
+    conn.commit()
+    conn.close()
+    msg = f"Certificado {ret['nro_comprobante'] or ''} actualizado."
+    if renglones:
+        msg += " El renglón de retención de la cuenta corriente quedó con el mismo importe y fecha."
+    return {"status": "success", "message": msg, "renglones_cc": len(renglones)}
 
 # Pagos / retenciones: nunca son "cargo a pagar"
 _TIPOS_PAGO = (
@@ -6683,7 +6765,15 @@ def eliminar_movimiento_cuenta_corriente(id_mov: int):
             or "RETEN" in tipo_up
         )
         if es_retencion and nro_comp:
-            cursor.execute("DELETE FROM retenciones_sicore WHERE nro_comprobante = ?;", (nro_comp,))
+            tipo_ret = "IIBB" if ("IIBB" in tipo_up or "ARBA" in tipo_up) else "SICORE"
+            cursor.execute(
+                """
+                DELETE FROM retenciones_sicore
+                WHERE nro_comprobante = ? AND REPLACE(COALESCE(cuit, ''), '-', '') = ?
+                  AND UPPER(COALESCE(tipo_retencion, 'SICORE')) = ?;
+                """,
+                (nro_comp, re.sub(r"\D", "", str(mov["entidad_id"] or "")), tipo_ret),
+            )
 
         conn.commit()
         mensaje = "Movimiento eliminado. Las demás líneas de la cuenta quedan intactas."

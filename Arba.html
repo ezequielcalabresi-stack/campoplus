@@ -489,13 +489,18 @@ async function previaLote() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) { caja.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escHtml(d.detail || 'No se pudo armar el lote.')}</div>`; return; }
     const ret = p.get('tipo') === 'retenciones';
-    const filas = (d.registros || []).map(r => `<tr>
+    regsLote = d.registros || [];
+    const filas = regsLote.map((r, i) => `<tr class="${r.error ? 'table-danger' : (r.aviso ? 'table-warning' : '')}">
         <td class="font-mono">${escHtml(r.fecha.split('-').reverse().join('/'))}</td>
         <td>${escHtml(r.nombre || '')}<div class="text-muted font-mono" style="font-size:.75rem;">${escHtml(r.cuit || '')}</div></td>
-        <td class="font-mono small">${escHtml(ret ? ('Transacción ' + r.transaccion) : (r.comprobante || ''))}</td>
+        <td class="font-mono small">${escHtml(r.certificado || '')}<div class="text-muted">${escHtml(ret ? ('Transacción ' + r.transaccion) : (r.comprobante || ''))}</div></td>
         <td class="text-end font-mono">${pesos(r.base)}</td>
         <td class="text-end font-mono">${Number(r.alicuota).toFixed(2).replace('.', ',')}%</td>
         <td class="text-end font-mono">${pesos(r.importe)}</td>
+        <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" onclick="editarRegLote(${i})">Editar</button>
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="borrarRegLote(${i})">Borrar</button>
+        </td>
     </tr>`).join('');
     const err = (d.errores || []).map(e => `<li>${escHtml(e)}</li>`).join('');
     const avi = (d.avisos || []).map(e => `<li>${escHtml(e)}</li>`).join('');
@@ -504,12 +509,79 @@ async function previaLote() {
         ${avi ? `<div class="alert alert-warning py-2"><strong>Revisar:</strong><ul class="mb-0">${avi}</ul></div>` : ''}
         ${filas ? `<div class="table-responsive"><table class="table table-sm align-middle mb-2">
             <thead class="table-light"><tr><th>Fecha</th><th>${ret ? 'Retenido' : 'Percibido'}</th><th>${ret ? 'Referencia' : 'Comprobante'}</th>
-                <th class="text-end">Base</th><th class="text-end">Alícuota</th><th class="text-end">Importe</th></tr></thead>
+                <th class="text-end">Base</th><th class="text-end">Alícuota</th><th class="text-end">Importe</th><th></th></tr></thead>
             <tbody>${filas}</tbody>
-            <tfoot><tr class="fw-bold"><td colspan="3">${d.registros.length} operación(es)</td>
-                <td class="text-end font-mono">${pesos(d.total_base)}</td><td></td><td class="text-end font-mono">${pesos(d.total_importe)}</td></tr></tfoot>
-        </table></div>` : '<div class="text-muted">No hay operaciones en ese período.</div>'}
+            <tfoot><tr class="fw-bold"><td colspan="3">${d.en_lote} operación(es) van en el lote</td>
+                <td class="text-end font-mono">${pesos(d.total_base)}</td><td></td><td class="text-end font-mono">${pesos(d.total_importe)}</td><td></td></tr></tfoot>
+        </table></div>
+        <div id="ltEditor" class="border rounded p-3 mb-2 bg-light" style="display:none;"></div>` : '<div class="text-muted">No hay operaciones en ese período.</div>'}
         ${ret && filas ? '<div class="text-muted">En el lote A-122R no va el importe: ARBA lo calcula con la base y la alícuota, y genera el comprobante que hay que entregar al proveedor.</div>' : ''}`;
+}
+
+let regsLote = [];
+
+function editarRegLote(i) {
+    const r = regsLote[i];
+    const box = document.getElementById('ltEditor');
+    const ret = document.getElementById('ltTipo').value === 'retenciones';
+    box.style.display = '';
+    box.innerHTML = `
+        <div class="fw-bold mb-2">Editar ${ret ? 'retención' : 'percepción'} ${escHtml(r.certificado || '')} — ${escHtml(r.nombre || '')}</div>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3"><label class="form-label small fw-bold">Fecha</label>
+                <input type="date" id="edFecha" class="form-control form-control-sm" value="${escHtml(r.fecha)}"></div>
+            <div class="col-md-3"><label class="form-label small fw-bold">Base imponible</label>
+                <input type="number" step="0.01" id="edBase" class="form-control form-control-sm font-mono" value="${Number(r.base).toFixed(2)}" oninput="recalcEdicion()"></div>
+            <div class="col-md-2"><label class="form-label small fw-bold">Alícuota %</label>
+                <input type="number" step="0.01" id="edAlic" class="form-control form-control-sm font-mono" value="${Number(r.alicuota).toFixed(2)}" oninput="recalcEdicion()"></div>
+            <div class="col-md-2"><label class="form-label small fw-bold">Importe</label>
+                <input type="number" step="0.01" id="edImporte" class="form-control form-control-sm font-mono" value="${Number(r.importe).toFixed(2)}"></div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="button" class="btn btn-sm btn-primary fw-bold flex-fill" onclick="guardarRegLote(${i})">Guardar</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('ltEditor').style.display='none'">✕</button>
+            </div>
+        </div>
+        <div class="small text-muted mt-2">${ret
+            ? 'Al cambiar base o alícuota el importe se recalcula. También se actualiza el renglón de retención en la cuenta corriente del proveedor.'
+            : 'Solo cambia el certificado de percepción: la factura de la cuenta corriente no se toca.'}</div>`;
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function recalcEdicion() {
+    const base = Number(document.getElementById('edBase').value || 0);
+    const alic = Number(document.getElementById('edAlic').value || 0);
+    document.getElementById('edImporte').value = (Math.round(base * alic) / 100).toFixed(2);
+}
+
+async function guardarRegLote(i) {
+    const r = regsLote[i];
+    const body = {
+        fecha: document.getElementById('edFecha').value,
+        base_imponible: Number(document.getElementById('edBase').value || 0),
+        alicuota: Number(document.getElementById('edAlic').value || 0),
+        importe_retenido: Number(document.getElementById('edImporte').value || 0),
+    };
+    const res = await fetch('/api/retenciones/' + r.id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo guardar.');
+    alert(d.message || 'Guardado.');
+    previaLote();
+}
+
+async function borrarRegLote(i) {
+    const r = regsLote[i];
+    const ret = document.getElementById('ltTipo').value === 'retenciones';
+    const detalle = ret
+        ? `Se borra el certificado ${r.certificado} de ${r.nombre} (${pesos(r.importe)}) y su renglón de retención en la cuenta corriente del proveedor (el saldo del proveedor cambia en ese importe).\nLa orden de pago y las facturas NO se tocan.`
+        : `Se borra el certificado de percepción ${r.certificado} de ${r.nombre} (${pesos(r.importe)}).\nLa factura de la cuenta corriente NO se toca.`;
+    if (!confirm(detalle + '\n\n¿Borrar?')) return;
+    const res = await fetch('/api/retenciones/' + r.id, { method: 'DELETE' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo borrar.');
+    alert(d.message || 'Borrado.');
+    previaLote();
 }
 
 async function descargarLote() {
