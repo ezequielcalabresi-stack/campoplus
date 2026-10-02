@@ -491,6 +491,7 @@ let planCache = [];
 let proveedoresCache = [];
 let lineasCache = [];
 let mcLinea = null;
+let campaniaActiva = '';
 let mcOrigen = { origen: 'manual', mov_ingreso_id: null };
 let modalCosteo = null;
 let partCache = {};
@@ -768,6 +769,7 @@ async function init() {
         || '<option value="">Sin campaña</option>';
     const activa = (camps || []).find(c => Number(c.activa || 0) === 1);
     if (activa) selC.value = String(activa.id);
+    campaniaActiva = activa ? String(activa.codigo || '').trim() : '';
     document.getElementById('pCampania').innerHTML = selC.innerHTML;
     document.getElementById('pCampania').value = selC.value;
     document.getElementById('sCampania').innerHTML = selC.innerHTML;
@@ -1436,7 +1438,8 @@ function renderLineas() {
             const grupo = lineasCache.filter(x => x.nro_orden === actual);
             const usd = grupo.reduce((s, x) => s + Number(x.costo_usd || 0), 0);
             const pend = grupo.filter(x => !Number(x.costo_usd || 0) && !Number(x.costo_ars || 0)).length;
-            const pendProd = grupo.filter(x => (x.producto || '').trim() && !Number(x.costo_usd || 0) && !Number(x.costo_ars || 0)).length;
+            const pendProd = campaniaVigente(l.campania_codigo)
+                ? grupo.filter(x => (x.producto || '').trim() && !Number(x.costo_usd || 0) && !Number(x.costo_ars || 0)).length : 0;
             const origen = l.ot_id ? '' : ' <span class="badge bg-light text-secondary border">Access</span>';
             const lotesGrupo = {};
             grupo.forEach(x => { lotesGrupo[(x.campo || '') + ' | ' + (x.lote || '')] = Number(x.cantidad_has || 0); });
@@ -1476,6 +1479,11 @@ function renderLineas() {
         </tr>`;
     }
     tb.innerHTML = html;
+}
+
+function campaniaVigente(codigo) {
+    const c = String(codigo || '').trim();
+    return !campaniaActiva || !c || c >= campaniaActiva;
 }
 
 async function costearOtCriterio(nro, btn) {
@@ -1570,7 +1578,7 @@ async function abrirCosteo(id) {
     document.getElementById('mcComprobante').value = l.nro_remito || '';
     document.getElementById('mcFechaCompra').value = (l.fecha_compra || '').slice(0, 10);
     const yaCosteada = Number(l.costo_usd || 0) || Number(l.costo_ars || 0);
-    if (!yaCosteada && !d.es_laboreo && d.sugerido_criterio && Number(d.sugerido_criterio.costo_unitario || 0) > 0) {
+    if (!yaCosteada && !d.es_laboreo && campaniaVigente(l.campania_codigo) && d.sugerido_criterio && Number(d.sugerido_criterio.costo_unitario || 0) > 0) {
         usarSugerido();
     }
     mcPreview();

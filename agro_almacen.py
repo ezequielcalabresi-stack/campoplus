@@ -2334,6 +2334,21 @@ def costear_ot_por_criterio(cursor, empresa_id: int, nro_orden: int) -> Dict[str
         (empresa_id, int(nro_orden)),
     )
     lineas = [dict(r) for r in cursor.fetchall()]
+    activa = ""
+    if _tabla_existe(cursor, "campanias_agro"):
+        r = cursor.execute(
+            "SELECT codigo FROM campanias_agro WHERE empresa_id=? AND activa=1 ORDER BY codigo DESC LIMIT 1;",
+            (empresa_id,),
+        ).fetchone()
+        activa = (r[0] or "").strip() if r else ""
+    if activa:
+        viejas = [l for l in lineas if (l.get("campania_codigo") or "").strip() and l["campania_codigo"].strip() < activa]
+        if viejas and len(viejas) == len(lineas):
+            raise ValueError(
+                f"La OT {nro_orden} es de la campaña {viejas[0]['campania_codigo']}, anterior a la activa ({activa}): "
+                "sus costos no se calculan en bloque para no cambiar campañas pasadas. Si hace falta, costeá la línea a mano."
+            )
+        lineas = [l for l in lineas if l not in viejas]
     costeadas, omitidas, criterio = 0, [], None
     for linea in lineas:
         item = _item_de_linea(cursor, empresa_id, linea)
