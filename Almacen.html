@@ -34,8 +34,89 @@
 
     <ul class="nav nav-tabs mb-3" id="tabsAlmacen">
         <li class="nav-item"><button type="button" class="nav-link active fw-bold" data-tab="tabStock" onclick="verTabAlmacen(this)">Stock e ingresos</button></li>
+        <li class="nav-item"><button type="button" class="nav-link fw-bold" data-tab="tabAjuste" onclick="verTabAlmacen(this)">Ajuste de inventario</button></li>
         <li class="nav-item"><button type="button" class="nav-link fw-bold" data-tab="tabUnificar" onclick="verTabAlmacen(this)">Unificar productos</button></li>
     </ul>
+
+    <div id="tabAjuste" class="tab-almacen" style="display:none;">
+        <div class="main-card">
+            <h5 class="fw-bold mb-1">Ajuste de inventario</h5>
+            <p class="hint mb-3">Cargá en <strong>Stock real</strong> lo que contaste. Al aplicar, cada diferencia queda registrada como ajuste y el stock queda fijo
+                (el recálculo desde Excel no lo pisa). Los productos que dejes en 0 desaparecen del listado de stock. Las faltantes se descuentan de las compras más viejas (PEPS);
+                los sobrantes entran al costo promedio. Se puede deshacer.</p>
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-md-3">
+                    <label class="small fw-bold">Buscar</label>
+                    <input id="ajBuscar" class="form-control form-control-sm" placeholder="Ej: glifosato" oninput="pintarAjuste()">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold">Tipo</label>
+                    <select id="ajTipo" class="form-select form-select-sm" onchange="pintarAjuste()">
+                        <option value="producto">Productos</option>
+                        <option value="laboreo">Laboreos</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="small fw-bold">Categoría</label>
+                    <select id="ajCat" class="form-select form-select-sm" onchange="pintarAjuste()">
+                        <option value="">Todas las categorías</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" id="ajVerCeros" onchange="pintarAjuste()">
+                        <label class="form-check-label small" for="ajVerCeros">Mostrar también los que tienen stock 0 (para cargar un sobrante)</label>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="ajSoloDif" onchange="pintarAjuste()">
+                        <label class="form-check-label small" for="ajSoloDif">Ver solo los que cambian</label>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="ajusteMasivo('cero')" title="Stock real = 0 para todos los productos que se ven en la lista">Poner en 0 los listados</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="ajusteMasivo('negativos')">Poner en 0 los negativos</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="ajusteMasivo('sistema')" title="Deshace lo cargado en los productos listados">Volver al stock del sistema</button>
+                <button type="button" class="btn btn-sm btn-outline-success ms-auto" onclick="descargarPlanillaConteo()">Descargar planilla de conteo</button>
+            </div>
+            <div class="table-responsive" style="max-height:480px;">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-dark" style="position:sticky;top:0;z-index:1;">
+                        <tr>
+                            <th>Producto</th><th>Presentación</th><th>Categoría</th><th>Un.</th>
+                            <th class="text-end">Stock sistema</th>
+                            <th class="text-end" style="width:140px;">Stock real</th>
+                            <th class="text-end">Diferencia</th>
+                            <th class="text-end">Valor dif. U$S</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ajTabla"><tr><td colspan="8" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+            <div class="row g-2 align-items-end mt-2">
+                <div class="col-md-2">
+                    <label class="small fw-bold">Fecha del conteo</label>
+                    <input type="date" id="ajFecha" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-4">
+                    <label class="small fw-bold">Motivo</label>
+                    <input id="ajMotivo" class="form-control form-control-sm" placeholder="Ej: Inventario físico septiembre 2026">
+                </div>
+                <div class="col-md-4"><div id="ajResumen" class="small"></div></div>
+                <div class="col-md-2"><button type="button" id="ajBtnAplicar" class="btn btn-success btn-sm fw-bold w-100" onclick="aplicarAjuste()">Aplicar ajuste</button></div>
+            </div>
+        </div>
+        <div class="main-card">
+            <h6 class="fw-bold">Ajustes realizados</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light"><tr><th>Fecha</th><th>Motivo</th><th>Usuario</th><th class="text-end">Productos</th><th class="text-end">Valor U$S</th><th></th></tr></thead>
+                    <tbody id="ajHistorial"></tbody>
+                </table>
+            </div>
+            <div id="ajDetalle" class="mt-2"></div>
+        </div>
+    </div>
 
     <div id="tabUnificar" class="tab-almacen" style="display:none;">
         <div class="main-card">
@@ -520,6 +601,197 @@ function verTabAlmacen(btn) {
     document.querySelectorAll('#tabsAlmacen .nav-link').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     if (btn.dataset.tab === 'tabUnificar') cargarUnificar();
+    if (btn.dataset.tab === 'tabAjuste') cargarAjuste();
+}
+
+let ajItems = [];
+const ajReal = new Map();
+
+function parseCant(v) {
+    let s = String(v ?? '').trim();
+    if (!s) return null;
+    if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+}
+
+async function cargarAjuste() {
+    document.getElementById('ajCat').innerHTML = '<option value="">Todas las categorías</option>' +
+        catsCache.map(c => `<option value="${c.codigo}">${esc(c.nombre)}</option>`).join('');
+    if (!document.getElementById('ajFecha').value) document.getElementById('ajFecha').value = new Date().toISOString().slice(0, 10);
+    const res = await fetch('/api/agro/almacen/items?solo_con_stock=false&orden=nombre');
+    ajItems = await res.json().catch(() => []);
+    pintarAjuste();
+    cargarHistorialAjustes();
+}
+
+function filasAjusteVisibles() {
+    const tipo = document.getElementById('ajTipo').value;
+    const cat = document.getElementById('ajCat').value;
+    const verCeros = document.getElementById('ajVerCeros').checked;
+    const soloDif = document.getElementById('ajSoloDif').checked;
+    const palabras = sinAcentos(document.getElementById('ajBuscar').value).split(/\s+/).filter(Boolean);
+    return ajItems.filter(i => {
+        if ((i.tipo || 'producto') !== tipo) return false;
+        if (cat && i.categoria_codigo !== cat) return false;
+        if (!palabras.every(p => sinAcentos(i.nombre).includes(p))) return false;
+        const sis = Number(i.stock_cantidad || 0);
+        const cambia = ajReal.has(i.id) && Math.abs(ajReal.get(i.id) - sis) > 0.0001;
+        if (soloDif && !cambia) return false;
+        return verCeros || Math.abs(sis) > 0.0001 || cambia;
+    });
+}
+
+function pintarAjuste() {
+    const filas = filasAjusteVisibles();
+    const fmt = n => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+    document.getElementById('ajTabla').innerHTML = filas.slice(0, 600).map(i => {
+        const sis = Number(i.stock_cantidad || 0);
+        const real = ajReal.has(i.id) ? ajReal.get(i.id) : sis;
+        const dif = Math.round((real - sis) * 10000) / 10000;
+        const valor = dif * Number(i.costo_promedio_usd || 0);
+        const cat = (catsCache.find(c => c.codigo === i.categoria_codigo) || {}).nombre || i.categoria || '';
+        return `<tr class="${Math.abs(dif) > 0.0001 ? 'table-warning' : ''}">
+            <td class="fw-bold">${esc(i.nombre)}</td>
+            <td class="small">${esc(i.presentacion)}</td>
+            <td class="small">${esc(cat)}</td>
+            <td>${esc(i.unidad)}</td>
+            <td class="text-end font-mono ${sis < 0 ? 'text-danger fw-bold' : ''}">${fmt(sis)}</td>
+            <td><input class="form-control form-control-sm text-end font-mono" inputmode="decimal" value="${fmt(real)}"
+                onchange="setAjuste(${i.id}, this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteAjuste(this);}"></td>
+            <td class="text-end font-mono ${dif < 0 ? 'text-danger' : (dif > 0 ? 'text-success' : 'text-muted')}">${Math.abs(dif) > 0.0001 ? (dif > 0 ? '+' : '') + fmt(dif) : ''}</td>
+            <td class="text-end font-mono">${Math.abs(dif) > 0.0001 && Number(i.costo_promedio_usd || 0) ? fmtNum(valor, 2) : ''}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="8" class="text-center text-muted py-3">Sin productos para mostrar con estos filtros.</td></tr>';
+    resumenAjuste();
+}
+
+function siguienteAjuste(input) {
+    input.dispatchEvent(new Event('change'));
+    const todos = [...document.querySelectorAll('#ajTabla input')];
+    const sig = todos[todos.indexOf(input) + 1];
+    if (sig) { sig.focus(); sig.select(); }
+}
+
+function setAjuste(id, valor) {
+    const n = parseCant(valor);
+    const item = ajItems.find(i => i.id === id);
+    if (n === null || !item) return pintarAjuste();
+    if (Math.abs(n - Number(item.stock_cantidad || 0)) <= 0.0001) ajReal.delete(id);
+    else ajReal.set(id, n);
+    const activo = document.activeElement;
+    const idx = [...document.querySelectorAll('#ajTabla input')].indexOf(activo);
+    pintarAjuste();
+    if (idx > -1) {
+        const nuevo = document.querySelectorAll('#ajTabla input')[idx];
+        if (nuevo) { nuevo.focus(); nuevo.select(); }
+    }
+}
+
+function ajusteMasivo(modo) {
+    const filas = modo === 'negativos'
+        ? ajItems.filter(i => (i.tipo || 'producto') === document.getElementById('ajTipo').value && Number(i.stock_cantidad || 0) < -0.0001)
+        : filasAjusteVisibles();
+    if (!filas.length) return alert('No hay productos para aplicar.');
+    if (modo === 'cero' && !confirm(`¿Poner stock real 0 en los ${filas.length} productos listados?\n\nDespués corregí los que sí tienen stock. Nada se guarda hasta "Aplicar ajuste".`)) return;
+    filas.forEach(i => {
+        if (modo === 'sistema') ajReal.delete(i.id);
+        else if (Math.abs(Number(i.stock_cantidad || 0)) > 0.0001) ajReal.set(i.id, 0);
+    });
+    pintarAjuste();
+}
+
+function cambiosAjuste() {
+    return ajItems.filter(i => ajReal.has(i.id) && Math.abs(ajReal.get(i.id) - Number(i.stock_cantidad || 0)) > 0.0001)
+        .map(i => ({ item: i, real: ajReal.get(i.id), dif: ajReal.get(i.id) - Number(i.stock_cantidad || 0) }));
+}
+
+function resumenAjuste() {
+    const c = cambiosAjuste();
+    const suben = c.filter(x => x.dif > 0).length;
+    const valor = c.reduce((s, x) => s + x.dif * Number(x.item.costo_promedio_usd || 0), 0);
+    document.getElementById('ajResumen').innerHTML = c.length
+        ? `<strong>${c.length}</strong> producto(s) con diferencia · suben ${suben} · bajan ${c.length - suben}<br>Valor de la diferencia: <strong class="${valor < 0 ? 'text-danger' : 'text-success'}">U$S ${fmtNum(valor, 2)}</strong>`
+        : '<span class="text-muted">Sin diferencias cargadas.</span>';
+    document.getElementById('ajBtnAplicar').disabled = !c.length;
+}
+
+async function aplicarAjuste() {
+    const c = cambiosAjuste();
+    if (!c.length) return;
+    const motivo = document.getElementById('ajMotivo').value.trim();
+    const fecha = document.getElementById('ajFecha').value;
+    const aCero = c.filter(x => Math.abs(x.real) <= 0.0001).length;
+    if (!confirm(`Aplicar ajuste de inventario del ${fecha}:\n\n${c.length} producto(s) cambian de stock${aCero ? ` (${aCero} quedan en 0)` : ''}.\n\n¿Confirmás?`)) return;
+    const btn = document.getElementById('ajBtnAplicar');
+    btn.disabled = true;
+    const res = await fetch('/api/agro/almacen/ajuste_inventario', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha, motivo, items: c.map(x => ({ item_id: x.item.id, stock_real: x.real })) }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { btn.disabled = false; return alert(d.detail || 'No se pudo aplicar el ajuste.'); }
+    ajReal.clear();
+    alert(`Ajuste aplicado: ${d.ajustados} producto(s) (suben ${d.suben}, bajan ${d.bajan}). Valor U$S ${fmtNum(d.valor_usd, 2)}.`);
+    await cargarAjuste();
+    cargarStock();
+}
+
+async function cargarHistorialAjustes() {
+    const rows = await fetch('/api/agro/almacen/ajustes').then(r => r.ok ? r.json() : []).catch(() => []);
+    document.getElementById('ajHistorial').innerHTML = rows.map(a => `<tr class="${a.deshecho ? 'text-muted' : ''}">
+        <td class="font-mono small">${esc(fechaCorta(a.fecha))}</td>
+        <td>${esc(a.motivo)}</td>
+        <td class="small">${esc(a.usuario)}</td>
+        <td class="text-end">${a.items}</td>
+        <td class="text-end font-mono ${Number(a.valor_usd) < 0 ? 'text-danger' : ''}">${fmtNum(a.valor_usd, 2)}</td>
+        <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-dark py-0" onclick="verDetalleAjuste(${a.id})">Ver</button>
+            ${a.deshecho ? '<span class="badge text-bg-secondary">deshecho</span>'
+                : `<button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="deshacerAjuste(${a.id})">Deshacer</button>`}
+        </td>
+    </tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-2">Todavía no se hizo ningún ajuste.</td></tr>';
+}
+
+async function verDetalleAjuste(id) {
+    const rows = await fetch('/api/agro/almacen/ajustes/' + id).then(r => r.ok ? r.json() : []).catch(() => []);
+    const fmt = n => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+    document.getElementById('ajDetalle').innerHTML = `<table class="table table-sm table-bordered mb-0 small">
+        <thead class="table-light"><tr><th>Producto</th><th>Un.</th><th class="text-end">Diferencia</th><th class="text-end">Quedó en</th><th class="text-end">Valor U$S</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td>${esc(r.nombre)} <span class="text-muted">${esc(r.presentacion)}</span></td><td>${esc(r.unidad)}</td>
+            <td class="text-end font-mono ${r.diferencia < 0 ? 'text-danger' : 'text-success'}">${r.diferencia > 0 ? '+' : ''}${fmt(r.diferencia)}</td>
+            <td class="text-end font-mono">${fmt(r.stock_resultante)}</td><td class="text-end font-mono">${fmtNum(r.valor_usd, 2)}</td></tr>`).join('')
+            || '<tr><td colspan="5" class="text-center text-muted">Sin movimientos (ajuste deshecho).</td></tr>'}</tbody>
+    </table>`;
+}
+
+async function deshacerAjuste(id) {
+    if (!confirm('Deshacer este ajuste: a cada producto se le revierte la diferencia que se le aplicó. ¿Confirmás?')) return;
+    const res = await fetch(`/api/agro/almacen/ajustes/${id}/deshacer`, { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.detail || 'No se pudo deshacer.');
+    alert(d.message || 'Listo.');
+    document.getElementById('ajDetalle').innerHTML = '';
+    await cargarAjuste();
+    cargarStock();
+}
+
+function descargarPlanillaConteo() {
+    const filas = filasAjusteVisibles();
+    if (!filas.length) return alert('No hay productos en la lista.');
+    const txt = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const num = n => String(Math.round(Number(n || 0) * 1000) / 1000).replace('.', ',');
+    const lineas = [['Producto', 'Presentación', 'Categoría', 'Unidad', 'Stock sistema', 'Stock contado'].map(txt).join(';')];
+    filas.forEach(i => {
+        const cat = (catsCache.find(c => c.codigo === i.categoria_codigo) || {}).nombre || i.categoria || '';
+        lineas.push([txt(i.nombre), txt(i.presentacion), txt(cat), txt(i.unidad), num(i.stock_cantidad), ''].join(';'));
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    a.download = `conteo_stock_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
 }
 
 let uniItems = [];

@@ -3041,3 +3041,144 @@ def deshacer_unificacion(cursor, empresa_id: int, unificacion_id: int) -> Dict[s
     cursor.execute("DELETE FROM almacen_alias WHERE unificacion_id=?;", (unificacion_id,))
     cursor.execute("UPDATE almacen_unificaciones SET deshecha=1 WHERE id=?;", (unificacion_id,))
     return {"status": "ok", "message": f"Se deshizo la unificación en \"{r['principal_nombre']}\"."}
+
+
+# ---------------------------------------------------------------- ajuste de inventario
+
+def asegurar_schema_ajustes(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS almacen_ajustes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa_id INTEGER DEFAULT 1,
+            fecha TEXT NOT NULL,
+            motivo TEXT,
+            usuario TEXT,
+            creado TEXT,
+            items INTEGER DEFAULT 0,
+            valor_usd REAL DEFAULT 0,
+            deshecho INTEGER DEFAULT 0
+        );
+        """
+    )
+    cols_mov = {r[1] for r in cursor.execute("PRAGMA table_info(almacen_movimientos)")}
+    if "precio_unitario_usd" not in cols_mov:
+        cursor.execute("ALTER TABLE almacen_movimientos ADD COLUMN precio_unitario_usd REAL DEFAULT 0;")
+    if "ajuste_id" not in cols_mov:
+        cursor.execute("ALTER TABLE almacen_movimientos ADD COLUMN ajuste_id INTEGER;")
+    cols_it = {r[1] for r in cursor.execute("PRAGMA table_info(almacen_items)")}
+    if "stock_manual" not in cols_it:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN stock_manual INTEGER DEFAULT 0;")
+    if "costo_promedio_usd" not in cols_it:
+        cursor.execute("ALTER TABLE almacen_items ADD COLUMN costo_promedio_usd REAL DEFAULT 0;")
+
+
+def ajustar_inventario(
+    cursor, empresa_id: int, fecha: str, motivo: str, items: List[Dict[str, Any]], usuario: str = ""
+) -> Dict[str, Any]:
+    """Deja el stock de cada ítem en la cantidad contada (toma de inventario).
+
+    Cada diferencia queda como movimiento 'ajuste' del lote y el stock se marca manual
+    (un recálculo desde Excel no lo pisa). El costeo PEPS descuenta las faltantes de las
+    compras más viejas y toma los sobrantes al costo promedio del ítem.
+    """
+    asegurar_schema_ajustes(cursor)
+    fecha = (fecha or datetime.now().strftime("%Y-%m-%d"))[:10]
+    motivo = (motivo or "").strip() or "Ajuste de inventario"
+    cambios = []
+    for it in items or []:
+        try:
+            item_id = int(it.get("item_id"))
+            real = round(float(it.get("stock_real")), 4)
+        except (TypeError, ValueError):
+            continue
+        row = cursor.execute(
+            "SELECT * FROM almacen_items WHERE id=? AND empresa_id=? AND COALESCE(activo,1)=1;",
+            (item_id, empresa_id),
+        ).fetchone()
+        if not row:
+            continue
+        actual = round(float(row["stock_cantidad"] or 0), 4)
+        delta = round(real - actual, 4)
+        if abs(delta) > 0.0001:
+            cambios.append((dict(row), real, delta))
+    if not cambios:
+        raise ValueError("No hay diferencias entre el stock del sistema y el contado.")
+
+    valor_usd = round(sum(delta * float(row.get("costo_promedio_usd") or 0) for row, _, delta in cambios), 2)
+    cursor.execute(
+        """
+        INSERT INTO almacen_ajustes (empresa_id, fecha, motivo, usuario, creado, items, valor_usd)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+        """,
+        (empresa_id, fecha, motivo, usuario or "", datetime.now().strftime("%Y-%m-%d %H:%M"), len(cambios), valor_usd),
+    )
+    ajuste_id = int(cursor.lastrowid)
+    suben = bajan = 0
+    for row, real, delta in cambios:
+        ars = float(row.get("costo_promedio_neto") or 0)
+        usd = float(row.get("costo_promedio_usd") or 0)
+        cursor.execute(
+            """
+            INSERT INTO almacen_movimientos (
+                empresa_id, item_id, fecha, tipo_mov, cantidad, precio_unitario_neto, precio_unitario_usd,
+                importe_neto, stock_resultante, costo_prom_resultante, observaciones, ajuste_id
+            ) VALUES (?, ?, ?, 'ajuste', ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (empresa_id, row["id"], fecha, delta, ars, usd, round(abs(delta) * ars, 2), real, usd or ars,
+             motivo, ajuste_id),
+        )
+        cursor.execute(
+            "UPDATE almacen_items SET stock_cantidad=?, stock_manual=1 WHERE id=?;", (real, row["id"])
+        )
+        if delta > 0:
+            suben += 1
+        else:
+            bajan += 1
+    return {"status": "ok", "ajuste_id": ajuste_id, "ajustados": len(cambios), "suben": suben,
+            "bajan": bajan, "valor_usd": valor_usd}
+
+
+def listar_ajustes(cursor, empresa_id: int) -> List[Dict[str, Any]]:
+    asegurar_schema_ajustes(cursor)
+    return [dict(r) for r in cursor.execute(
+        "SELECT * FROM almacen_ajustes WHERE empresa_id=? ORDER BY id DESC LIMIT 100;", (empresa_id,)
+    ).fetchall()]
+
+
+def detalle_ajuste(cursor, empresa_id: int, ajuste_id: int) -> List[Dict[str, Any]]:
+    asegurar_schema_ajustes(cursor)
+    return [dict(r) for r in cursor.execute(
+        """
+        SELECT m.item_id, i.nombre, i.presentacion, i.unidad, m.cantidad AS diferencia,
+               m.stock_resultante, ROUND(m.cantidad * COALESCE(m.precio_unitario_usd, 0), 2) AS valor_usd
+        FROM almacen_movimientos m JOIN almacen_items i ON i.id = m.item_id
+        WHERE m.empresa_id=? AND m.ajuste_id=? AND m.tipo_mov='ajuste'
+        ORDER BY i.nombre COLLATE NOCASE;
+        """,
+        (empresa_id, ajuste_id),
+    ).fetchall()]
+
+
+def deshacer_ajuste(cursor, empresa_id: int, ajuste_id: int) -> Dict[str, Any]:
+    """Revierte cada diferencia del ajuste sobre el stock actual (respeta lo que se movió después)."""
+    asegurar_schema_ajustes(cursor)
+    aj = cursor.execute(
+        "SELECT * FROM almacen_ajustes WHERE id=? AND empresa_id=?;", (ajuste_id, empresa_id)
+    ).fetchone()
+    if not aj:
+        raise ValueError("No se encontró ese ajuste.")
+    if int(aj["deshecho"] or 0):
+        raise ValueError("Ese ajuste ya se deshizo.")
+    movs = cursor.execute(
+        "SELECT id, item_id, cantidad FROM almacen_movimientos WHERE ajuste_id=? AND empresa_id=? AND tipo_mov='ajuste';",
+        (ajuste_id, empresa_id),
+    ).fetchall()
+    for m in movs:
+        cursor.execute(
+            "UPDATE almacen_items SET stock_cantidad=ROUND(COALESCE(stock_cantidad,0)-?, 6) WHERE id=?;",
+            (float(m["cantidad"] or 0), m["item_id"]),
+        )
+        cursor.execute("DELETE FROM almacen_movimientos WHERE id=?;", (m["id"],))
+    cursor.execute("UPDATE almacen_ajustes SET deshecho=1 WHERE id=?;", (ajuste_id,))
+    return {"status": "ok", "message": f"Se deshizo el ajuste del {aj['fecha']} ({len(movs)} productos)."}

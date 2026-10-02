@@ -995,6 +995,10 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         unificar_items,
         listar_unificaciones,
         deshacer_unificacion,
+        ajustar_inventario,
+        listar_ajustes,
+        detalle_ajuste,
+        deshacer_ajuste,
     )
 
     def _sesion(request):
@@ -1273,6 +1277,60 @@ def register_agro_routes(app, get_db, get_empresa_activa_id):
         except Exception:
             conn.rollback()
             raise
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/almacen/ajuste_inventario")
+    def api_almacen_ajuste_inventario(request: Request, data: dict = Body(...)):
+        ses = _sesion(request)
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            res = ajustar_inventario(
+                cur, get_empresa_activa_id(), data.get("fecha") or "", data.get("motivo") or "",
+                data.get("items") or [], usuario=ses.get("nombre") or ses.get("login") or "",
+            )
+            conn.commit()
+            return res
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
+        finally:
+            conn.close()
+
+    @app.get("/api/agro/almacen/ajustes")
+    def api_almacen_ajustes():
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            rows = listar_ajustes(cur, get_empresa_activa_id())
+            conn.commit()
+            return rows
+        finally:
+            conn.close()
+
+    @app.get("/api/agro/almacen/ajustes/{ajuste_id}")
+    def api_almacen_ajuste_detalle(ajuste_id: int):
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            rows = detalle_ajuste(cur, get_empresa_activa_id(), ajuste_id)
+            conn.commit()
+            return rows
+        finally:
+            conn.close()
+
+    @app.post("/api/agro/almacen/ajustes/{ajuste_id}/deshacer")
+    def api_almacen_ajuste_deshacer(ajuste_id: int):
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            res = deshacer_ajuste(cur, get_empresa_activa_id(), ajuste_id)
+            conn.commit()
+            return res
+        except ValueError as e:
+            conn.rollback()
+            raise HTTPException(400, str(e))
         finally:
             conn.close()
 
