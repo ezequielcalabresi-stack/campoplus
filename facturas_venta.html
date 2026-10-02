@@ -67,7 +67,7 @@
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Nº comprobante *</label>
-                    <input id="txtNro" class="form-control font-monospace" required placeholder="0001-00001234">
+                    <input id="txtNro" class="form-control font-monospace" required placeholder="2-229 → 00002-00000229" onblur="formatearNro(this)">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Vencimiento</label>
@@ -78,9 +78,21 @@
             <div class="row g-3 mb-3">
                 <div class="col-md-3">
                     <label class="form-label fw-bold">Neto ($)*</label>
-                    <input id="txtNeto" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
+                    <input id="txtNeto" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalcDesdeNeto()">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Alícuota IVA</label>
+                    <select id="selAlicIva" class="form-select" onchange="recalcIva()">
+                        <option value="21">21 %</option>
+                        <option value="10.5">10,5 %</option>
+                        <option value="27">27 %</option>
+                        <option value="5">5 %</option>
+                        <option value="2.5">2,5 %</option>
+                        <option value="0">0 % / Exento</option>
+                        <option value="manual">Manual</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
                     <label class="form-label fw-bold">IVA ($)</label>
                     <input id="txtIva" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
                 </div>
@@ -92,7 +104,7 @@
                         <button type="button" class="btn btn-outline-primary" onclick="consultarArba()">ARBA</button>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label fw-bold">Percepción IIBB ($)</label>
                     <input id="txtPerc" class="form-control text-end font-monospace money-input" data-money inputmode="decimal" value="0,00" oninput="recalc()">
                 </div>
@@ -250,9 +262,40 @@ function recalcDesdeAlic() {
     alicDecimal = pct / 100;
     const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
     if (esAgentePerc) {
-        document.getElementById('txtPerc').value = CampoMoney.format(neto * alicDecimal);
+        document.getElementById('txtPerc').value = CampoMoney.format(Math.round(neto * pct) / 100);
     }
     recalc();
+}
+
+function formatearNro(input) {
+    const val = input.value.trim();
+    if (!val) return;
+    const partes = val.split('-').map(p => p.replace(/\D/g, ''));
+    let pv, nro;
+    if (partes.length === 2 && partes[0] && partes[1]) [pv, nro] = partes;
+    else if (partes.length === 1 && partes[0]) [pv, nro] = [localStorage.getItem('fv_ultimo_pv') || '1', partes[0]];
+    else return;
+    pv = pv.slice(-5).padStart(5, '0');
+    input.value = `${pv}-${nro.slice(-8).padStart(8, '0')}`;
+    localStorage.setItem('fv_ultimo_pv', pv);
+}
+
+function recalcIva() {
+    const sel = document.getElementById('selAlicIva');
+    localStorage.setItem('fv_alic_iva', sel.value);
+    const ivaInp = document.getElementById('txtIva');
+    ivaInp.readOnly = sel.value !== 'manual';
+    ivaInp.classList.toggle('bg-light', sel.value !== 'manual');
+    if (sel.value !== 'manual') {
+        const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
+        ivaInp.value = CampoMoney.format(Math.round(neto * Number(sel.value)) / 100);
+    }
+    recalc();
+}
+
+function recalcDesdeNeto() {
+    recalcIva();
+    recalcDesdeAlic();
 }
 
 function recalc() {
@@ -311,6 +354,7 @@ function htmlCertPerc(data) {
 
 async function guardarVenta(ev) {
     ev.preventDefault();
+    formatearNro(document.getElementById('txtNro'));
     const cuit = document.getElementById('selCliente').value;
     const neto = CampoMoney.parse(document.getElementById('txtNeto').value);
     const iva = CampoMoney.parse(document.getElementById('txtIva').value);
@@ -442,6 +486,10 @@ function descargarResumen() {
 
 window.onload = async () => {
     document.getElementById('resMes').value = new Date().toISOString().slice(0, 7);
+    const alicGuardada = localStorage.getItem('fv_alic_iva');
+    const selAlic = document.getElementById('selAlicIva');
+    if (alicGuardada && [...selAlic.options].some(o => o.value === alicGuardada)) selAlic.value = alicGuardada;
+    recalcIva();
     await init();
     cargarResumen();
 };
